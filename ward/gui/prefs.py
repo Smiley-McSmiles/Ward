@@ -97,7 +97,8 @@ def spec_row(spec: schema.Spec, value, on_change) -> Gtk.Widget | None:
     return None
 
 
-def build_groups(page: Adw.PreferencesPage, specs: list[tuple[str, schema.Spec]], get, set_) -> dict:
+def build_groups(page: Adw.PreferencesPage, specs: list[tuple[str, schema.Spec]], get, set_,
+                 rows: dict | None = None) -> dict:
     """Groups in schema order, advanced options in an expander at the end of their group."""
     groups: OrderedDict[str, list] = OrderedDict()
     for key, spec in specs:
@@ -112,6 +113,8 @@ def build_groups(page: Adw.PreferencesPage, specs: list[tuple[str, schema.Spec]]
             row = spec_row(spec, get(key), lambda v, k=key: set_(k, v))
             if row is None:
                 continue
+            if rows is not None:
+                rows[key] = row
             if spec.advanced:
                 if advanced is None:
                     advanced = Adw.ExpanderRow(title=_("Advanced"))
@@ -308,7 +311,9 @@ class AccountPage:
         self._update_state()
 
         specs = [(k, s) for k, s in schema.ACCOUNT_SPECS.items() if s.type != "json" and k not in ("pgp_key",)]
-        groups = build_groups(page, specs, acc.option, self._set)
+        self.rows: dict[str, Gtk.Widget] = {}
+        groups = build_groups(page, specs, acc.option, self._set, self.rows)
+        self._proxy_rows(acc.option("proxy"))
         conn = groups.get("Connection")
         if conn is not None:
             rc = compat.button_row(_("Reconnect now"), "view-refresh-symbolic")
@@ -349,8 +354,15 @@ class AccountPage:
             widgets.run(self.window, self.core.set_presence(self.acc, self.acc.show if self.acc.show != "offline"
                                                             else "available"))
 
+    def _proxy_rows(self, proxy: str) -> None:
+        for k in ("proxy_host", "proxy_port", "proxy_user"):
+            if k in self.rows:
+                self.rows[k].set_visible(proxy in ("socks5", "http"))
+
     def _set(self, key: str, value) -> None:
         acc = self.acc
+        if key == "proxy":
+            self._proxy_rows(value)
 
         async def go():
             if key == "enabled":

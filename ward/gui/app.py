@@ -38,7 +38,8 @@ class WardApplication(Adw.Application):
     # ================================================================== startup
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
-        GLib.set_application_name(APP_NAME)
+        if GLib.get_application_name() != APP_NAME:
+            GLib.set_application_name(APP_NAME)
         settings = Settings()
         if settings["advanced.debug_log"] != "off":
             wardlog.setup(settings["advanced.debug_log"], to_file=True)

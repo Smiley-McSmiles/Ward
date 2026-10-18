@@ -87,6 +87,18 @@ class WelcomePage(Gtk.Box):
                                                      _("Ask every time")]))
         g.add(self.store_row)
         box.append(g)
+        box.append(self._connection_group())
+        self.signin_button = Gtk.Button(label=_("Sign in"), css_classes=["pill", "suggested-action"],
+                                        halign=Gtk.Align.CENTER)
+        self.signin_button.connect("clicked", lambda *_: self._sign_in())
+        box.append(self.signin_button)
+        self.progress = Gtk.Label(css_classes=["dim-label"], wrap=True, justify=Gtk.Justification.CENTER)
+        box.append(self.progress)
+        GLib.idle_add(lambda: (self.jid_row if not jid else self.pw_row).grab_focus() and False)
+        return self._page(_("Sign in"), box, "signin")
+
+    def _connection_group(self) -> Adw.PreferencesGroup:
+        """Host, port, TLS mode and proxy: for self-hosted servers on unusual ports, or Tor."""
         adv = Adw.PreferencesGroup()
         exp = Adw.ExpanderRow(title=_("Connection settings"), subtitle=_("Only needed for unusual servers"))
         self.host_row = Adw.EntryRow(title=_("Server address (host)"))
@@ -103,17 +115,11 @@ class WelcomePage(Gtk.Box):
         self.proxy_row.set_model(Gtk.StringList.new([_("System settings"), _("None"), _("Tor (127.0.0.1:9050)")]))
         exp.add_row(self.proxy_row)
         adv.add(exp)
-        box.append(adv)
-        self.signin_button = Gtk.Button(label=_("Sign in"), css_classes=["pill", "suggested-action"],
-                                        halign=Gtk.Align.CENTER)
-        self.signin_button.connect("clicked", lambda *_: self._sign_in())
-        box.append(self.signin_button)
-        self.progress = Gtk.Label(css_classes=["dim-label"], wrap=True, justify=Gtk.Justification.CENTER)
-        box.append(self.progress)
-        GLib.idle_add(lambda: (self.jid_row if not jid else self.pw_row).grab_focus() and False)
-        return self._page(_("Sign in"), box, "signin")
+        return adv
 
-    def _options(self) -> dict:
+    def _connection_options(self) -> dict:
+        if not hasattr(self, "host_row"):
+            return {}
         opts = {}
         host = self.host_row.get_text().strip()
         if host:
@@ -127,6 +133,10 @@ class WelcomePage(Gtk.Box):
         proxy = self.proxy_modes[self.proxy_row.get_selected()]
         if proxy != "system":
             opts["proxy"] = proxy
+        return opts
+
+    def _options(self) -> dict:
+        opts = self._connection_options()
         opts["store_password"] = self.store_modes[self.store_row.get_selected()]
         return opts
 
@@ -216,6 +226,7 @@ class WelcomePage(Gtk.Box):
         self.domain_row.connect("entry-activated", lambda e: self._get_form(e.get_text().strip()))
         g.add(self.domain_row)
         box.append(g)
+        box.append(self._connection_group())
         self.providers = Adw.PreferencesGroup(title=_("Servers that allow signing up from apps"))
         self._provider_rows: list[Gtk.Widget] = []
         box.append(self.providers)
@@ -256,7 +267,8 @@ class WelcomePage(Gtk.Box):
             return
         self.preauth = preauth
         self.toasts.add_toast(Adw.Toast(title=_("Asking %s…") % domain, timeout=2))
-        widgets.run(self, register.get_form(domain, preauth=preauth),
+        self.reg_options = self._connection_options()
+        widgets.run(self, register.get_form(domain, self.reg_options, preauth=preauth),
                     done=lambda rf: self.nav.push(self._register_page(rf)), on_error=self._form_failed)
 
     def _form_failed(self, e) -> None:
@@ -330,9 +342,10 @@ class WelcomePage(Gtk.Box):
             button.set_sensitive(False)
 
             async def go():
-                jid = await register.register(rf.domain, username, pw.get_text(), form, legacy,
+                options = dict(getattr(self, "reg_options", {}))
+                jid = await register.register(rf.domain, username, pw.get_text(), form, legacy, options,
                                               preauth=self.preauth)
-                await self._add_account(jid, pw.get_text(), {})
+                await self._add_account(jid, pw.get_text(), options)
 
             def failed(e):
                 button.set_sensitive(True)

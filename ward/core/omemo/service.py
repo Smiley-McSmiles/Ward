@@ -598,6 +598,9 @@ class OmemoService(GObject.Object):
                 out.append(oldmemo.etree.serialize_message(msg))
             namespaces.add(msg.namespace)
         if not namespaces:
+            if chat.type == "groupchat" and not recipients:
+                raise EncryptionBlocked(_("Not sent: nobody else in this group can read encrypted messages yet. "
+                                          "Invite people first, or turn encryption off for this group."))
             raise EncryptionBlocked(_("Not sent: nothing could be encrypted for the recipients"))
         for o in outside:
             if o.tag != "{%s}body" % stanzas.NS_CLIENT:
