@@ -61,6 +61,11 @@ class EncryptionBlocked(Exception):
     """The message must not go out unencrypted, and cannot be encrypted (the reason is user-facing)."""
 
 
+class OnlyThisDevice(Exception):
+    """An encrypted note to self while this is the account's only device: nobody else can read it, so it is
+    kept here and not sent."""
+
+
 class ChatService(GObject.Object):
     __gsignals__ = {
         "received": (GObject.SignalFlags.RUN_LAST, None, (object, object, str)),   # chat, message, mode
@@ -154,7 +159,12 @@ class ChatService(GObject.Object):
             w is not None and w.kind == "mam" and util.bare(pm.from_jid) == own)
         if not outgoing and util.bare(pm.from_jid) == own and util.bare(pm.to_jid or own) != own:
             outgoing = True     # a message our other device sent, reflected without a carbon wrapper
-        peer = pm.to_jid if outgoing else pm.from_jid
+        if util.bare(pm.from_jid or own) == own and util.bare(pm.to_jid or own) == own:
+            # a note to self: the server hands it to every device of ours, this one included
+            if w is None and pm.from_jid == session.bound_jid:
+                return          # our own copy, already stored when it was sent
+            outgoing = True
+        peer = (pm.to_jid or own) if outgoing else pm.from_jid
         if not peer:
             return
         if w is not None and w.kind == "mam":
@@ -657,7 +667,7 @@ class ChatService(GObject.Object):
         stanzas.set_body(el, wire)
         stanzas.add_origin_id(el, msg.origin_id or msg.msg_id)
         stanzas.add_markdown_flag(el)
-        if not group:
+        if not group and chat.jid != session.jid:
             stanzas.add_receipt_request(el)
         stanzas.add_markable(el)
         if self.core.settings["chats.send_typing"]:
@@ -675,6 +685,16 @@ class ChatService(GObject.Object):
     async def _send_element(self, session, chat: ChatItem, el: ET.Element, msg: MessageItem | None) -> bool:
         try:
             out, enc = await self.core.e2e.encrypt(session, chat, el)
+        except OnlyThisDevice:
+            if msg is not None:
+                extra = dict(msg.extra)
+                extra.pop("outbox", None)
+                extra["local_only"] = True
+                msg.extra = extra
+                msg.update(encryption="omemo2", status=max(msg.status, STATUS_SENT), error="")
+                await self.core.chats.update_message_fields(msg.id, encryption="omemo2", status=msg.status,
+                                                            error="", extra=extra)
+            return True
         except EncryptionBlocked as e:
             if msg is not None:
                 await self._fail(chat, msg, str(e))

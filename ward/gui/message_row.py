@@ -218,6 +218,8 @@ class MessageRow(Gtk.Box):
                                               trust)).strip())
             if m.trust in ("undecided", "distrusted"):
                 icon.add_css_class("trust-" + m.trust)
+            if m.extra.get("local_only"):
+                icon.set_tooltip_text(_("Kept on this device only: you have no other device that can read it"))
             box.append(icon)
         elif m.extra.get("unencrypted"):
             icon = Gtk.Image.new_from_icon_name("ward-lock-open-symbolic", css_classes=["lock-off"])

@@ -387,6 +387,15 @@ class Sidebar(Gtk.Box):
             self.window.show_chat(chat)
         widgets.run(self, go())
 
+    def _note_to_self(self, acc: AccountItem) -> None:
+        self.account_popover.popdown()
+
+        async def go():
+            chat = await self.core.open_chat(acc, acc.jid)
+            self.stack.set_visible_child_name("chats")
+            self.window.show_chat(chat)
+        widgets.run(self, go())
+
     # ================================================================== accounts
     def _accounts_changed(self) -> None:
         for acc in self.core.accounts.list():
@@ -506,6 +515,11 @@ class Sidebar(Gtk.Box):
                                                                            else "available", e.get_text()))
             status.add_prefix(Gtk.Image.new_from_icon_name("document-edit-symbolic"))   # lines up with the rows above
             row.add_row(status)
+            note = Adw.ActionRow(title=_("Note to self"), activatable=True,
+                                 subtitle=_("Notes, links and files for yourself, on all your devices"))
+            note.add_prefix(Gtk.Image.new_from_icon_name("user-bookmarks-symbolic"))
+            note.connect("activated", lambda *_a, acc=acc: self._note_to_self(acc))
+            row.add_row(note)
             prof = Adw.ActionRow(title=_("Profile…"), activatable=True)
             prof.add_prefix(Gtk.Image.new_from_icon_name("avatar-default-symbolic"))
             prof.connect("activated", lambda *_a, acc=acc: (self.account_popover.popdown(),

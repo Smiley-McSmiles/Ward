@@ -115,21 +115,26 @@ class Renderer:
                     q.append(w)
             return q
         if isinstance(b, ListBlock):
-            grid = Gtk.Grid(column_spacing=6, row_spacing=2)
+            # boxes, not a Gtk.Grid: a grid measures its height at its narrowest, so wrapping text inside it
+            # made bubbles far too tall
+            items = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             for i, item in enumerate(b.items):
+                line = Gtk.Box(spacing=6)
                 if item.checked is not None:
-                    bullet = Gtk.CheckButton(active=bool(item.checked), sensitive=False, valign=Gtk.Align.START)
+                    bullet: Gtk.Widget = Gtk.CheckButton(active=bool(item.checked), sensitive=False,
+                                                         valign=Gtk.Align.START)
                 else:
                     bullet = Gtk.Label(label=("%d." % (b.start + i)) if b.ordered else "•", xalign=1,
                                        css_classes=["message-text"], valign=Gtk.Align.START)
-                grid.attach(bullet, 0, i, 1, 1)
+                line.append(bullet)
                 inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True)
                 for c in item.children:
                     w = self.block(c)
                     if w is not None:
                         inner.append(w)
-                grid.attach(inner, 1, i, 1, 1)
-            return grid
+                line.append(inner)
+                items.append(line)
+            return items
         if isinstance(b, Table):
             return self.table(b)
         if isinstance(b, Rule):

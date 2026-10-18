@@ -26,7 +26,7 @@ from gi.repository import GObject
 from ... import aio, deps, util
 from ...i18n import _
 from .. import stanzas
-from ..chat import EncryptionBlocked, Incoming
+from ..chat import EncryptionBlocked, Incoming, OnlyThisDevice
 from ..models import DeviceItem
 from ..pep import Pep
 from . import sce, trust
@@ -579,6 +579,8 @@ class OmemoService(GObject.Object):
             messages, errors = await m.encrypt(frozenset(recipients), plaintexts, backend_priority_order=order,
                                                identifier=str(chat.id))
         except NoEligibleDevices as e:
+            if recipients == {acc.jid}:
+                raise OnlyThisDevice() from None
             names = ", ".join(sorted(getattr(e, "bare_jids", recipients) or recipients))
             raise EncryptionBlocked(_("Not sent: %s has no trusted device that can receive encrypted messages. "
                                       "Check the contact's devices, or turn encryption off for this chat.")
@@ -600,6 +602,8 @@ class OmemoService(GObject.Object):
                 out.append(oldmemo.etree.serialize_message(msg))
             namespaces.add(msg.namespace)
         if not namespaces:
+            if recipients == {acc.jid}:
+                raise OnlyThisDevice()
             if chat.type == "groupchat" and not recipients:
                 raise EncryptionBlocked(_("Not sent: nobody else in this group can read encrypted messages yet. "
                                           "Invite people first, or turn encryption off for this group."))

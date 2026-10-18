@@ -1,5 +1,7 @@
 """End to end: two people on a real server - contacts, presence, and every 1:1 messaging feature."""
 
+import asyncio
+
 import pytest
 from helpers import account, befriend, fresh, make_core, session, stop, wait_for
 
@@ -136,3 +138,34 @@ def test_offline_messages_carbons_and_archive(trust_test_ca, tmp_path, run):
             await stop(carol, dave, phone)
 
     run(main(), timeout=120)
+
+
+def test_note_to_self(trust_test_ca, tmp_path, run):
+    """Messages to one's own address: shown once as ours here, and as ours on the account's other devices."""
+    prosody = trust_test_ca
+
+    async def main():
+        user = fresh(prosody, "notes")
+        one = await make_core(tmp_path, prosody, user, name="one", resource="one")
+        two = await make_core(tmp_path, prosody, user, name="two", resource="two")
+        try:
+            for core in (one, two):
+                core.settings.set("encryption.default", "off")
+            a1, a2 = account(one), account(two)
+            chat = await one.open_chat(a1, a1.jid)
+            assert chat.name == "Note to self"
+            ml = await one.chats.open_messages(chat)
+            sent = await one.messaging.send_text(chat, "remember the milk")
+            chat2 = await wait_for(lambda: two.chats.find(a2.id, a2.jid, "chat"), what="note on the other device")
+            ml2 = await two.chats.open_messages(chat2)
+            await wait_for(lambda: len(ml2) == 1, what="note listed on the other device")
+            assert ml2.items()[0].outgoing and ml2.items()[0].body == "remember the milk"
+            assert chat2.unread == 0
+            await wait_for(lambda: sent.status >= 1, what="sent")
+            for _ in range(20):          # the server's copy for this device must not show up a second time
+                await asyncio.sleep(0.05)
+            assert len(ml) == 1 and ml.items()[0].outgoing
+        finally:
+            await stop(one, two)
+
+    run(main(), timeout=60)

@@ -32,6 +32,7 @@ XMPP app, on any server, including your own. It aims to replace Gajim without lo
   is), full-text search, message requests from strangers, blocking and spam reports.
 - **Groups and channels.** Private groups and public channels with sensible presets, invites, a members panel,
   roles and moderation, group settings, bookmarks with autojoin and public channel search.
+- **Note to self**, a chat with your own address that reaches all your devices (account menu > Note to self).
 - **Several accounts**, with a colour each, certificate pinning for self-hosted servers, proxies and Tor, and account
   creation right from the app (with the server's form and CAPTCHA) or from an invite link.
 - **For server admins and developers.** Native pages for every ad-hoc command your server offers, invite links,

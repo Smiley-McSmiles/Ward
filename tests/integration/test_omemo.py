@@ -164,3 +164,34 @@ def test_encrypted_private_group(trust_test_ca, tmp_path, run):
             await stop(alice, bob)
 
     run(main(), timeout=150)
+
+
+def test_encrypted_note_to_self(trust_test_ca, tmp_path, run):
+    """With one device an encrypted note stays on it; with a second device the note reaches it, decrypted."""
+    prosody = trust_test_ca
+
+    async def main():
+        user = fresh(prosody, "notes")
+        one = await make_core(tmp_path, prosody, user, "n-one", resource="one")
+        two = None
+        try:
+            a1 = account(one)
+            await wait_for(lambda: a1.omemo_ready, 20, "OMEMO ready")
+            chat = await one.open_chat(a1, a1.jid)
+            alone = await one.messaging.send_text(chat, "only here")
+            await wait_for(lambda: alone.status >= 1 or alone.error, what="kept")
+            assert alone.extra.get("local_only") and not alone.error
+
+            two = await make_core(tmp_path, prosody, user, "n-two", resource="two")
+            a2 = account(two)
+            await wait_for(lambda: a2.omemo_ready, 20, "second device OMEMO")
+            note = await one.messaging.send_text(chat, "on both")
+            assert not note.error and not note.extra.get("local_only"), note.error
+            chat2 = await wait_for(lambda: two.chats.find(a2.id, a2.jid, "chat"), what="note at the second device")
+            ml2 = await two.chats.open_messages(chat2)
+            await wait_for(lambda: any(m.body == "on both" for m in ml2.items()), 20, "decrypted note")
+            assert all(m.outgoing for m in ml2.items())
+        finally:
+            await stop(*(c for c in (one, two) if c is not None))
+
+    run(main(), timeout=90)

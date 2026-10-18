@@ -11,6 +11,9 @@ class Names:
         self.core = core
 
     def contact_name(self, account_id: int, jid: str) -> str:
+        acc = self.core.accounts.get(account_id)
+        if acc is not None and util.bare(jid) == acc.jid:
+            return _("Note to self")
         c = self.core.roster.contacts.get(account_id, jid)
         if c is not None:
             return c.name
