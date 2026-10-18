@@ -323,7 +323,7 @@ class MessageRow(Gtk.Box):
         path = att.local_path if att.local_path and os.path.exists(att.local_path) else ""
         thumb = att.thumbnail if att.thumbnail and os.path.exists(att.thumbnail) else ""
         if att.is_image and (path or thumb):
-            pic = Gtk.Picture.new_for_filename(thumb or path)
+            pic = Gtk.Picture.new_for_paintable(widgets.texture(thumb or path, widgets.IMAGE_PIXELS))
             pic.set_can_shrink(True)
             pic.set_content_fit(Gtk.ContentFit.COVER if hasattr(Gtk, "ContentFit") else 0)
             w = max(att.width or 320, 1)

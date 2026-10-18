@@ -586,7 +586,7 @@ class ImageViewer:
         self.dialog.set_child(tv)
 
     def _copy(self) -> None:
-        tex = widgets.texture(self.att.local_path)
+        tex = widgets.texture(self.att.local_path, 0)      # the whole image
         if tex is not None:
             self.view.get_clipboard().set(tex)
             compat.toast(self.view, _("Copied"))

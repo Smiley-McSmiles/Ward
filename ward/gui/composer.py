@@ -184,8 +184,19 @@ class Composer(Gtk.Box):
         popover = self.popover
         lifetime.when_unrooted(self, lambda: popover.get_parent() is not None and popover.unparent())
 
-        self._spell = _spelling(self.text, self.settings["chats.spell_languages"]) \
-            if self.settings["chats.spellcheck"] and deps.have("spelling") else None
+        # the spell checker loads its dictionaries: only once someone starts writing
+        self._spell = None
+        spell_focus = Gtk.EventControllerFocus()
+
+        def first_focus(*_a) -> None:
+            if spell_focus.get_widget() is None:
+                return
+            # not while GTK is still delivering this event to it
+            GLib.idle_add(lambda: spell_focus.get_widget() is not None and self.text.remove_controller(spell_focus))
+            if self.settings["chats.spellcheck"] and deps.have("spelling") and self._spell is None:
+                self._spell = _spelling(self.text, self.settings["chats.spell_languages"])
+        spell_focus.connect("enter", first_focus)
+        self.text.add_controller(spell_focus)
         lifetime.watch(self.settings, "changed::chats.toolbar", lambda *_: self.toolbar.set_visible(
             self.settings["chats.toolbar"]))
         self._update_placeholder()
