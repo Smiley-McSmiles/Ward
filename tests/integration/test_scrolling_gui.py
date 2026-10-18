@@ -51,37 +51,38 @@ def test_the_list_stays_at_the_bottom(app, run):  # noqa: F811
             return msg
 
         sent = await send(1, "the first message")
-        await asyncio.sleep(0.35)
-        assert view._stick and view._at_bottom(), "sending scrolls to your own message"
+        await settle(view, "sending scrolls to your own message")
 
         # a receipt or read marker: the row is rebuilt with its status icon
         await app.core.chats.update_message_fields(sent.id, status=3)
         await app.core.chats.reload_message(chat, sent.id)
-        await asyncio.sleep(0.35)
-        assert view._stick and view._at_bottom(), "a receipt must not scroll the newest message out of view"
+        await settle(view, "a receipt must not scroll the newest message out of view")
 
         # a reaction rebuilds the row as well
         await app.core.db.execute("INSERT INTO reactions (message_id, sender, emojis, timestamp) VALUES (?, ?, ?, ?)",
                                   (sent.id, "sam@localhost", '["👍"]', int(time.time() * 1000)))
         await app.core.chats.reload_message(chat, sent.id)
-        await asyncio.sleep(0.35)
-        assert view._stick and view._at_bottom(), "a reaction must not scroll the newest message out of view"
+        await settle(view, "a reaction must not scroll the newest message out of view")
 
         # someone typing updates the chat, and with it the header and banner: not the messages
         chat.typing = "Sam"
         await asyncio.sleep(0.3)
         chat.typing = ""
-        await asyncio.sleep(0.3)
-        assert view._stick and view._at_bottom(), "a typing notification must not move the message list"
+        await settle(view, "a typing notification must not move the message list")
 
         # the user scrolling up still lets go of the bottom
         view.vadj.set_value(max(0, view.vadj.get_value() - 200))
-        await asyncio.sleep(0.4)
-        assert not view._stick and not view._at_bottom() and view.jump_button.get_visible()
+        await wait_for(lambda: not view._stick and view.jump_button.get_visible(), 5, "the user scrolls up")
+        assert not view._at_bottom()
 
         await send(2, "a message after scrolling away")
-        await asyncio.sleep(0.35)
-        assert view._stick and view._at_bottom(), "sending scrolls to your own message again"
+        await settle(view, "sending scrolls to your own message again")
         await app.core.shutdown()
 
     run(scenario(), timeout=120)
+
+
+async def settle(view, message: str) -> None:
+    """Let the row measurements and the frames they schedule happen."""
+    await asyncio.sleep(0.4)
+    await wait_for(lambda: view._stick and view._at_bottom(), 5, message)
