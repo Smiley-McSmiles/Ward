@@ -89,7 +89,10 @@ def test_closed_dialogs_are_freed(app, prosody, run, monkeypatch):  # noqa: F811
         try:
             await wait_for(lambda: not alive(), 10, "closed dialogs to be freed")
         except AssertionError:
-            raise AssertionError("closed dialogs still in memory: %s" % alive()) from None
+            held = [r() for r in opened if r() is not None]
+            refs = ["%s <- %s" % (type(o).__name__, ", ".join(sorted({type(x).__name__ for x in gc.get_referrers(o)})))
+                    for o in held]
+            raise AssertionError("closed dialogs still in memory: %s" % refs) from None
         await app.core.shutdown()
 
     run(scenario(), timeout=120)
