@@ -43,6 +43,9 @@ def selected_text(widget: Gtk.Widget) -> str:
     return "\n".join(parts)
 
 
+KEEP_MESSAGES = 100     # of a chat no longer shown
+
+
 class ConversationView(Gtk.Box):
     __gtype_name__ = "WardConversationView"
 
@@ -142,6 +145,7 @@ class ConversationView(Gtk.Box):
         self.factory.connect("setup", self._setup_row)
         self.factory.connect("bind", self._bind_row)
         self.factory.connect("unbind", self._unbind_row)
+        self.factory.connect("teardown", widgets.teardown_row)
         self.list = Gtk.ListView(factory=self.factory, css_classes=["message-list"])
         self.list.set_single_click_activate(False)
         self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
@@ -226,6 +230,9 @@ class ConversationView(Gtk.Box):
         if chat is self.chat:
             return
         self._detach()
+        if self.ml is not None:
+            # once the list view has let go of it: keep only the newest messages of the chat we leave
+            GLib.idle_add(lambda ml=self.ml: ml is not self.ml and ml.trim(KEEP_MESSAGES) and False)
         self.chat = chat
         self.rows.clear()
         self.highlight_id = 0
@@ -296,7 +303,7 @@ class ConversationView(Gtk.Box):
         item.set_selectable(False)
         if hasattr(item, "set_focusable"):
             item.set_focusable(False)
-        item.set_child(MessageRow(self))
+        widgets.setup_row(item, MessageRow(self))
 
     def _bind_row(self, _f, item: Gtk.ListItem) -> None:
         row: MessageRow = item.get_child()

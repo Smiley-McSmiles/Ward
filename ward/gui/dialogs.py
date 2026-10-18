@@ -12,7 +12,7 @@ from .. import util
 from ..core import register, secrets
 from ..core.models import AccountItem, AttachmentItem, ChatItem, MessageItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 
 log = logging.getLogger("ward.gui")
 
@@ -47,6 +47,7 @@ class BaseDialog:
         self.toasts.set_child(self.view)
         self.dialog.set_child(self.toasts)
         self.spinner = None
+        lifetime.forget_when_closed(self, self.dialog.widget)
 
     def group(self, title: str = "", description: str = "") -> Adw.PreferencesGroup:
         g = Adw.PreferencesGroup(title=title, description=description)

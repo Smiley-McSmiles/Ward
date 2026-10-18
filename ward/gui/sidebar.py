@@ -149,7 +149,8 @@ class Sidebar(Gtk.Box):
         self.selection = Gtk.SingleSelection(model=self.sorted, autoselect=False, can_unselect=True)
         self.selection.connect("notify::selected-item", self._on_selected)
         factory = Gtk.SignalListItemFactory()
-        factory.connect("setup", lambda _f, li: li.set_child(ChatRow(self)))
+        factory.connect("setup", lambda _f, li: widgets.setup_row(li, ChatRow(self)))
+        factory.connect("teardown", widgets.teardown_row)
         factory.connect("bind", lambda _f, li: li.get_child().bind(li.get_item()))
         factory.connect("unbind", lambda _f, li: li.get_child().unbind())
         self.list = Gtk.ListView(model=self.selection, factory=factory, css_classes=["navigation-sidebar",
@@ -337,7 +338,8 @@ class Sidebar(Gtk.Box):
         self.contacts_model = sorted_
         sel = Gtk.NoSelection(model=sorted_)
         factory = Gtk.SignalListItemFactory()
-        factory.connect("setup", lambda _f, li: li.set_child(ContactRow(self)))
+        factory.connect("setup", lambda _f, li: widgets.setup_row(li, ContactRow(self)))
+        factory.connect("teardown", widgets.teardown_row)
         factory.connect("bind", lambda _f, li: li.get_child().bind(li.get_item()))
         factory.connect("unbind", lambda _f, li: li.get_child().unbind())
         lv = Gtk.ListView(model=sel, factory=factory, single_click_activate=True,

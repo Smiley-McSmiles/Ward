@@ -14,6 +14,7 @@ from .. import aio, util
 from ..core import colors
 from ..i18n import _
 from . import compat
+from .lifetime import release, setup_row, teardown_row  # noqa: F401 - used through widgets
 
 log = logging.getLogger("ward.gui")
 
