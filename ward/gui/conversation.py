@@ -59,6 +59,7 @@ class ConversationView(Gtk.Box):
         self.first_unread_id = 0
         self.highlight_id = 0
         self.rows: dict[int, MessageRow] = {}
+        self._animate_ids: set[int] = set()      # messages that arrived while at the bottom, to slide in
         self._chat_handlers: list[tuple[object, int]] = []
         self._stick = True
         self._loading_older = False
@@ -75,8 +76,10 @@ class ConversationView(Gtk.Box):
         self._build_banner()
         self._build_search()
         self._build_list()
+        # not Adw.ToolbarView.add_bottom_bar(): it wraps the bar in a Gtk.WindowHandle, and dragging in the
+        # composer then moved the window instead of selecting text
         self.composer = Composer(self)
-        self.toolbar.add_bottom_bar(self.composer)
+        self.append(self.composer)
         self._build_actions()
 
         drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
@@ -253,6 +256,7 @@ class ConversationView(Gtk.Box):
             GLib.idle_add(lambda ml=self.ml: ml is not self.ml and ml.trim(KEEP_MESSAGES) and False)
         self.chat = chat
         self.rows.clear()
+        self._animate_ids.clear()
         self.highlight_id = 0
         self._last_value = 0.0
         self._auto_until = 0
@@ -293,8 +297,10 @@ class ConversationView(Gtk.Box):
                 if m.id > chat.last_read_id and not m.outgoing and m.kind != "status":
                     self.first_unread_id = m.id
                     break
-        model = Gtk.NoSelection.new(ml.store)
+        # connect before set_model: the list view's own items-changed handler binds the row, and it must find
+        # the new id in _animate_ids already
         self._chat_handlers.append((ml.store, ml.store.connect("items-changed", self._on_items_changed)))
+        model = Gtk.NoSelection.new(ml.store)
         self._chat_handlers.append((ml, ml.connect("notify::loading", lambda *_: self.loading_spinner.set_visible(
             ml.loading))))
         self.list.set_model(model)
@@ -332,6 +338,9 @@ class ConversationView(Gtk.Box):
         msg: MessageItem = item.get_item()
         row.bind(msg, self.previous(msg))
         self.rows[msg.id] = row
+        if msg.id in self._animate_ids:
+            self._animate_ids.discard(msg.id)
+            row.animate_in()
 
     def _unbind_row(self, _f, item: Gtk.ListItem) -> None:
         row: MessageRow = item.get_child()
@@ -350,6 +359,13 @@ class ConversationView(Gtk.Box):
             if newest is not None and newest.outgoing:
                 self._stick = True
             if self._stick:
+                # a message sent or received while the list follows the bottom slides up into place
+                if newest is not None and self.settings["appearance.message_animations"]:
+                    row = self.rows.get(newest.id)
+                    if row is not None:          # the list view already bound it
+                        row.animate_in()
+                    else:
+                        self._animate_ids.add(newest.id)
                 GLib.idle_add(self.scroll_to_bottom)
             else:
                 self.jump_button.set_visible(True)
@@ -1056,7 +1072,7 @@ class ConversationView(Gtk.Box):
     def _on_setting(self, _s, key: str) -> None:
         if key == "appearance.layout":
             self._apply_layout()
-        if key == "appearance.chat_animations":
+        if key in ("appearance.chat_animations", "appearance.message_animations"):
             return
         if key.startswith("appearance.") or key in ("chats.collapse_after", "chats.markdown_others",
                                                     "chats.quick_reactions"):

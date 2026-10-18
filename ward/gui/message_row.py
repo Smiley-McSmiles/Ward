@@ -45,16 +45,23 @@ class MessageRow(Gtk.Box):
         self.msg: MessageItem | None = None
         self._handlers: list[int] = []
         self._att_handlers: list[tuple[AttachmentItem, int]] = []
+        # the content is wrapped so a newly sent or received message can slide up into its place
+        self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE, transition_duration=200,
+                                   overflow=Gtk.Overflow.HIDDEN)
+        self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.reveal.set_child(self.content)
+        self.reveal.set_reveal_child(True)
+        self.append(self.reveal)
         self.separator = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.append(self.separator)
+        self.content.append(self.separator)
         self.overlay = Gtk.Overlay()
-        self.append(self.overlay)
+        self.content.append(self.overlay)
         self.row = Gtk.Box(spacing=10, css_classes=["message-row"])
         self.overlay.set_child(self.row)
         # quick reactions and reply, under the message: they take their own room instead of squeezing the text
         self.actions = Gtk.Box(spacing=0, css_classes=["hover-bar"], visible=False, margin_top=2,
                                margin_start=12, margin_end=12)
-        self.append(self.actions)
+        self.content.append(self.actions)
         self.hover = None
         motion = Gtk.EventControllerMotion()
         motion.connect("enter", lambda *_: self._hover(True))
@@ -71,6 +78,9 @@ class MessageRow(Gtk.Box):
     # ------------------------------------------------------------------ binding
     def bind(self, msg: MessageItem, prev: MessageItem | None) -> None:
         self.unbind()
+        # rows are recycled: always start visible and without a transition from the previous message
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+        self.reveal.set_reveal_child(True)
         self.msg = msg
         for prop in ("body", "edited", "retracted", "status", "error", "reactions-rev", "attachments-rev",
                      "trust", "selected", "reply-preview"):
@@ -90,6 +100,26 @@ class MessageRow(Gtk.Box):
     def _changed(self, *_a) -> None:
         if self.msg is not None:
             self._build(self.view.previous(self.msg))
+
+    def animate_in(self) -> None:
+        """Slide this message up into its place when it is sent or received."""
+        gtk_settings = Gtk.Settings.get_default()
+        enabled = bool(self.view.settings["appearance.message_animations"])
+        if gtk_settings is not None and not gtk_settings.get_property("gtk-enable-animations"):
+            enabled = False
+        if not enabled:
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+            self.reveal.set_reveal_child(True)
+            return
+        # collapse without animating that, then reveal in the next frame so the slide starts at the bottom
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+        self.reveal.set_reveal_child(False)
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        GLib.idle_add(self._reveal_content)
+
+    def _reveal_content(self) -> bool:
+        self.reveal.set_reveal_child(True)
+        return False
 
     # ------------------------------------------------------------------ building
     def _build(self, prev: MessageItem | None) -> None:
