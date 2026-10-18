@@ -125,3 +125,68 @@ def test_background_window_is_freed(app, prosody, run, monkeypatch):  # noqa: F8
         await app.core.shutdown()
 
     run(scenario(), timeout=120)
+
+
+def test_message_rows_are_light(app, prosody, run, tmp_path):  # noqa: F811
+    """A message row must not carry an emoji chooser (a widget per emoji, about 10 MB) until its reaction button
+    is used: built eagerly they made a chat of 60 messages take 600 MB."""
+    import ctypes
+
+    from gi.repository import Gtk
+
+    class Mallinfo2(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_size_t) for n in ("arena", "ordblks", "smblks", "hblks", "hblkhd", "usmblks",
+                                                     "fsmblks", "uordblks", "fordblks", "keepcost")]
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        libc.mallinfo2.restype = Mallinfo2
+    except (OSError, AttributeError):
+        pytest.skip("needs glibc")
+
+    def heap_mb() -> int:
+        gc.collect()
+        return libc.mallinfo2().uordblks >> 20
+
+    async def scenario():
+        await wait_for(lambda: app.core.started, 20, "core start")
+        user = fresh(prosody, "rows")
+        opts = {"host": "127.0.0.1", "port": prosody.c2s, "tls": "starttls", "proxy": "none"}
+        acc = await app.core.add_account("%s@localhost" % user, "password", "never", opts, connect=False)
+        await app.core.connect_account(acc, "password")
+        await wait_for(lambda: acc.state == "online" and acc.step == "", 30, "online")
+        app.core.settings.set("encryption.default", "off")
+        peer = await make_core(tmp_path, prosody, fresh(prosody, "rowp"))
+        try:
+            peer.settings.set("encryption.default", "off")
+            await befriend(app.core, peer)
+            pchat = await peer.open_chat(peer.accounts.list()[0], acc.jid)
+            for k in range(40):
+                await peer.messaging.send_text(pchat, "message %d" % k)
+            chat = await app.core.open_chat(acc, peer.accounts.list()[0].jid)
+            await wait_for(lambda: "39" in chat.preview, 20, "messages")
+            w = app.window
+            w.set_default_size(900, 900)
+            before = heap_mb()
+            w.show_chat(chat)
+            await wait_for(lambda: len(w.conversation.rows) >= 30, 20, "rows")
+            await asyncio.sleep(1)
+            grown = heap_mb() - before
+            assert grown < 100, "showing %d messages took %d MB" % (len(w.conversation.rows), grown)
+
+            row = next(r for r in w.conversation.rows.values() if getattr(r, "react_button", None) is not None)
+            reacted = []
+            row.view.react = lambda m, e: reacted.append(e)
+            assert row.react_button.get_popover() is None
+            row.react_button.popup()
+            chooser = row.react_button.get_popover()
+            assert isinstance(chooser, Gtk.EmojiChooser)
+            chooser.emit("emoji-picked", "🎉")
+            assert reacted == ["🎉"]
+            row.react_button.popdown()
+            await wait_for(lambda: row.react_button.get_popover() is None, 5, "picker freed")
+        finally:
+            await stop(peer)
+        await app.core.shutdown()
+
+    run(scenario(), timeout=300)
+
