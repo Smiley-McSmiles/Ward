@@ -16,9 +16,8 @@ from xml.etree import ElementTree as ET
 
 from .. import aio, util
 from ..i18n import _
-from . import forms
+from . import forms, resolver
 from . import proxy as proxymod
-from . import resolver
 from .session import CONNECT_TIMEOUT, CertInfo, IqFailed, base_ssl_context, cert_info_from_der, probe_certificate
 from .stanzas import NS_CLIENT, parse_error, to_xml
 
@@ -164,7 +163,7 @@ async def _connect(domain: str, options: dict, pinned_sha256: str = "") -> _Stre
             except Exception:
                 info = None
             raise RegistrationError(_("The server's certificate is not trusted"), "certificate", info) from None
-        except (OSError, asyncio.TimeoutError, ssl.SSLError, proxymod.ProxyError) as e:
+        except (TimeoutError, OSError, ssl.SSLError, proxymod.ProxyError) as e:
             await stream.close()
             last = str(e) or type(e).__name__
             continue

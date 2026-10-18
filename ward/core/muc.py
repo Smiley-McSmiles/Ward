@@ -267,7 +267,7 @@ class MucService(GObject.Object):
                     continue
                 chat.update(join_error=str(e), joined=False)
                 raise
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 chat.update(join_error=_("The group did not answer"), joined=False)
                 raise MucError("remote-server-timeout", _("The group did not answer")) from None
             finally:
@@ -534,16 +534,15 @@ class MucService(GObject.Object):
             body = ""
         if not body.strip() and not files and not inc.decrypt_error:
             return
-        if ours:
+        if ours and (pm.origin_id or pm.id):
             # our own message, reflected by the room: it was delivered
-            if pm.origin_id or pm.id:
-                for ref in (pm.origin_id, pm.id):
-                    row = await self.core.messaging._find(chat, ref, direction=1) if ref else None
-                    if row is not None:
-                        await self.core.chats.update_message_fields(row["id"], stanza_id=stanza_id or row["stanza_id"],
-                                                                    status=max(row["status"], 2))
-                        await self.core.chats.reload_message(chat, row["id"])
-                        return
+            for ref in (pm.origin_id, pm.id):
+                row = await self.core.messaging._find(chat, ref, direction=1) if ref else None
+                if row is not None:
+                    await self.core.chats.update_message_fields(row["id"], stanza_id=stanza_id or row["stanza_id"],
+                                                                status=max(row["status"], 2))
+                    await self.core.chats.reload_message(chat, row["id"])
+                    return
         await self.core.messaging.store(chat, inc, sender=nick, sender_jid=real, body=body, files=files,
                                         occupant_id=occ_id, groupchat=True)
 

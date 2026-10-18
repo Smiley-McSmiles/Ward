@@ -1,8 +1,8 @@
 """End to end OpenPGP (XEP-0373/0374): keys published and found over PEP, signed and encrypted messages."""
 
 import pytest
-
 from helpers import account, befriend, fresh, make_core, stop, wait_for
+
 from ward.core.pgp import gnupg
 
 pytestmark = [pytest.mark.integration,

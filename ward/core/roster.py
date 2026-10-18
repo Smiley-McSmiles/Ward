@@ -113,7 +113,8 @@ class Contacts(GObject.Object):
     async def save(self, c: ContactItem) -> None:
         await self.db.execute(
             "UPDATE contacts SET name = ?, nickname = ?, pep_nick = ?, groups = ?, subscription = ?, ask = ?, "
-            "in_roster = ?, avatar_hash = ?, blocked = ?, is_gateway = ?, last_seen = ? WHERE account_id = ? AND jid = ?",
+            "in_roster = ?, avatar_hash = ?, blocked = ?, is_gateway = ?, last_seen = ? "
+            "WHERE account_id = ? AND jid = ?",
             (c.roster_name, c.nickname, c.pep_nick, json.dumps(c.groups), c.subscription, c.ask, int(c.in_roster),
              c.avatar_hash, int(c.blocked), int(c.is_gateway), c.last_seen or None, c.account_id, c.jid))
         c.refresh_name()

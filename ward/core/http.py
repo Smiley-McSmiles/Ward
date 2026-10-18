@@ -137,7 +137,7 @@ def request(method: str, url: str, headers: dict[str, str] | None = None, body: 
                 transfer.done = 0
             data = b""
             read = 0
-            fh = open(out_file + ".part", "wb") if out_file is not None and resp.status < 300 else None
+            fh = open(out_file + ".part", "wb") if out_file is not None and resp.status < 300 else None  # noqa: SIM115
             try:
                 while True:
                     chunk = resp.read(CHUNK)

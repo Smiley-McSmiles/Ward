@@ -9,8 +9,28 @@ from __future__ import annotations
 import re
 from functools import cache
 
-from .tree import (BOLD, CODE, ITALIC, LINK, MENTION, SPOILER, STRIKE, Block, CodeBlock, Document, Heading,
-                   Inlines, ListBlock, ListItem, Paragraph, Quote, Rule, Run, Table, merge_runs)
+from .tree import (
+    BOLD,
+    CODE,
+    ITALIC,
+    LINK,
+    MENTION,
+    SPOILER,
+    STRIKE,
+    Block,
+    CodeBlock,
+    Document,
+    Heading,
+    Inlines,
+    ListBlock,
+    ListItem,
+    Paragraph,
+    Quote,
+    Rule,
+    Run,
+    Table,
+    merge_runs,
+)
 
 SAFE_SCHEMES = ("http://", "https://", "xmpp:", "mailto:", "geo:", "tel:", "aesgcm://")
 URL_RE = re.compile(

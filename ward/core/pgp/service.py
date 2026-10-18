@@ -215,8 +215,8 @@ class PgpService(GObject.Object):
             await self._announced(session, jid, [f for f in fps if f])
 
     async def keys(self, account_id: int, jid: str) -> list[DeviceItem]:
-        rows = await self.core.db.fetchall("SELECT * FROM pgp_keys WHERE account_id = ? AND jid = ? ORDER BY first_seen",
-                                           (account_id, util.bare(jid)))
+        rows = await self.core.db.fetchall(
+            "SELECT * FROM pgp_keys WHERE account_id = ? AND jid = ? ORDER BY first_seen", (account_id, util.bare(jid)))
         keyring = {k.fingerprint: k for k in await aio.run_in_thread(self.engine().list_keys)} if rows else {}
         out = []
         for r in rows:
@@ -284,7 +284,7 @@ class PgpService(GObject.Object):
         inside, outside = stanzas.split_content(el)
         plain = build_signcrypt([_copy(e) for e in inside], [chat.jid])
         try:
-            data = await aio.run_in_thread(self.engine().encrypt_sign, plain, theirs + [mine], mine)
+            data = await aio.run_in_thread(self.engine().encrypt_sign, plain, [*theirs, mine], mine)
         except gnupg.GpgError as e:
             raise EncryptionBlocked(_("OpenPGP encryption failed: %s") % e) from None
         out = ET.Element(el.tag, dict(el.attrib))

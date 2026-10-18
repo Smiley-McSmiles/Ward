@@ -179,7 +179,9 @@ class Chats(GObject.Object):
         for c in items:
             r = previews.get(c.id)
             if r is not None:
-                self._set_preview(c, message_from_row(r))
+                m = message_from_row(r)
+                m.sender_name = self.core.names.sender_name(c, m)
+                self._set_preview(c, m)
 
     def _index(self, c: ChatItem) -> None:
         self.by_id[c.id] = c
@@ -204,8 +206,6 @@ class Chats(GObject.Object):
             changes = {}
             if open_ and not c.open:
                 changes["open"] = True
-            if not is_request and c.is_request and False:
-                changes["is_request"] = False
             if changes:
                 c.update(**changes)
                 await self.save(c, *changes)

@@ -25,7 +25,8 @@ from xml.etree import ElementTree as ET
 
 from gi.repository import GObject
 
-from .. import __version__, aio, log as wardlog, util
+from .. import __version__, aio, util
+from .. import log as wardlog
 from ..i18n import _
 from . import proxy as proxymod
 from . import resolver, secrets
@@ -363,7 +364,7 @@ class AccountSession(GObject.Object):
             prox = await proxymod.system_proxy("xmpp://" + self.domain)
         tor = self.account.option("proxy") == "tor"
         try:
-            if tor or isinstance(prox, proxymod.Proxy) and not self.account.option("host"):
+            if tor or (isinstance(prox, proxymod.Proxy) and not self.account.option("host")):
                 # DNS through a proxy would leak where we connect; use the standard ports on the domain
                 cands = [resolver.Candidate(self.domain, 5222, False), resolver.Candidate(self.domain, 5223, True)]
             else:
@@ -388,7 +389,7 @@ class AccountSession(GObject.Object):
             except ssl.SSLCertVerificationError as e:
                 await self._certificate_failed(cand, prox, _ssl_error_text(e))
                 return
-            except (OSError, asyncio.TimeoutError, ssl.SSLError, proxymod.ProxyError) as e:
+            except (TimeoutError, OSError, ssl.SSLError, proxymod.ProxyError) as e:
                 log.info("%s: %s failed: %s", self.jid, cand, e)
                 errors.append("%s: %s" % (cand.host, e.strerror if isinstance(e, OSError) and e.strerror else
                                           (str(e) or type(e).__name__)))
@@ -629,6 +630,11 @@ class AccountSession(GObject.Object):
                 task.cancel()
         self._set_state("disabled" if not self.account.enabled else "offline")
 
+    @property
+    def cert_problem(self) -> CertInfo | None:
+        """The untrusted certificate of the last attempt, waiting for the user's decision."""
+        return self._cert_error
+
     def trust_certificate(self, info: CertInfo) -> None:
         """Pin a certificate the user accepted and reconnect with it."""
         pins = [p for p in (self.account.option("pinned_certs") or []) if isinstance(p, dict)]
@@ -734,7 +740,8 @@ class AccountSession(GObject.Object):
         if self.xmpp is None:
             return
         with contextlib.suppress(Exception):
-            self.xmpp.plugin["xep_0199"].enable_keepalive(interval=int(self.setting("advanced.keepalive", 60)), timeout=30)
+            interval = int(self.setting("advanced.keepalive", 60))
+            self.xmpp.plugin["xep_0199"].enable_keepalive(interval=interval, timeout=30)
 
     def add_feature(self, namespace: str) -> None:
         if self.xmpp is None:

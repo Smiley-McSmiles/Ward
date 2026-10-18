@@ -2,8 +2,24 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ward.core.markup import emoji, parse, parse_markdown, parse_styling, preview, to_html, to_plain
-from ward.core.markup.tree import (BOLD, CODE, DIRECTIVE, ITALIC, LINK, MENTION, SPOILER, STRIKE, CodeBlock,
-                                   Heading, ListBlock, Paragraph, Quote, Rule, Table, links)
+from ward.core.markup.tree import (
+    BOLD,
+    CODE,
+    DIRECTIVE,
+    ITALIC,
+    LINK,
+    MENTION,
+    SPOILER,
+    STRIKE,
+    CodeBlock,
+    Heading,
+    ListBlock,
+    Paragraph,
+    Quote,
+    Rule,
+    Table,
+    links,
+)
 
 
 def runs(doc, i=0):

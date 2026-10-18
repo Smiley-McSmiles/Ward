@@ -128,7 +128,7 @@ def test_gio_async_call(run, tmp_path):
 
     async def main():
         f = Gio.File.new_for_path(str(p))
-        ok, data, _etag = await aio.gio_call(f.load_contents_async, f.load_contents_finish, None)
+        _ok, data, _etag = await aio.gio_call(f.load_contents_async, f.load_contents_finish, None)
         return data
 
     assert run(main()) == b"gio says hi"

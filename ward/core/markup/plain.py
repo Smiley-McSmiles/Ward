@@ -5,8 +5,24 @@ from __future__ import annotations
 
 import html
 
-from .tree import (BOLD, CODE, ITALIC, LINK, SPOILER, STRIKE, Block, CodeBlock, Document, Heading, Inlines,
-                   ListBlock, Paragraph, Quote, Rule, Table)
+from .tree import (
+    BOLD,
+    CODE,
+    ITALIC,
+    LINK,
+    SPOILER,
+    STRIKE,
+    Block,
+    CodeBlock,
+    Document,
+    Heading,
+    Inlines,
+    ListBlock,
+    Paragraph,
+    Quote,
+    Rule,
+    Table,
+)
 
 SPOILER_MASK = "▒▒▒"
 

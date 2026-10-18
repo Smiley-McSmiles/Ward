@@ -24,8 +24,7 @@ from ..i18n import _
 from . import stanzas
 from .chats import find_message_job, insert_message_job, message_from_row
 from .markup.emoji import emoji_only
-from .models import (STATUS_DELIVERED, STATUS_FAILED, STATUS_PENDING, STATUS_READ, STATUS_SENT, ChatItem,
-                     MessageItem)
+from .models import STATUS_DELIVERED, STATUS_FAILED, STATUS_PENDING, STATUS_READ, STATUS_SENT, ChatItem, MessageItem
 from .session import NotConnected
 from .stanzas import ParsedMessage
 from .uri import parse_aesgcm
@@ -121,10 +120,9 @@ class ChatService(GObject.Object):
         w = pm.wrapper
         mode = "live"
         archive_id = ""
-        if w is not None and w.kind.startswith("carbon"):
-            if util.bare(w.from_jid) != own:
-                log.warning("dropping a carbon copy not sent by our server (from %s)", w.from_jid)
-                return
+        if w is not None and w.kind.startswith("carbon") and util.bare(w.from_jid) != own:
+            log.warning("dropping a carbon copy not sent by our server (from %s)", w.from_jid)
+            return
         if w is not None and w.kind == "mam":
             q = self.core.history.query(w.queryid)
             if q is None or util.bare(w.from_jid or own) != q.archive or q.account_id != session.account.id:
@@ -302,7 +300,8 @@ class ChatService(GObject.Object):
             extra["mentions_me"] = True
         if inc.decrypt_error:
             extra["decrypt_error"] = inc.decrypt_error
-        if not pm.encrypted and not inc.outgoing and chat.encryption_state in ("omemo", "omemo-legacy", "pgp"):
+        if not (inc.encryption or pm.encrypted) and not inc.outgoing and not inc.decrypt_error and \
+                chat.encryption_state in ("omemo", "omemo-legacy", "pgp"):
             extra["unencrypted"] = True
         if pm.spoiler is not None:
             extra["spoiler"] = pm.spoiler
@@ -717,7 +716,8 @@ class ChatService(GObject.Object):
     async def flush_outbox(self, session) -> None:
         rows = await self.core.db.fetchall(
             "SELECT m.* FROM messages m JOIN chats c ON c.id = m.chat_id WHERE c.account_id = ? AND m.direction = 1 "
-            "AND m.status = ? AND m.extra LIKE '%\"outbox\": true%' ORDER BY m.id", (session.account.id, STATUS_PENDING))
+            "AND m.status = ? AND m.extra LIKE '%\"outbox\": true%' ORDER BY m.id",
+            (session.account.id, STATUS_PENDING))
         for r in rows:
             chat = self.core.chats.by_id.get(r["chat_id"])
             if chat is None or (chat.type == "groupchat" and not chat.joined):
@@ -773,7 +773,7 @@ class ChatService(GObject.Object):
 
     def set_chat_state(self, chat: ChatItem, state: str) -> None:
         """composing / paused / active from the composer (sent only on changes)."""
-        if not self.core.settings["chats.send_typing"] or chat.type == "groupchat" and not chat.joined:
+        if not self.core.settings["chats.send_typing"] or (chat.type == "groupchat" and not chat.joined):
             return
         if self._sent_state.get(chat.id) == state:
             return

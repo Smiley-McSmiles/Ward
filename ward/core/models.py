@@ -9,8 +9,8 @@ from typing import Any
 
 from gi.repository import Gio, GObject
 
-from . import colors
 from .. import util
+from . import colors
 
 INT64 = GObject.TYPE_INT64
 
@@ -428,6 +428,19 @@ class MessageList(GObject.Object):
 
     def get(self, msg_id: int) -> MessageItem | None:
         return self.by_id.get(msg_id)
+
+    def index(self, msg: MessageItem) -> int:
+        pos = bisect.bisect_left(self._keys, msg.sort_key())
+        if pos < len(self._keys) and self.store.get_item(pos) is msg:
+            return pos
+        for i in range(len(self)):
+            if self.store.get_item(i) is msg:
+                return i
+        return -1
+
+    def previous(self, msg: MessageItem) -> MessageItem | None:
+        i = self.index(msg)
+        return self.store.get_item(i - 1) if i > 0 else None
 
     def find_ref(self, ref: str) -> MessageItem | None:
         for m in reversed(self.items()):

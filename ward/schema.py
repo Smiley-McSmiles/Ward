@@ -48,7 +48,7 @@ DEFAULT_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"]
 PAGES = (
     ("general", N_("General"), "preferences-system-symbolic"),
     ("appearance", N_("Appearance"), "applications-graphics-symbolic"),
-    ("chats", N_("Chats"), "chat-bubbles-symbolic"),
+    ("chats", N_("Chats"), "ward-chat-symbolic"),
     ("notifications", N_("Notifications"), "preferences-system-notifications-symbolic"),
     ("accounts", N_("Accounts"), "system-users-symbolic"),
     ("encryption", N_("Encryption"), "channel-secure-symbolic"),

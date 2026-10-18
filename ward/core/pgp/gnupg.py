@@ -235,7 +235,7 @@ class GnuPG:
         """A new Ed25519/Cv25519 key.  gpg-agent asks for the passphrase unless one is given (tests use '').
         Returns its fingerprint."""
         extra = ["--pinentry-mode", "loopback", "--passphrase", passphrase] if passphrase is not None else []
-        _c, _out, err = self._run(extra + ["--quick-generate-key", uid, "default", "default", expire], status=True,
+        _c, _out, err = self._run([*extra, "--quick-generate-key", uid, "default", "default", expire], status=True,
                                   timeout=600)
         for line in err.splitlines():
             m = re.match(r"\[GNUPG:\] KEY_CREATED \w ([0-9A-F]{40,64})", line)
@@ -251,7 +251,7 @@ class GnuPG:
         args = ["--trust-model", "always", "--sign", "--encrypt", "--local-user", signer]
         for r in recipients:
             args += ["--recipient", r]
-        _c, out, _e = self._run(args + ["--output", "-"], data, status=True)
+        _c, out, _e = self._run([*args, "--output", "-"], data, status=True)
         return out
 
     def decrypt_verify(self, data: bytes) -> Decrypted:

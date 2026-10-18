@@ -3,7 +3,6 @@
 import os
 
 import pytest
-
 from helpers import account, befriend, fresh, make_core, session, stop, wait_for
 
 pytestmark = pytest.mark.integration
@@ -44,7 +43,7 @@ def test_private_group(trust_test_ca, tmp_path, run):
             await wait_for(lambda: [m.body for m in bml.items() if m.kind != "status"] == ["Dinner at 8?"],
                            what="group message at bob")
             await wait_for(lambda: sent.status >= 2 and sent.stanza_id, what="reflection marks it delivered")
-            got = [m for m in bml.items() if m.kind != "status"][0]
+            got = next(m for m in bml.items() if m.kind != "status")
             assert got.sender == alice_nick and got.stanza_id == sent.stanza_id
 
             # reactions use the room's stanza id
@@ -134,7 +133,9 @@ def test_file_transfer(trust_test_ca, tmp_path, run):
             ba = m.attachments[0]
             assert ba.name == "notes.txt" and ba.size == src.stat().st_size and m.body == ""
             path = await bob.files.download(bchat, m, ba)
-            assert path and open(path).read() == src.read_text()
+            assert path
+            with open(path) as fh:
+                assert fh.read() == src.read_text()
             assert ba.state == "done"
         finally:
             await stop(alice, bob)

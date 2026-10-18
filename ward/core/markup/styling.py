@@ -5,8 +5,21 @@ visible (dimmed), as the specification recommends."""
 from __future__ import annotations
 
 from .parse import postprocess_inlines
-from .tree import (BOLD, CODE, DIRECTIVE, ITALIC, STRIKE, Block, CodeBlock, Document, Inlines, Paragraph, Quote,
-                   Run, merge_runs)
+from .tree import (
+    BOLD,
+    CODE,
+    DIRECTIVE,
+    ITALIC,
+    STRIKE,
+    Block,
+    CodeBlock,
+    Document,
+    Inlines,
+    Paragraph,
+    Quote,
+    Run,
+    merge_runs,
+)
 
 _STYLE = {"*": BOLD, "_": ITALIC, "~": STRIKE, "`": CODE}
 

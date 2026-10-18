@@ -65,7 +65,8 @@ def test_settings_roundtrip_and_signals(ward_home):
     s.set("chats.quick_reactions", ["👍", "🔥"])
     s.flush()
     assert seen == ["appearance.style"]
-    on_disk = json.load(open(paths.settings_file()))
+    with open(paths.settings_file()) as fh:
+        on_disk = json.load(fh)
     assert on_disk["appearance.style"] == "dark"
     assert "general.background" not in on_disk          # defaults are not written
     s2 = Settings()

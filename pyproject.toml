@@ -72,6 +72,9 @@ ignore = [
     "UP031",   # %-formatting is used for translatable strings
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tools/make_icons.py" = ["E501"]   # SVG path data
+
 [tool.ruff.lint.isort]
 known-first-party = ["ward"]
 

@@ -2,8 +2,8 @@
 files and encrypted private groups."""
 
 import pytest
-
 from helpers import account, befriend, fresh, make_core, session, stop, wait_for
+
 from ward import deps
 
 pytestmark = [pytest.mark.integration,
@@ -124,7 +124,9 @@ def test_legacy_omemo_and_encrypted_file(trust_test_ca, tmp_path, run):
             await wait_for(lambda: dml.items()[-1].attachments, 20, "attachment at dave")
             m = dml.items()[-1]
             path = await dave.files.download(dchat, m, m.attachments[0])
-            assert path and open(path, "rb").read() == src.read_bytes()
+            assert path
+            with open(path, "rb") as fh:
+                assert fh.read() == src.read_bytes()
         finally:
             await stop(carol, dave)
 

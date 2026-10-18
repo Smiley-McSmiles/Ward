@@ -198,7 +198,7 @@ class GLibEventLoop(asyncio.SelectorEventLoop):
             delta = self._scheduled[0]._when - self.time()
             if delta <= self._clock_resolution:
                 return 0
-            return min(int(math.ceil(delta * 1000)), _MAX_TIMEOUT_MS)
+            return min(math.ceil(delta * 1000), _MAX_TIMEOUT_MS)
         return -1
 
     def _dispatch(self) -> None:

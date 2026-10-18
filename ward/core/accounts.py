@@ -98,9 +98,11 @@ class Accounts(GObject.Object):
         if password:
             try:
                 await secrets.store(jid, password, acc.option("store_password"))
-            except secrets.KeyringUnavailable:
+            except secrets.KeyringUnavailable as e:
+                # still usable now; the password is asked again after a restart (the account says so)
+                log.warning("%s: password kept for this session only: %s", jid, e)
                 secrets.remember_for_session(jid, password)
-                raise
+                acc.options["_keyring_failed"] = True
         self.by_id[acc.id] = acc
         self.store.append(acc)
         self.emit("added", acc)

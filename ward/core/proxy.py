@@ -30,7 +30,7 @@ class ProxyError(OSError):
 TOR = Proxy("socks5", "127.0.0.1", 9050)
 
 
-def from_options(opts: dict, password: str = "") -> Proxy | None | str:
+def from_options(opts: dict, password: str = "") -> Proxy | str | None:
     """Proxy from account options; returns "system" when the system settings must be asked."""
     kind = opts.get("proxy", "system")
     if kind == "none":

@@ -1,8 +1,8 @@
 """End to end: two people on a real server - contacts, presence, and every 1:1 messaging feature."""
 
 import pytest
-
 from helpers import account, befriend, fresh, make_core, session, stop, wait_for
+
 from ward.core.models import STATUS_DELIVERED, STATUS_READ
 
 pytestmark = pytest.mark.integration

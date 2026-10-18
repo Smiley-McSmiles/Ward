@@ -33,12 +33,18 @@ from .storage import WardStorage
 
 log = logging.getLogger("ward.omemo")
 
-import omemo  # noqa: E402
-import twomemo  # noqa: E402
-import twomemo.etree  # noqa: E402
-from omemo.session_manager import (MessageNotForUs, NoEligibleDevices, SenderDistrusted,  # noqa: E402
-                                   SessionManager, StillUndecided, TrustDecisionFailed)
-from omemo.types import TrustLevel  # noqa: E402
+import omemo
+import twomemo
+import twomemo.etree
+from omemo.session_manager import (
+    MessageNotForUs,
+    NoEligibleDevices,
+    SenderDistrusted,
+    SessionManager,
+    StillUndecided,
+    TrustDecisionFailed,
+)
+from omemo.types import TrustLevel
 
 try:
     import oldmemo

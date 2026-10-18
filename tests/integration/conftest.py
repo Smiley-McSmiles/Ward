@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from server import ProsodyServer  # noqa: E402
+from server import ProsodyServer
 
 pytestmark = pytest.mark.integration
 
