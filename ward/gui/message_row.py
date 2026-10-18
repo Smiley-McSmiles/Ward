@@ -302,6 +302,17 @@ class MessageRow(Gtk.Box):
             more.connect("clicked", expand)
             box.append(more)
             return box
+        if limit and body.count("\n") > limit:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            box.append(w)
+            less = Gtk.Button(label=_("Show less"), css_classes=["flat"], halign=Gtk.Align.START)
+
+            def collapse(_b):
+                self._expanded = False
+                self._changed()
+            less.connect("clicked", collapse)
+            box.append(less)
+            return box
         return w
 
     def _attachment(self, m: MessageItem, att: AttachmentItem) -> Gtk.Widget:
