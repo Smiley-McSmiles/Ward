@@ -404,9 +404,6 @@ class MessageRow(Gtk.Box):
         reply = Gtk.Button(icon_name="ward-reply-symbolic", css_classes=["flat"], tooltip_text=_("Reply"))
         reply.connect("clicked", lambda *_: self.view.start_reply(m))
         bar.append(reply)
-        menu = Gtk.Button(icon_name="view-more-symbolic", css_classes=["flat"], tooltip_text=_("More"))
-        menu.connect("clicked", lambda b: self.view.message_menu(self, m, None, None, b))
-        bar.append(menu)
         self.hover = bar
         self.overlay.add_overlay(bar)
 
