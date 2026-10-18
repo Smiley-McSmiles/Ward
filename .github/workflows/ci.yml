@@ -129,7 +129,19 @@ jobs:
         uses: vmactions/netbsd-vm@v1
         with:
           usesh: true
+          prepare: |
+            # The VM image has no X11 sets.  GTK's packages need the X client libraries, and pkg_add refuses
+            # to install them without /usr/X11R7/lib/libX11.so.7.  The release sets are .tar.xz now.
+            rel=$(uname -r)
+            arch=$(uname -m)
+            ftp -o /tmp/xbase.tar.xz "https://ftp.netbsd.org/pub/NetBSD/NetBSD-$rel/$arch/binary/sets/xbase.tar.xz"
+            tar -xJf /tmp/xbase.tar.xz -C /
           run: |
+            # The image's pcre2/glib2 can be older than the repository's; pkg_add will not upgrade a
+            # dependency on its own when it is already installed.
+            pkg_add -u pcre2 glib2 || true
+            # pkgsrc has no slixmpp package, so install.sh vendors it with pip; pycares needs CMake to build.
+            pkg_add cmake || true
             sh ./install.sh --install-deps
             ward --version && ward --check
 
