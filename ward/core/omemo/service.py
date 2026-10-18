@@ -36,7 +36,6 @@ log = logging.getLogger("ward.omemo")
 
 import omemo
 import twomemo
-import twomemo.etree
 from omemo.session_manager import (
     MessageNotForUs,
     NoEligibleDevices,
@@ -49,12 +48,18 @@ from omemo.types import TrustLevel
 
 try:
     import oldmemo
-    import oldmemo.etree
-    HAVE_OLDMEMO = True
+    HAVE_OLDMEMO = deps.legacy_omemo_available()
 except Exception as _e:  # optional: OMEMO 2 only (missing, or broken by an incompatible dependency)
     logging.getLogger("ward.omemo").info("legacy OMEMO unavailable: %s", _e)
     oldmemo = None  # type: ignore[assignment]
     HAVE_OLDMEMO = False
+
+
+def _load_etree() -> None:
+    """twomemo.etree compiles three XML schemas with xmlschema on import (about 100 ms).  Do that in the worker
+    pool when the first OMEMO manager starts, not on the main thread while the window is opening."""
+    import twomemo.etree  # noqa: F401
+
 
 NS2 = twomemo.twomemo.NAMESPACE
 NS1 = oldmemo.oldmemo.NAMESPACE if HAVE_OLDMEMO else "eu.siacs.conversations.axolotl"
@@ -232,6 +237,7 @@ class OmemoService(GObject.Object):
                 self._creating.pop(aid, None)
 
     async def _create(self, session) -> SessionManager:
+        await aio.run_in_thread(_load_etree)
         acc = session.account
         storage = WardStorage(self.core.db, acc.id)
         # the internal option _omemo_backends (legacy | omemo2) lets the test-suite play an older client

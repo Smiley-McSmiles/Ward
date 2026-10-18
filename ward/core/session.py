@@ -95,15 +95,27 @@ def cert_info_from_der(der: bytes, host: str, port: int, domain: str, error: str
     return info
 
 
-def base_ssl_context(verify: bool = True) -> ssl.SSLContext:
-    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    extra = os.environ.get("WARD_EXTRA_CA")
-    if extra and os.path.isfile(extra):
-        ctx.load_verify_locations(cafile=extra)
+_ssl_cache: dict[str, ssl.SSLContext] = {}
+
+
+def base_ssl_context(verify: bool = True, fresh: bool = False) -> ssl.SSLContext:
+    """The TLS context.  Verifying contexts are shared (loading the CA store takes about 15 ms, and every account
+    asked for one twice); fresh=True makes one of its own, for an account with a client certificate."""
     if not verify:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    extra = os.environ.get("WARD_EXTRA_CA") or ""
+    if not fresh and extra in _ssl_cache:
+        return _ssl_cache[extra]
+    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    if extra and os.path.isfile(extra):
+        ctx.load_verify_locations(cafile=extra)
+    if not fresh:
+        _ssl_cache[extra] = ctx
     return ctx
 
 
@@ -420,9 +432,10 @@ class AccountSession(GObject.Object):
             x.enable_direct_tls = cand.direct_tls
             x.enable_starttls = not cand.direct_tls
         verify = self._pinned_fp is None
-        x.ssl_context = base_ssl_context(verify)
         cert = self.account.option("client_cert")
-        if cert and os.path.isfile(cert):
+        has_cert = bool(cert and os.path.isfile(cert))
+        x.ssl_context = base_ssl_context(verify, fresh=has_cert)
+        if has_cert:
             with contextlib.suppress(OSError, ssl.SSLError):
                 x.ssl_context.load_cert_chain(cert)
         x.event("connecting")

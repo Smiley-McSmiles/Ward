@@ -61,6 +61,7 @@ class Core(GObject.Object):
         "session-added": (GObject.SignalFlags.RUN_LAST, None, (object,)),
         "cert-problem": (GObject.SignalFlags.RUN_LAST, None, (object, object)),   # account, CertInfo
         "online": (GObject.SignalFlags.RUN_LAST, None, (object, bool)),           # account, resumed
+        "omemo-ready": (GObject.SignalFlags.RUN_LAST, None, ()),                  # Core.omemo is set (or failed)
     }
 
     def __init__(self, settings: Settings | None = None, db: Database | None = None, connect: bool = True):
@@ -91,17 +92,8 @@ class Core(GObject.Object):
         self.notifier = Notifier(self)
         self.omemo = None
         self.omemo_error = ""
+        self._omemo_loaded = False
         self.pgp = None
-        try:
-            from .omemo.service import OmemoService
-
-            self.omemo = OmemoService(self)
-        except Exception as e:  # missing libraries: encryption shows as unavailable, everything else works
-            from .. import deps
-
-            self.omemo_error = "; ".join("%s: %s" % kv for kv in deps.IMPORT_ERRORS.items()) or \
-                "%s: %s" % (type(e).__name__, e)
-            log.warning("OMEMO unavailable: %s", self.omemo_error)
         try:
             from .pgp.service import PgpService
 
@@ -120,6 +112,7 @@ class Core(GObject.Object):
         if self.started:
             return
         await aio.run_in_thread(self.db.open)
+        await self.load_omemo()
         await self.accounts.load()
         await self.roster.contacts.load()
         await self.chats.load()
@@ -133,6 +126,34 @@ class Core(GObject.Object):
                 if acc.enabled and acc.option("autoconnect"):
                     aio.spawn(self.connect_account(acc))
         aio.spawn(self._retention())
+
+    async def load_omemo(self) -> None:
+        """Create the OMEMO service once its libraries have loaded.  The application starts that import in the
+        background while it builds the window (it takes about 170 ms), so this normally waits for nothing."""
+        if self._omemo_loaded:
+            return
+        self._omemo_loaded = True
+        from .omemo import preload, result
+
+        await aio.run_in_thread(preload().join)
+        module, error = result()
+        if module is None:
+            from .. import deps
+
+            self.omemo_error = "; ".join("%s: %s" % kv for kv in deps.IMPORT_ERRORS.items()) or \
+                ("%s: %s" % (type(error).__name__, error) if error is not None else "OMEMO is not installed")
+            log.warning("OMEMO unavailable: %s", self.omemo_error)
+            self.emit("omemo-ready")
+            return
+        try:
+            self.omemo = module.OmemoService(self)
+        except Exception as e:  # missing libraries: encryption shows as unavailable, everything else works
+            from .. import deps
+
+            self.omemo_error = "; ".join("%s: %s" % kv for kv in deps.IMPORT_ERRORS.items()) or \
+                "%s: %s" % (type(e).__name__, e)
+            log.warning("OMEMO unavailable: %s", self.omemo_error)
+        self.emit("omemo-ready")
 
     async def shutdown(self) -> None:
         for s in list(self.sessions.values()):
