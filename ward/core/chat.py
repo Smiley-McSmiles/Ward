@@ -790,8 +790,9 @@ class ChatService(GObject.Object):
             return
         el = session.new_message(chat.jid, "groupchat" if group else "chat", util.random_id(18))
         stanzas.add_reactions(el, target, mine)
-        if await self._send_element(session, chat, el, None):
-            await self._set_reactions(chat, msg.id, me, mine, now_ms())
+        if not await self._send_element(session, chat, el, None):
+            raise RuntimeError(_("The reaction could not be sent"))
+        await self._set_reactions(chat, msg.id, me, mine, now_ms())
 
     def set_chat_state(self, chat: ChatItem, state: str) -> None:
         """composing / paused / active from the composer (sent only on changes)."""

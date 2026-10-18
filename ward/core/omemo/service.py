@@ -581,6 +581,8 @@ class OmemoService(GObject.Object):
         except NoEligibleDevices as e:
             if recipients == {acc.jid}:
                 raise OnlyThisDevice() from None
+            if body is None and self.legacy_enabled:
+                return el, ""       # a reaction for legacy OMEMO users: see below
             names = ", ".join(sorted(getattr(e, "bare_jids", recipients) or recipients))
             raise EncryptionBlocked(_("Not sent: %s has no trusted device that can receive encrypted messages. "
                                       "Check the contact's devices, or turn encryption off for this chat.")
@@ -604,6 +606,10 @@ class OmemoService(GObject.Object):
         if not namespaces:
             if recipients == {acc.jid}:
                 raise OnlyThisDevice()
+            if body is None:
+                # a reaction (or other body-less update) for people on legacy OMEMO, which can only encrypt a body:
+                # it goes out unencrypted, as Conversations, Monal and Dino send them
+                return el, ""
             if chat.type == "groupchat" and not recipients:
                 raise EncryptionBlocked(_("Not sent: nobody else in this group can read encrypted messages yet. "
                                           "Invite people first, or turn encryption off for this group."))

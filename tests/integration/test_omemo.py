@@ -113,6 +113,10 @@ def test_legacy_omemo_and_encrypted_file(trust_test_ca, tmp_path, run):
             dml = await dave.chats.open_messages(dchat)
             await wait_for(lambda: dml.items() and dml.items()[0].body == "legacy hello", what="legacy decrypt")
             assert dml.items()[0].encryption == "omemo"
+            # reactions: legacy OMEMO only encrypts a body, so they go out like Conversations sends them
+            await carol.messaging.react(chat, sent, "👍")
+            await wait_for(lambda: dml.items()[0].reactions, what="reaction at dave")
+            assert sent.reactions and sent.reactions[0][0] == "👍"
 
             # an encrypted file: only an aesgcm:// link, inside the encrypted body
             src = tmp_path / "photo.bin"

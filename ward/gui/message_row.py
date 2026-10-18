@@ -401,6 +401,9 @@ class MessageRow(Gtk.Box):
         chooser = Gtk.EmojiChooser()
         chooser.connect("emoji-picked", lambda _c, e: self.view.react(m, e))
         more.set_popover(chooser)
+        # keep the bar (and so the picker) while the picker is open: the pointer leaves the row to use it
+        chooser.connect("closed", lambda *_: self._hover(False))
+        self.react_button = more
         bar.append(more)
         reply = Gtk.Button(icon_name="ward-reply-symbolic", css_classes=["flat"], tooltip_text=_("Reply"))
         reply.connect("clicked", lambda *_: self.view.start_reply(m))
@@ -410,6 +413,8 @@ class MessageRow(Gtk.Box):
 
     def _hover(self, inside: bool) -> None:
         if self.hover is not None:
+            if not inside and getattr(self, "react_button", None) is not None and self.react_button.get_active():
+                return
             self.hover.set_visible(inside)
         if self.time_hover is not None and self.view.settings["appearance.timestamps"] == "hover":
             self.time_hover.set_opacity(1 if inside else 0)
