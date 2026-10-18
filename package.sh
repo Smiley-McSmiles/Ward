@@ -11,6 +11,8 @@
 #                                    package, the summary says why, and recipes are written regardless
 #   ./package.sh --deb --arch        selected packages (plain names work too: ./package.sh deb arch)
 #   ./package.sh --container --rpm   build inside a Fedora container (podman or docker), from any distribution
+#   ./package.sh --version 1.1.0 --all   set the version everywhere first (tools/set_version.py), then build;
+#                                    pre-releases like 1.1.0-rc1 work and sort before 1.1.0 in every package format
 #   ./package.sh --help
 # ==============================================================================
 # shellcheck disable=SC2016,SC2012,SC2001   # scriptlets are single-quoted on purpose: they expand at install time
@@ -18,7 +20,25 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$ROOT"
+# --version X.Y.Z[-rc1] (or --version=...) sets the version everywhere before anything is built
+args=(); new_version=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --version) new_version=${2:-}; [ -n "$new_version" ] || { echo "--version needs a version, e.g. --version 1.1.0" >&2; exit 2; }; shift ;;
+        --version=*) new_version=${1#*=} ;;
+        *) args+=("$1") ;;
+    esac
+    shift
+done
+set -- ${args[@]+"${args[@]}"}
+if [ -n "$new_version" ]; then python3 "$ROOT/tools/set_version.py" "$new_version" || exit 2; fi
 VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ward/__init__.py)
+# The version as each format spells it: deb and rpm sort "~" before the release (1.1.0~rc1 < 1.1.0), Alpine and
+# Gentoo use "_rc1", Arch, Void and the BSD package tools take no "-".  The same for a plain release (1.1.0).
+case "$VERSION" in
+    *-*) DEBVER=${VERSION/-/\~}; ALPVER=${VERSION/-/_}; PLAINVER=${VERSION/-/} ;;
+    *) DEBVER=$VERSION; ALPVER=$VERSION; PLAINVER=$VERSION ;;
+esac
 NAME=ward
 APPID=io.github.smiley_mcsmiles.Ward
 DIST=$ROOT/dist
@@ -108,7 +128,7 @@ build_deb() {
     size=$(du -sk "$root" | cut -f1)
     {
         echo "Package: $NAME"
-        echo "Version: $VERSION"
+        echo "Version: $DEBVER"
         echo "Section: net"
         echo "Priority: optional"
         echo "Architecture: all"
@@ -128,8 +148,8 @@ build_deb() {
     printf '#!/bin/sh\nset -e\nif [ "$1" = remove ] || [ "$1" = purge ]; then\n%s\nfi\nexit 0\n' "$POSTRM_COMMON" > "$root/DEBIAN/postrm"
     chmod 755 "$root/DEBIAN/postinst" "$root/DEBIAN/postrm"
     mkdir -p "$DIST"
-    python3 "$ROOT/packaging/mkdeb.py" "$root" "$DIST/${NAME}_${VERSION}_all.deb"
-    log "  -> dist/${NAME}_${VERSION}_all.deb"
+    python3 "$ROOT/packaging/mkdeb.py" "$root" "$DIST/${NAME}_${DEBVER}_all.deb"
+    log "  -> dist/${NAME}_${DEBVER}_all.deb"
 }
 
 # ---------------------------------------------------------------------------------------------- RPM
@@ -141,7 +161,7 @@ recipe_rpm() {
 %global source_date_epoch_from_changelog 0
 
 Name:           $NAME
-Version:        $VERSION
+Version:        $DEBVER
 Release:        1%{?dist}
 Summary:        $DESC
 License:        MIT
@@ -200,7 +220,7 @@ $(printf '%s' "$POSTRM_COMMON")
 /usr/share/fish/vendor_completions.d/ward.fish
 
 %changelog
-* Sun Oct 18 2026 Ward contributors <ward@users.noreply.github.com> - $VERSION-1
+* Sun Oct 18 2026 Ward contributors <ward@users.noreply.github.com> - $DEBVER-1
 - Ward $VERSION
 SPEC
 }
@@ -221,7 +241,7 @@ build_rpm() {
         exit 1
     fi
     cp "$top"/RPMS/*/*.rpm "$DIST/"
-    log "  -> dist/$(cd "$DIST" && ls -- *"$VERSION"*.rpm)"
+    log "  -> dist/$(cd "$DIST" && ls -- *"$DEBVER"*.rpm)"
 }
 
 # ---------------------------------------------------------------------------------------------- Arch
@@ -235,7 +255,7 @@ recipe_arch() {
     {
         echo "# Maintainer: $MAINT"
         echo "pkgname=$NAME"
-        echo "pkgver=$VERSION"
+        echo "pkgver=$PLAINVER"
         echo "pkgrel=1"
         echo "pkgdesc=\"$DESC\""
         echo "arch=('any')"
@@ -243,11 +263,11 @@ recipe_arch() {
         echo "license=('MIT')"
         printf "depends=("; printf "'%s' " "${ARCH_DEPENDS[@]}"; echo ")"
         printf "optdepends=("; printf "'%s'\n            " "${ARCH_OPTDEPENDS[@]}"; echo ")"
-        echo "source=(\"\$pkgname-\$pkgver.tar.gz::$URL/releases/download/v\$pkgver/\$pkgname-\$pkgver.tar.gz\")"
+        echo "source=(\"$SRCNAME.tar.gz::$URL/releases/download/v$VERSION/$SRCNAME.tar.gz\")"
         echo "sha256sums=('SKIP')"
         echo
         echo "package() {"
-        echo "  cd \"\$srcdir/\$pkgname-\$pkgver\""
+        echo "  cd \"\$srcdir/$SRCNAME\""
         echo "  DESTDIR=\"\$pkgdir\" ./install.sh --prefix /usr --no-post"
         echo "  install -Dm644 LICENSE \"\$pkgdir/usr/share/licenses/\$pkgname/LICENSE\""
         echo "}"
@@ -267,10 +287,10 @@ build_arch() {
     local args=() d
     for d in "${ARCH_DEPENDS[@]}"; do args+=(--depend "$d"); done
     for d in "${ARCH_OPTDEPENDS[@]}"; do args+=(--optdepend "$d"); done
-    python3 "$ROOT/packaging/mkarch.py" "$root" "$DIST/$NAME-$VERSION-1-any.pkg.tar.xz" \
-        --name "$NAME" --version "$VERSION" --desc "$DESC" --url "$URL" --packager "$MAINT" \
+    python3 "$ROOT/packaging/mkarch.py" "$root" "$DIST/$NAME-$PLAINVER-1-any.pkg.tar.xz" \
+        --name "$NAME" --version "$PLAINVER" --desc "$DESC" --url "$URL" --packager "$MAINT" \
         "${args[@]}" --install "$BUILD/arch/ward.install" >/dev/null
-    log "  -> dist/$NAME-$VERSION-1-any.pkg.tar.xz   (install: sudo pacman -U ...)"
+    log "  -> dist/$NAME-$PLAINVER-1-any.pkg.tar.xz   (install: sudo pacman -U ...)"
 }
 
 # ---------------------------------------------------------------------------------------------- Void
@@ -281,15 +301,16 @@ recipe_void() {
     cat > "$DIST/recipes/void/template" <<TPL
 # Template file for 'ward' (copy to srcpkgs/ward/template in void-packages)
 pkgname=$NAME
-version=$VERSION
+version=$PLAINVER
 revision=1
+wrksrc="$SRCNAME"
 build_style=meta
 depends="$VOID_DEPENDS"
 short_desc="$DESC"
 maintainer="$MAINT"
 license="MIT"
 homepage="$URL"
-distfiles="\${homepage}/releases/download/v\${version}/\${pkgname}-\${version}.tar.gz"
+distfiles="\${homepage}/releases/download/v$VERSION/$SRCNAME.tar.gz"
 checksum=SKIP
 
 do_install() {
@@ -308,9 +329,9 @@ build_void() {
     local root=$BUILD/void/${NAME}-$VERSION
     stage "$root" /usr
     mkdir -p "$DIST"
-    (cd "$DIST" && xbps-create -A noarch -n "${NAME}-${VERSION}_1" -s "$DESC" -D "$VOID_DEPENDS" -H "$URL" -l MIT \
+    (cd "$DIST" && xbps-create -A noarch -n "${NAME}-${PLAINVER}_1" -s "$DESC" -D "$VOID_DEPENDS" -H "$URL" -l MIT \
         -m "$MAINT" -t "net" "$root" >/dev/null)
-    log "  -> dist/${NAME}-${VERSION}_1.noarch.xbps   (install: sudo xbps-install -R dist $NAME)"
+    log "  -> dist/${NAME}-${PLAINVER}_1.noarch.xbps   (install: sudo xbps-install -R dist $NAME)"
 }
 
 # ---------------------------------------------------------------------------------------------- Alpine
@@ -319,7 +340,7 @@ recipe_alpine() {
     cat > "$DIST/recipes/alpine/APKBUILD" <<APK
 # Maintainer: $MAINT
 pkgname=$NAME
-pkgver=$VERSION
+pkgver=$ALPVER
 pkgrel=0
 pkgdesc="$DESC"
 url="$URL"
@@ -327,8 +348,8 @@ arch="noarch"
 license="MIT"
 depends="python3 py3-gobject3 gtk4.0 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
 subpackages="\$pkgname-doc \$pkgname-bash-completion \$pkgname-zsh-completion \$pkgname-fish-completion"
-source="\$pkgname-\$pkgver.tar.gz::$URL/releases/download/v\$pkgver/\$pkgname-\$pkgver.tar.gz"
-builddir="\$srcdir/\$pkgname-\$pkgver"
+source="$SRCNAME.tar.gz::$URL/releases/download/v$VERSION/$SRCNAME.tar.gz"
+builddir="\$srcdir/$SRCNAME"
 options="!check"   # the test-suite needs a display and a Prosody server
 
 package() {
@@ -346,7 +367,7 @@ build_alpine() {
 # ---------------------------------------------------------------------------------------------- Gentoo
 recipe_gentoo() {
     mkdir -p "$DIST/recipes/gentoo/net-im/ward"
-    cat > "$DIST/recipes/gentoo/net-im/ward/ward-$VERSION.ebuild" <<'EBUILD'
+    cat > "$DIST/recipes/gentoo/net-im/ward/ward-$ALPVER.ebuild" <<'EBUILD'
 # Copyright 2026 Ward contributors
 # Distributed under the terms of the MIT license
 
@@ -358,7 +379,11 @@ inherit python-single-r1 xdg
 
 DESCRIPTION="XMPP client for GTK 4 and libadwaita, encrypted by default"
 HOMEPAGE="https://github.com/smiley-mcsmiles/ward"
-SRC_URI="https://github.com/smiley-mcsmiles/ward/releases/download/v${PV}/${P}.tar.gz"
+# a pre-release is 1.1.0_rc1 here and 1.1.0-rc1 upstream
+MY_PV="${PV/_/-}"
+MY_P="${PN}-${MY_PV}"
+SRC_URI="https://github.com/smiley-mcsmiles/ward/releases/download/v${MY_PV}/${MY_P}.tar.gz"
+S="${WORKDIR}/${MY_P}"
 
 LICENSE="MIT"
 SLOT="0"
@@ -460,7 +485,7 @@ build_freebsd() {
     local manifest=$BUILD/freebsd/+MANIFEST
     {
         echo "name: $NAME"
-        echo "version: \"$VERSION\""
+        echo "version: \"$PLAINVER\""
         echo "origin: net-im/ward"
         echo "comment: \"$DESC\""
         echo "desc: \"$(echo "$LONGDESC" | tr '\n' ' ')\""
@@ -480,7 +505,7 @@ build_freebsd() {
     } > "$manifest"
     python3 "$ROOT/packaging/plist.py" "$root" /usr/local freebsd | sed 's|^|/usr/local/|' > "$BUILD/freebsd/plist"
     pkg create -M "$manifest" -p "$BUILD/freebsd/plist" -r "$root" -o "$DIST"
-    log "  -> dist/$NAME-$VERSION.pkg   (install: sudo pkg add dist/$NAME-$VERSION.pkg)"
+    log "  -> dist/$NAME-$PLAINVER.pkg   (install: sudo pkg add dist/$NAME-$PLAINVER.pkg)"
 }
 
 # ---------------------------------------------------------------------------------------------- OpenBSD
@@ -491,6 +516,7 @@ recipe_openbsd() {
 COMMENT =		XMPP client for GTK 4, encrypted by default
 
 DISTNAME =		ward-$VERSION
+PKGNAME =		ward-$PLAINVER
 CATEGORIES =		net x11
 HOMEPAGE =		$URL
 MAINTAINER =		Ward contributors <ward@users.noreply.github.com>
@@ -541,6 +567,7 @@ recipe_netbsd() {
 # \$NetBSD\$
 
 DISTNAME=	ward-$VERSION
+PKGNAME=	ward-$PLAINVER
 CATEGORIES=	chat python
 MASTER_SITES=	$URL/releases/download/v$VERSION/
 
@@ -620,6 +647,8 @@ Usage: ./package.sh [options]
   --flatpak     Flatpak bundle (needs flatpak-builder) and manifest
   --recipes     only the recipes in dist/recipes/
   --container   build inside a Fedora container (podman/docker), e.g. --container --rpm
+  --version V   set the version everywhere first (code, README, man page, metainfo, CHANGELOG), e.g.
+                --version 1.1.0 --all, or a pre-release: --version 1.1.0-rc1 --all
   --clean       remove dist/ and build/
   --help, -h    this message
 
@@ -627,9 +656,19 @@ Plain names work too (./package.sh deb arch). Every build also writes dist/SHA25
 HELP
 }
 
+release_files() {  # this version's packages in dist/, by their exact names (other versions are left out)
+    local f
+    for f in "$DIST/$SRCNAME.tar.gz" "$DIST/${NAME}_${DEBVER}_all.deb" "$DIST/$NAME-$DEBVER"-1.*.rpm \
+             "$DIST/$NAME-$PLAINVER"-1-any.pkg.tar.* "$DIST/$NAME-${PLAINVER}"_1.*.xbps "$DIST/$NAME-$PLAINVER.pkg" \
+             "$DIST/$NAME-$VERSION.flatpak"; do
+        [ -f "$f" ] && echo "$f"
+    done
+    return 0
+}
+
 checksums() {
     local files=() f
-    for f in "$DIST"/*"$VERSION"*; do
+    for f in $(release_files); do
         case "$f" in
             *.tar.gz|*.deb|*.rpm|*.pkg.tar.*|*.xbps|*.pkg|*.flatpak) [ -f "$f" ] && files+=("$(basename "$f")") ;;
         esac
@@ -654,7 +693,7 @@ summary() {
     local f
     echo
     ok "Packages in $DIST/:"
-    for f in "$DIST"/*"$VERSION"* "$DIST/SHA256SUMS"; do
+    for f in $(release_files) "$DIST/SHA256SUMS"; do
         [ -f "$f" ] && printf '    %s\n' "$(basename "$f")"
     done
     [ -d "$DIST/recipes" ] && printf '    recipes/  (%s)\n' "$(cd "$DIST/recipes" && ls | tr '\n' ' ' | sed 's/ $//')"
