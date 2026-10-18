@@ -1,5 +1,4 @@
-from hypothesis import given, settings
-from hypothesis import strategies as st
+from _fuzz import given, settings, st
 
 from ward.core.markup import emoji, parse, parse_markdown, parse_styling, preview, to_html, to_plain
 from ward.core.markup.tree import (

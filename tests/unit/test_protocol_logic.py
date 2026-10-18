@@ -1,8 +1,7 @@
 import datetime as dt
 from xml.etree import ElementTree as ET
 
-from hypothesis import given, settings
-from hypothesis import strategies as st
+from _fuzz import given, settings, st
 
 from ward.core import colors, forms, search, stanzas, uri
 from ward.core.stanzas import q

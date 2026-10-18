@@ -122,7 +122,7 @@ packages() {
     case "$(pm_name)" in
         apt-get) REQ="python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-slixmpp python3-markdown-it python3-cryptography"
                  OPT="gir1.2-gtksource-5 gir1.2-spelling-1 gir1.2-secret-1 python3-pil python3-segno python3-linkify-it python3-mdit-py-plugins python3-pip gnupg libgtk-4-media-gstreamer desktop-file-utils" ;;
-        dnf) REQ="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
+        dnf) REQ="python3 python3-gobject gobject-introspection cairo-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
              OPT="gtksourceview5 libspelling libsecret python3-pillow python3-segno python3-linkify-it-py python3-mdit-py-plugins python3-pip gnupg2 gstreamer1-plugins-good desktop-file-utils" ;;
         zypper) REQ="python3 python3-gobject typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 python3-slixmpp python3-markdown-it-py python3-cryptography"
                 OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-segno python3-linkify-it-py python3-pip gpg2 desktop-file-utils" ;;
@@ -185,8 +185,12 @@ install_deps() {
     [ "$(pm_name)" = apt-get ] && { apt-get update || warn "apt-get update failed"; }
     [ "$(pm_name)" = xbps-install ] && { xbps-install -S >/dev/null 2>&1 || true; }
     packages
+    # all at once; if the package manager refuses (one name it doesn't know makes most refuse everything), one by
+    # one, so the rest still get installed and the warning names exactly what is missing
     # shellcheck disable=SC2086
-    install_pkgs $REQ || warn "could not install all required packages ($REQ)"
+    if ! install_pkgs $REQ; then
+        for p in $REQ; do install_pkgs "$p" || warn "required package not available here: $p"; done
+    fi
     # one at a time: a recommended package missing from this release must not stop the others
     for p in $OPT; do install_pkgs "$p" >/dev/null 2>&1 || warn "optional package not available: $p"; done
 }
@@ -234,22 +238,20 @@ preflight() {
     have gpg || have gpg2 || say "OpenPGP: gpg not found (optional)"
 }
 
-vendor() {   # fetch modules the system lacks with pip into LIBDIR/vendor
+vendor() {   # fetch modules the system lacks with pip into LIBDIR/vendor (VENDOR=2: only what Ward needs to start)
     want=""
     module slixmpp || want="$want slixmpp>=1.8"
     module markdown_it || want="$want markdown-it-py>=2"
-    module mdit_py_plugins || want="$want mdit-py-plugins"
-    module linkify_it || want="$want linkify-it-py"
     module cryptography || want="$want cryptography"
-    module segno || want="$want segno"
-    module omemo || want="$want omemo>=1.0"
-    module twomemo || want="$want twomemo>=1.0"
-    module x3dh || want="$want x3dh>=1.0"
-    module doubleratchet || want="$want doubleratchet>=1.0"
-    module xeddsa || want="$want xeddsa>=1.0"
-    if [ "$LEGACY" -eq 1 ]; then module oldmemo || want="$want oldmemo>=1.0"; fi
+    if [ "$VENDOR" -eq 1 ]; then
+        module mdit_py_plugins || want="$want mdit-py-plugins"
+        module linkify_it || want="$want linkify-it-py"
+        module segno || want="$want segno"
+        for m in omemo twomemo x3dh doubleratchet xeddsa; do module "$m" || want="$want $m>=1.0"; done
+        if [ "$LEGACY" -eq 1 ]; then module oldmemo || want="$want oldmemo>=1.0"; fi
+    fi
     if [ -z "$want" ]; then say "Nothing to vendor: every library is installed"; return 0; fi
-    "$PY" -m pip --version >/dev/null 2>&1 || { warn "pip is missing, cannot vendor:$want"; return 0; }
+    "$PY" -m pip --version >/dev/null 2>&1 || { warn "pip is missing, cannot fetch:$want"; return 0; }
     say "Fetching with pip:$want"
     mkdir -p "$D$LIBDIR/vendor"
     # shellcheck disable=SC2086
@@ -369,6 +371,10 @@ if [ "$DEPS" -eq 1 ]; then install_deps; fi
 [ -d "$SRC/ward" ] && [ -d "$SRC/data" ] || die "run install.sh from the Ward source folder (ward/ and data/ must be next to it)"
 PY=""
 if [ -z "$DESTDIR" ] || [ "$VENDOR" -eq 1 ]; then preflight; fi
+# --install-deps: Python libraries the distribution doesn't package are fetched with pip into Ward's own folder
+if [ "$DEPS" -eq 1 ] && [ "$VENDOR" -eq 0 ] && [ -n "$PY" ]; then
+    for m in slixmpp markdown_it cryptography; do module "$m" || VENDOR=2; done
+fi
 
 say "Installing Ward to $D$PREFIX"
 keep_vendor=""
@@ -381,7 +387,7 @@ mkdir -p "$D$LIBDIR"
 if [ -n "$keep_vendor" ]; then mv "$keep_vendor/vendor" "$D$LIBDIR/"; rmdir "$keep_vendor"; fi
 cp -R "$SRC/ward" "$D$LIBDIR/ward"
 find "$D$LIBDIR/ward" -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
-if [ "$VENDOR" -eq 1 ]; then vendor; fi
+if [ "$VENDOR" -ge 1 ]; then vendor; fi
 
 wrapper "$D$BINDIR/ward"
 
