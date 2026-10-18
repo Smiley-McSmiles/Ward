@@ -326,7 +326,7 @@ class WardApplication(Adw.Application):
                            else Gio.NotificationPriority.NORMAL)
         if note.icon and os.path.exists(note.icon):
             n.set_icon(Gio.FileIcon.new(Gio.File.new_for_path(note.icon)))
-        n.set_default_action_and_target_value("app.open-chat", GLib.Variant("s", str(note.chat_id)))
+        n.set_default_action_and_target("app.open-chat", GLib.Variant("s", str(note.chat_id)))
         if not note.is_request:
             n.add_button_with_target_value(_("Mark as read"), "app.mark-read", GLib.Variant("s", str(note.chat_id)))
         self.send_notification(note.id, n)
