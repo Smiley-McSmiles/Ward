@@ -319,7 +319,15 @@ class ConversationView(Gtk.Box):
         return self.vadj.get_value() + self.vadj.get_page_size() >= self.vadj.get_upper() - 40
 
     def _on_scrolled(self, adj) -> None:
-        self._stick = self._at_bottom()
+        # Only the user scrolling up lets go of the bottom.  The list moves the view by itself too, while it measures
+        # a new message (its estimated height first, then the real one), and that must not unstick it.
+        value = adj.get_value()
+        moved_up = value < getattr(self, "_last_value", value) - 1
+        self._last_value = value
+        if self._at_bottom():
+            self._stick = True
+        elif moved_up and GLib.get_monotonic_time() > getattr(self, "_auto_until", 0):
+            self._stick = False
         self.jump_button.set_visible(not self._stick)
         if self._stick and self.chat is not None and self.chat.unread and self.core.window_focused:
             self.core.set_active_chat(self.chat)
@@ -334,11 +342,21 @@ class ConversationView(Gtk.Box):
 
     def scroll_to_bottom(self) -> bool:
         self._stick = True
+        self._auto_until = GLib.get_monotonic_time() + 600_000     # the list settles within this
         n = self.ml.store.get_n_items() if self.ml is not None else 0
         if n:
             self.list.scroll_to(n - 1, Gtk.ListScrollFlags.NONE, None)
         self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
         self.jump_button.set_visible(False)
+        # once more after the new rows have their real heights
+        for delay in (50, 250):
+            GLib.timeout_add(delay, self._settle_bottom)
+        return False
+
+    def _settle_bottom(self) -> bool:
+        if self._stick:
+            self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
+            self.jump_button.set_visible(False)
         return False
 
     def _scroll_to_index(self, idx: int, focus: bool = True) -> bool:

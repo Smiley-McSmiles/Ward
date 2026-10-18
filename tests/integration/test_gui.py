@@ -123,6 +123,17 @@ def test_sign_in_and_chat(app, prosody, run, tmp_path):
             await wait_for(lambda: got.body == "Hello from the **new window**" and got.edited, 20, "the edit")
             await _settle(0.5)
             _screenshot(w, "gui-chat.png")
+
+            # the view follows new messages, ours and theirs, once they fill more than a screen
+            for i in range(25):
+                await peer.messaging.send_text(pchat, "line %d\n- with\n- a list" % i)
+            await wait_for(lambda: any(m.body.startswith("line 24") for m in view.ml.items()), 20, "many messages")
+            await _settle(0.6)
+            assert view.vadj.get_upper() > view.vadj.get_page_size() and view._at_bottom(), "follows theirs"
+            composer.buffer.set_text("and mine\n\nwith a second paragraph")
+            composer.send()
+            await _settle(0.6)
+            assert view._at_bottom(), "follows ours"
         finally:
             await stop(peer)
         await app.core.shutdown()
