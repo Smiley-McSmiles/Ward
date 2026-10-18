@@ -19,7 +19,7 @@ from ..core.models import (
     MessageItem,
 )
 from ..i18n import _
-from . import render, style, widgets
+from . import render, style, video, widgets
 
 GROUP_WINDOW = 5 * 60 * 1000
 STATUS_ICON = {STATUS_PENDING: ("ward-clock-symbolic", "Sending"), STATUS_SENT: ("ward-check-symbolic", "Sent"),
@@ -337,10 +337,7 @@ class MessageRow(Gtk.Box):
             btn.connect("clicked", lambda *_: self.view.open_attachment(m, att))
             return btn
         if path and (att.is_audio or att.is_video):
-            vid = Gtk.Video.new_for_filename(path)
-            vid.set_size_request(320 if att.is_video else 280, 220 if att.is_video else -1)
-            vid.set_halign(Gtk.Align.START)
-            return vid
+            return video.attachment(path, att.is_video)
         card = Gtk.Box(spacing=10, css_classes=["attachment-card"], halign=Gtk.Align.START)
         gicon = Gio.content_type_get_symbolic_icon(Gio.content_type_from_mime_type(att.mime or "") or "")
         card.append(Gtk.Image.new_from_gicon(gicon) if gicon else Gtk.Image.new_from_icon_name("text-x-generic"))

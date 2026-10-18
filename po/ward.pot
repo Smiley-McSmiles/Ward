@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ward 1.0.0\n"
 "Report-Msgid-Bugs-To: https://github.com/smiley-mcsmiles/ward/issues\n"
-"POT-Creation-Date: 2026-10-18 16:03+0000\n"
+"POT-Creation-Date: 2026-10-18 16:12+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -302,7 +302,7 @@ msgstr ""
 msgid "%d new encrypted messages"
 msgstr ""
 
-#: ward/core/notify.py:117 ward/gui/message_row.py:348
+#: ward/core/notify.py:117 ward/gui/message_row.py:345
 msgid "File"
 msgstr ""
 
@@ -731,7 +731,7 @@ msgstr ""
 #: ward/gui/conversation.py:866 ward/gui/conversation.py:894
 #: ward/gui/details.py:195 ward/gui/details.py:205 ward/gui/details.py:308
 #: ward/gui/dialogs.py:37 ward/gui/dialogs.py:818 ward/gui/members.py:187
-#: ward/gui/message_row.py:364 ward/gui/prefs.py:536 ward/gui/prefs.py:580
+#: ward/gui/message_row.py:361 ward/gui/prefs.py:536 ward/gui/prefs.py:580
 #: ward/gui/trust.py:254 ward/gui/trust.py:335 ward/gui/trust.py:353
 #: ward/gui/window.py:320
 msgid "Cancel"
@@ -1149,7 +1149,7 @@ msgid ""
 "%(uri)s"
 msgstr ""
 
-#: ward/gui/conversation.py:624 ward/gui/message_row.py:369
+#: ward/gui/conversation.py:624 ward/gui/message_row.py:366
 msgid "Open"
 msgstr ""
 
@@ -1178,7 +1178,7 @@ msgid "Could not react"
 msgstr ""
 
 #: ward/gui/conversation.py:744 ward/gui/message_row.py:249
-#: ward/gui/message_row.py:419
+#: ward/gui/message_row.py:416
 msgid "Reply"
 msgstr ""
 
@@ -1774,7 +1774,7 @@ msgstr ""
 msgid "Device trust"
 msgstr ""
 
-#: ward/gui/dialogs.py:541 ward/gui/message_row.py:354
+#: ward/gui/dialogs.py:541 ward/gui/message_row.py:351
 msgid "Failed"
 msgstr ""
 
@@ -1832,7 +1832,7 @@ msgstr ""
 msgid "Image"
 msgstr ""
 
-#: ward/gui/dialogs.py:574 ward/gui/message_row.py:373
+#: ward/gui/dialogs.py:574 ward/gui/message_row.py:370
 msgid "Save as…"
 msgstr ""
 
@@ -2330,28 +2330,28 @@ msgstr ""
 msgid "Show less"
 msgstr ""
 
-#: ward/gui/message_row.py:352
+#: ward/gui/message_row.py:349
 msgid "encrypted"
 msgstr ""
 
-#: ward/gui/message_row.py:378
+#: ward/gui/message_row.py:375
 msgid "Download"
 msgstr ""
 
-#: ward/gui/message_row.py:397
+#: ward/gui/message_row.py:394
 msgid "Not sent"
 msgstr ""
 
-#: ward/gui/message_row.py:399 ward/gui/sidebar.py:463
+#: ward/gui/message_row.py:396 ward/gui/sidebar.py:463
 msgid "Retry"
 msgstr ""
 
-#: ward/gui/message_row.py:411
+#: ward/gui/message_row.py:408
 #, python-format
 msgid "React with %s"
 msgstr ""
 
-#: ward/gui/message_row.py:414
+#: ward/gui/message_row.py:411
 msgid "Add reaction"
 msgstr ""
 
@@ -3028,6 +3028,18 @@ msgstr ""
 #: ward/gui/trust.py:356
 #, python-format
 msgid "Imported %d decisions"
+msgstr ""
+
+#: ward/gui/video.py:23
+msgid "Fullscreen"
+msgstr ""
+
+#: ward/gui/video.py:38
+msgid "Video"
+msgstr ""
+
+#: ward/gui/video.py:44
+msgid "Leave fullscreen"
 msgstr ""
 
 #: ward/gui/welcome.py:55

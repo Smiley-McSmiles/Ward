@@ -68,6 +68,7 @@ ward/gui/style.py
 ward/gui/tools.py
 ward/gui/tray.py
 ward/gui/trust.py
+ward/gui/video.py
 ward/gui/welcome.py
 ward/gui/widgets.py
 ward/gui/window.py

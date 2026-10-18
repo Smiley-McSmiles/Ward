@@ -134,3 +134,4 @@ button.message-meta { padding: 0 4px; min-height: 0; min-width: 0; font-weight: 
 .step-active { color: @accent_color; font-weight: bold; }
 .captcha { border-radius: 8px; }
 .qr-code { background-color: white; padding: 12px; border-radius: 12px; }
+.video-fullscreen { background-color: black; }
