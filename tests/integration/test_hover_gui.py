@@ -43,7 +43,7 @@ def test_hover_actions_are_below_the_message(app, run):  # noqa: F811
         row._hover(True)
         await wait_for(lambda: row.actions.get_visible(), 5, "the actions on hover")
         await asyncio.sleep(0.2)
-        assert row.actions.get_parent() is row, "the actions belong to the message row"
+        assert row.actions.get_parent() is row.content, "the actions belong to the message row"
         assert row.row.get_width() == before, "hovering must not squeeze the message"
         ok, box = row.actions.compute_bounds(row.row)
         assert ok and box.get_y() >= row.row.get_height(), "the actions are below the message"
