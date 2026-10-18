@@ -292,6 +292,7 @@ class MessageRow(Gtk.Box):
                                     propagate_natural_width=True, propagate_natural_height=True)
             sc.set_child(w)
             sc.set_max_content_height(limit * 22)
+            sc.set_min_content_height(limit * 22)   # the message is longer than this, and a list row gets the minimum
             box.append(sc)
             more = Gtk.Button(label=_("Show more"), css_classes=["flat"], halign=Gtk.Align.START)
 
