@@ -46,7 +46,7 @@ jobs:
             gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1 python3-slixmpp python3-markdown-it \
             python3-cryptography python3-pil python3-linkify-it python3-mdit-py-plugins dbus-x11
           sudo systemctl stop prosody || true
-          pip install --user --break-system-packages omemo twomemo oldmemo x3dh doubleratchet xeddsa segno
+          pip install --user --break-system-packages omemo "twomemo[xml]" "oldmemo[xml]" x3dh doubleratchet xeddsa segno
           if [ "${{ matrix.slixmpp }}" = latest ]; then pip install --user --break-system-packages --upgrade slixmpp; fi
           python3 -c "import slixmpp; print('slixmpp', slixmpp.__version__)"
       - name: Unit, integration and interface tests

@@ -183,14 +183,29 @@ def adw_version() -> tuple[int, int]:
     return tuple(int(x) for x in v.split(".")[:2]) if ok and v else (0, 0)  # type: ignore[return-value]
 
 
+IMPORT_ERRORS: dict[str, str] = {}
+
+
+def _imports(*names: str) -> bool:
+    """Really import them: a module that is present but broken (say, by an older system protobuf or pydantic)
+    must count as missing, with the reason kept for the user."""
+    for n in names:
+        try:
+            importlib.import_module(n)
+        except Exception as e:
+            IMPORT_ERRORS[n] = "%s: %s" % (type(e).__name__, e)
+            return False
+    return True
+
+
 @cache
 def omemo_available() -> bool:
-    return all(_module(m) for m in ("omemo", "twomemo", "xeddsa", "x3dh", "doubleratchet"))
+    return _imports("omemo", "twomemo", "xeddsa", "x3dh", "doubleratchet", "twomemo.etree")
 
 
 @cache
 def legacy_omemo_available() -> bool:
-    return omemo_available() and _module("oldmemo")
+    return omemo_available() and _imports("oldmemo", "oldmemo.etree")
 
 
 @cache

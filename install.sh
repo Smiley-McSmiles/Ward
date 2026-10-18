@@ -247,8 +247,9 @@ vendor() {   # fetch modules the system lacks with pip into LIBDIR/vendor (VENDO
         module mdit_py_plugins || want="$want mdit-py-plugins"
         module linkify_it || want="$want linkify-it-py"
         module segno || want="$want segno"
-        for m in omemo twomemo x3dh doubleratchet xeddsa; do module "$m" || want="$want $m>=1.0"; done
-        if [ "$LEGACY" -eq 1 ]; then module oldmemo || want="$want oldmemo>=1.0"; fi
+        for m in omemo x3dh doubleratchet xeddsa; do module "$m" || want="$want $m>=1.0"; done
+        module twomemo.etree || want="$want twomemo[xml]>=1.0"
+        if [ "$LEGACY" -eq 1 ]; then module oldmemo.etree || want="$want oldmemo[xml]>=1.0"; fi
     fi
     if [ -z "$want" ]; then say "Nothing to vendor: every library is installed"; return 0; fi
     "$PY" -m pip --version >/dev/null 2>&1 || { warn "pip is missing, cannot fetch:$want"; return 0; }

@@ -19,7 +19,7 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = ["slixmpp>=1.8", "markdown-it-py>=2", "mdit-py-plugins", "linkify-it-py", "cryptography", "segno",
-                "pillow", "omemo>=1.0", "twomemo>=1.0", "oldmemo>=1.0", "x3dh>=1.0", "doubleratchet>=1.0",
+                "pillow", "omemo>=1.0", "twomemo[xml]>=1.0", "oldmemo[xml]>=1.0", "x3dh>=1.0", "doubleratchet>=1.0",
                 "xeddsa>=1.0"]
 ARCHES = {"x86_64": "manylinux_2_28_x86_64", "aarch64": "manylinux_2_28_aarch64"}
 # also accept older manylinux tags, which pip only matches when listed explicitly
@@ -65,7 +65,7 @@ def main() -> int:
         if len(arches) != len(ARCHES):
             src["only-arches"] = arches
         sources.append(src)
-    names = sorted({r.split(">")[0].split("=")[0] for r in REQUIREMENTS})
+    names = sorted({r.split(">")[0].split("=")[0] for r in REQUIREMENTS} | {"xmlschema"})
     module = {
         "name": "python3-ward-deps",
         "buildsystem": "simple",

@@ -51,7 +51,8 @@ try:
     import oldmemo
     import oldmemo.etree
     HAVE_OLDMEMO = True
-except ImportError:  # optional: OMEMO 2 only
+except Exception as _e:  # optional: OMEMO 2 only (missing, or broken by an incompatible dependency)
+    logging.getLogger("ward.omemo").info("legacy OMEMO unavailable: %s", _e)
     oldmemo = None  # type: ignore[assignment]
     HAVE_OLDMEMO = False
 

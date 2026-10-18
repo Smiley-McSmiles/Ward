@@ -2,7 +2,7 @@
   "name": "python3-ward-deps",
   "buildsystem": "simple",
   "build-commands": [
-    "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} --no-build-isolation cryptography doubleratchet linkify-it-py markdown-it-py mdit-py-plugins oldmemo omemo pillow segno slixmpp twomemo x3dh xeddsa"
+    "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} --no-build-isolation cryptography doubleratchet linkify-it-py markdown-it-py mdit-py-plugins oldmemo[xml] omemo pillow segno slixmpp twomemo[xml] x3dh xeddsa xmlschema"
   ],
   "sources": [
     {
@@ -51,6 +51,11 @@
       "type": "file",
       "url": "https://files.pythonhosted.org/packages/8e/50/d5769527876b1b2c2883eeb7307dd1509be1162e55b16799b55b3bd5b7b0/doubleratchet-1.3.0-py3-none-any.whl",
       "sha256": "a869c81aa175abd9d7cfcf0069a0fa1261116b2ff2684c1ac95a1b83b875b18d"
+    },
+    {
+      "type": "file",
+      "url": "https://files.pythonhosted.org/packages/42/b0/b709cc33ccb0288f41f2d92dfd754d2ccf925cb9277a66effbc132cd004c/elementpath-5.1.4-py3-none-any.whl",
+      "sha256": "5ec8d7bb44b16c98414a6a95e20cb150f3cbfc3cac65edc14773288c7a937376"
     },
     {
       "type": "file",
@@ -222,6 +227,11 @@
       "only-arches": [
         "x86_64"
       ]
+    },
+    {
+      "type": "file",
+      "url": "https://files.pythonhosted.org/packages/5c/fb/8be39dc47b0ed9bbc80f384906eed87fa974c9b377a7a430118c3b405550/xmlschema-4.3.2-py3-none-any.whl",
+      "sha256": "cf5c970a30f6ebcb3da35260e694704cc0b6794d8ace46125bb2a95e38ed9307"
     }
   ]
 }

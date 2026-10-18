@@ -16,9 +16,9 @@ import sys
 
 from . import paths
 
-OMEMO = ["omemo>=1.0", "twomemo>=1.0", "x3dh>=1.0", "doubleratchet>=1.0", "xeddsa>=1.0"]
+OMEMO = ["omemo>=1.0", "twomemo[xml]>=1.0", "x3dh>=1.0", "doubleratchet>=1.0", "xeddsa>=1.0"]
 # AGPL-3.0: only installed when the user asks for compatibility with today's apps (Conversations, Monal, Dino...)
-LEGACY_OMEMO = ["oldmemo>=1.0"]
+LEGACY_OMEMO = ["oldmemo[xml]>=1.0"]
 QR = ["segno"]
 
 
@@ -35,10 +35,13 @@ def dirs() -> list[str]:
 
 
 def activate() -> None:
-    """Make the private folders importable (after the system's packages, which always win)."""
-    for d in dirs():
-        if d not in sys.path:
-            sys.path.append(d)
+    """Make the private folders importable, ahead of the system's site-packages: pip resolved these libraries
+    together, and an older system copy of one of their dependencies (protobuf, pydantic, cryptography...) would
+    break them.  Ward's own code and the GObject bindings are never in these folders."""
+    for d in reversed(dirs()):
+        if d in sys.path:
+            sys.path.remove(d)
+        sys.path.insert(1 if sys.path and sys.path[0] in ("", os.getcwd()) else 0, d)
 
 
 def pip_available() -> bool:
@@ -75,6 +78,17 @@ def install(packages: list[str], target: str | None = None, on_line=None) -> Non
     if proc.wait() != 0:
         raise InstallError("\n".join(tail) or "pip failed")
     activate()
-    import importlib
+    check(packages)
 
-    importlib.invalidate_caches()
+
+def check(packages: list[str]) -> None:
+    """Import what was installed in a fresh interpreter, the way Ward will after its restart."""
+    mods = [p.split("[")[0].split(">")[0].split("=")[0].replace("-", "_") for p in packages]
+    mods += ["%s.etree" % m for m in mods if m in ("twomemo", "oldmemo")]
+    code = "import ward.extras as e; e.activate(); " + "; ".join("import %s" % m for m in mods)
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+        [os.path.dirname(os.path.dirname(os.path.abspath(__file__))), os.environ.get("PYTHONPATH", "")]))
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60)
+    if r.returncode != 0:
+        last = (r.stderr.strip().splitlines() or ["unknown error"])[-1]
+        raise InstallError("Installed, but it does not load: %s" % last)
