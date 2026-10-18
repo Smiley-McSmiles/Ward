@@ -64,6 +64,9 @@ class ConversationView(Gtk.Box):
         self._loading_older = False
         self._menu_msg: MessageItem | None = None
         self._menu_selection = ""
+        self._last_value = 0.0          # the adjustment, to tell the user scrolling from the list relaying out
+        self._auto_until = 0            # a programmatic scroll: its layout settling is not the user scrolling
+        self._layout_until = 0          # rows being rebuilt: their measurement moves the view too
 
         self.toolbar = Adw.ToolbarView()
         self.append(self.toolbar)
@@ -246,6 +249,9 @@ class ConversationView(Gtk.Box):
         self.chat = chat
         self.rows.clear()
         self.highlight_id = 0
+        self._last_value = 0.0
+        self._auto_until = 0
+        self._layout_until = 0
         if chat is None:
             self.list.set_model(None)
             self.ml = None
@@ -253,7 +259,7 @@ class ConversationView(Gtk.Box):
             return
         for prop in ("name", "show", "typing", "subject", "member-count", "encryption-state", "encryption-reason",
                      "avatar", "joined", "join-error", "is-request", "new-devices", "muted-until", "pinned",
-                     "our-role"):
+                     "encryptable", "our-role"):
             self._chat_handlers.append((chat, chat.connect("notify::" + prop, self._on_chat_changed)))
         acc = self.core.accounts.get(chat.account_id)
         if acc is not None:
@@ -352,21 +358,41 @@ class ConversationView(Gtk.Box):
     def _at_bottom(self) -> bool:
         return self.vadj.get_value() + self.vadj.get_page_size() >= self.vadj.get_upper() - 40
 
+    def _layout_changing(self) -> None:
+        """A message row is being rebuilt.  Clearing and refilling it changes its measured height, and the list
+        moves the view while it re-measures; that must not count as the user scrolling away from the bottom."""
+        self._layout_until = GLib.get_monotonic_time() + 250_000
+
     def _on_scrolled(self, adj) -> None:
-        # Only the user scrolling up lets go of the bottom.  The list moves the view by itself too, while it measures
-        # a new message (its estimated height first, then the real one), and that must not unstick it.
+        # Only the user scrolling up lets go of the bottom.  The list moves the view by itself too, while it
+        # measures a message (its estimated height first, then the real one), or a row is rebuilt (a receipt, a
+        # reaction): that must not unstick it.  So a move up is only believed after it has settled, and the list
+        # is put back at the bottom if the move came from a re-measure.
         value = adj.get_value()
-        moved_up = value < getattr(self, "_last_value", value) - 1
+        previous = self._last_value
         self._last_value = value
+        now = GLib.get_monotonic_time()
         if self._at_bottom():
             self._stick = True
-        elif moved_up and GLib.get_monotonic_time() > getattr(self, "_auto_until", 0):
-            self._stick = False
+        elif value < previous - 1 and now > self._auto_until:
+            GLib.timeout_add(120, self._maybe_unstick)
+        if self._stick and (now <= self._layout_until or now <= self._auto_until) and not self._at_bottom():
+            self._settle_bottom()
         self.jump_button.set_visible(not self._stick)
         if self._stick and self.chat is not None and self.chat.unread and self.core.window_focused:
             self.core.set_active_chat(self.chat)
         if adj.get_value() < adj.get_page_size() * 0.6 and self.ml is not None and self.ml.has_older:
             widgets.run(self, self._load_older())
+
+    def _maybe_unstick(self) -> bool:
+        """The view stayed above the bottom: the user scrolled there.  Not while a row is being measured, though."""
+        if self.get_root() is None:         # the window was let go while the check was pending
+            return False
+        now = GLib.get_monotonic_time()
+        if not self._at_bottom() and now > self._auto_until and now > self._layout_until:
+            self._stick = False
+            self.jump_button.set_visible(True)
+        return False
 
     def _on_upper(self, *_a) -> None:
         if self._stick:
@@ -376,7 +402,7 @@ class ConversationView(Gtk.Box):
 
     def scroll_to_bottom(self) -> bool:
         self._stick = True
-        self._auto_until = GLib.get_monotonic_time() + 600_000     # the list settles within this
+        self._auto_until = GLib.get_monotonic_time() + 400_000     # the list settles within this
         n = self.ml.store.get_n_items() if self.ml is not None else 0
         if n:
             self.list.scroll_to(n - 1, Gtk.ListScrollFlags.NONE, None)
@@ -411,10 +437,22 @@ class ConversationView(Gtk.Box):
             self._loading_older = False
 
     # ================================================================== header, banner, menu
-    def _on_chat_changed(self, *_a) -> None:
-        self._update_header()
-        self._update_banner()
-        self._update_menu()
+    HEADER_PROPS = {"name", "show", "typing", "subject", "member-count", "avatar", "encryption-state",
+                    "encryption-reason", "joined", "join-error"}
+    BANNER_PROPS = {"is-request", "encryption-state", "encryption-reason", "joined", "join-error", "new-devices",
+                    "encryptable", "state"}          # "state" is the account's connection state
+    MENU_PROPS = {"pinned", "muted-until", "name", "type", "our-role"}
+
+    def _on_chat_changed(self, _obj, pspec=None) -> None:
+        """Update only what the property that changed feeds.  Rebuilding the banner and the menu on every chat
+        state (someone typing, presence) made the message list move under the pointer."""
+        name = pspec.name if pspec is not None else ""
+        if not name or name in self.HEADER_PROPS:
+            self._update_header()
+        if not name or name in self.BANNER_PROPS:
+            self._update_banner()
+        if not name or name in self.MENU_PROPS:
+            self._update_menu()
 
     def _update_header(self) -> None:
         chat = self.chat
