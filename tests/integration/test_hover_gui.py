@@ -1,8 +1,7 @@
-"""Quick reactions and reply live under the message, not beside it.
+"""Quick reactions and reply float over the message corner, Discord-style.
 
-They used to be placed in the bubble's row (or overlaid on the corner), so hovering a wide bubble took horizontal
-room away from the text, re-wrapped it and moved every row below.  They now get their own line under the message:
-the row grows downwards and the message keeps its width.
+They used to get their own line under the message, which grew the row and pushed every row below down.  They are
+now an overlay child at the top-right: hovering shows them without changing the message's size or moving anything.
 """
 
 import asyncio
@@ -15,7 +14,7 @@ from test_gui import app  # noqa: F401 - the fixture
 pytestmark = [pytest.mark.integration, pytest.mark.gui]
 
 
-def test_hover_actions_are_below_the_message(app, run):  # noqa: F811
+def test_hover_actions_float_without_moving_the_message(app, run):  # noqa: F811
     from ward.core.chats import insert_message_job
 
     async def scenario():
@@ -39,14 +38,17 @@ def test_hover_actions_are_below_the_message(app, run):  # noqa: F811
         await wait_for(lambda: row.row.get_width() > 0, 5, "the row laid out")
         await asyncio.sleep(0.2)
 
-        before = row.row.get_width()
+        width, height = row.row.get_width(), row.get_height()
         row._hover(True)
         await wait_for(lambda: row.actions.get_visible(), 5, "the actions on hover")
         await asyncio.sleep(0.2)
-        assert row.actions.get_parent() is row.content, "the actions belong to the message row"
-        assert row.row.get_width() == before, "hovering must not squeeze the message"
+        assert row.actions.get_parent() is row.overlay, "the actions float over the message"
+        assert row.row.get_width() == width and row.get_height() == height, \
+            "hovering must not move or resize the message"
         ok, box = row.actions.compute_bounds(row.row)
-        assert ok and box.get_y() >= row.row.get_height(), "the actions are below the message"
+        assert ok
+        assert box.get_y() < row.row.get_height() * 0.5, "the actions float near the top"
+        assert box.get_x() + box.get_width() > row.row.get_width() * 0.7, "the actions sit on the right"
 
         row._hover(False)
         await wait_for(lambda: not row.actions.get_visible(), 5, "the actions hidden again")

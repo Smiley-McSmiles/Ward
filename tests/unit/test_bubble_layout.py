@@ -84,7 +84,8 @@ def test_sent_bubbles_are_right_aligned(display):
         assert in_box.get_x() < width * 0.4, "a received bubble starts on the left"
         assert out_box.get_x() > width * 0.5, "a sent bubble starts on the right"
         assert out_box.get_x() + out_box.get_width() <= width, "a sent bubble stays inside the row"
-        assert incoming.actions.get_halign() == Gtk.Align.START
+        assert incoming.actions.get_halign() == Gtk.Align.END
         assert outgoing.actions.get_halign() == Gtk.Align.END
+        assert incoming.actions.get_parent() is incoming.overlay
     finally:
         win.destroy()

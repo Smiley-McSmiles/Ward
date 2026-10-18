@@ -58,10 +58,11 @@ class MessageRow(Gtk.Box):
         self.content.append(self.overlay)
         self.row = Gtk.Box(spacing=10, css_classes=["message-row"])
         self.overlay.set_child(self.row)
-        # quick reactions and reply, under the message: they take their own room instead of squeezing the text
-        self.actions = Gtk.Box(spacing=0, css_classes=["hover-bar"], visible=False, margin_top=2,
-                               margin_start=12, margin_end=12)
-        self.content.append(self.actions)
+        # quick reactions and reply: a floating pill over the top-right corner, as in Discord, so showing it
+        # never takes room from the message or moves the rows below
+        self.actions = Gtk.Box(spacing=0, css_classes=["hover-bar"], visible=False, halign=Gtk.Align.END,
+                               valign=Gtk.Align.START, margin_top=2, margin_end=12)
+        self.overlay.add_overlay(self.actions)
         self.hover = None
         motion = Gtk.EventControllerMotion()
         motion.connect("enter", lambda *_: self._hover(True))
@@ -437,11 +438,6 @@ class MessageRow(Gtk.Box):
         if m.retracted or m.kind == "status":
             return
         bar = self.actions
-        # under the bubble, on its side; in the full-width layouts, at the right end of the message
-        if self.view.settings["appearance.layout"] == "bubbles" and not m.outgoing:
-            bar.set_halign(Gtk.Align.START)
-        else:
-            bar.set_halign(Gtk.Align.END)
         for e in self.view.settings["chats.quick_reactions"][:3]:
             b = Gtk.Button(label=e, css_classes=["flat"], tooltip_text=_("React with %s") % e)
             b.connect("clicked", lambda _b, e=e: self.view.react(m, e))
