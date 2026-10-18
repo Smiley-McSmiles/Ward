@@ -87,6 +87,14 @@ class Avatar(Gtk.Overlay):
         self.avatar.set_size(size)
 
 
+class RowAvatar(Avatar):
+    """An avatar for a list row's prefix, centred on the row's height."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_valign(Gtk.Align.CENTER)
+
+
 # ------------------------------------------------------------------------------------------------ time
 def _dt_local(ms: int) -> _dt.datetime:
     return _dt.datetime.fromtimestamp(ms / 1000)

@@ -180,8 +180,8 @@ class Preferences:
         self._account_rows = []
         for acc in self.core.accounts.list():
             row = Adw.ActionRow(title=widgets.escape(acc.display_name), subtitle=acc.jid, activatable=True)
-            row.add_prefix(widgets.Avatar(36, acc.display_name, acc.avatar,
-                                          acc.show if acc.state == "online" else "offline"))
+            row.add_prefix(widgets.RowAvatar(36, acc.display_name, acc.avatar,
+                                             acc.show if acc.state == "online" else "offline"))
             row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
             row.connect("activated", lambda _r, a=acc: compat.prefs_push(self.d, AccountPage(self, a).page))
             self.accounts_group.add(row)
@@ -310,7 +310,7 @@ class AccountPage:
         top = Adw.PreferencesGroup()
         page.add(top)
         state = Adw.ActionRow(title=widgets.escape(acc.display_name), subtitle=self._state_text())
-        state.add_prefix(widgets.Avatar(48, acc.display_name, acc.avatar))
+        state.add_prefix(widgets.RowAvatar(48, acc.display_name, acc.avatar))
         self.state_row = state
         self.connect_button = Gtk.Button(valign=Gtk.Align.CENTER)
         self.connect_button.connect("clicked", lambda *_: self._toggle_connection())

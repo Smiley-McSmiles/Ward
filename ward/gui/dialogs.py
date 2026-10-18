@@ -144,7 +144,7 @@ class StartChatDialog(BaseDialog):
         items.sort(key=lambda c: (c.show == "offline", c.name.lower()))
         for c in items[:8]:
             row = Adw.ActionRow(title=widgets.escape(c.name), subtitle=c.jid, activatable=True)
-            row.add_prefix(widgets.Avatar(32, c.name, c.avatar, c.show))
+            row.add_prefix(widgets.RowAvatar(32, c.name, c.avatar, c.show))
             row.connect("activated", lambda _r, c=c: self._open(c.jid))
             self.suggestions.add(row)
             self._rows.append(row)
@@ -346,7 +346,7 @@ class InviteDialog(BaseDialog):
         for c in sorted([c for c in self.core.contacts.for_account(chat.account_id) if c.in_roster],
                         key=lambda c: c.name.lower())[:30]:
             row = Adw.ActionRow(title=widgets.escape(c.name), subtitle=c.jid, activatable=True)
-            row.add_prefix(widgets.Avatar(32, c.name, c.avatar, c.show))
+            row.add_prefix(widgets.RowAvatar(32, c.name, c.avatar, c.show))
             row.connect("activated", lambda _r, j=c.jid: self.address.set_text(j))
             contacts.add(row)
         link = self.group(_("Link"))
@@ -394,7 +394,7 @@ class AccountPicker(BaseDialog):
         g = self.group()
         for acc in window.core.accounts.list():
             row = Adw.ActionRow(title=widgets.escape(acc.display_name), subtitle=acc.jid, activatable=True)
-            row.add_prefix(widgets.Avatar(32, acc.display_name, acc.avatar))
+            row.add_prefix(widgets.RowAvatar(32, acc.display_name, acc.avatar))
             row.connect("activated", lambda _r, a=acc: (self.close(), callback(a)))
             g.add(row)
 
@@ -422,7 +422,7 @@ class ChatPicker(BaseDialog):
         chats.sort(key=lambda c: -c.last_activity)
         for c in chats[:40]:
             row = Adw.ActionRow(title=widgets.escape(c.name or c.jid), subtitle=c.jid, activatable=True)
-            row.add_prefix(widgets.Avatar(32, c.name or c.jid, c.avatar))
+            row.add_prefix(widgets.RowAvatar(32, c.name or c.jid, c.avatar))
             row.connect("activated", lambda _r, c=c: (self.close(), self.callback(c)))
             self.list_group.add(row)
             self._rows.append(row)
@@ -474,7 +474,7 @@ class QuickSwitcher:
             if text and text not in name.lower() and text not in jid.lower():
                 continue
             row = Adw.ActionRow(title=widgets.escape(name), subtitle=jid, activatable=True)
-            row.add_prefix(widgets.Avatar(32, name, avatar))
+            row.add_prefix(widgets.RowAvatar(32, name, avatar))
             row.target = (kind, obj)
             self.list.append(row)
             n += 1
@@ -666,7 +666,7 @@ class RequestsDialog(BaseDialog):
             sub = req.text or (_("Wants to share status with you") if req.kind == "subscription"
                                else _("Sent you a message"))
             row = Adw.ActionRow(title=req.jid, subtitle=widgets.escape(sub))
-            row.add_prefix(widgets.Avatar(36, req.jid))
+            row.add_prefix(widgets.RowAvatar(36, req.jid))
             if req.chat_id:
                 show = Gtk.Button(icon_name="ward-chat-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
                                   tooltip_text=_("Show messages"))
