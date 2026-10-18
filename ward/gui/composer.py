@@ -9,7 +9,7 @@ import tempfile
 
 from gi.repository import Gdk, GLib, Gtk, Pango
 
-from .. import paths
+from .. import deps, paths
 from ..core.markup import emoji
 from ..core.models import ChatItem, MessageItem
 from ..i18n import _
@@ -169,7 +169,7 @@ class Composer(Gtk.Box):
         self.popover.set_child(self.popover_list)
 
         self._spell = _spelling(self.text, self.settings["chats.spell_languages"]) \
-            if self.settings["chats.spellcheck"] else None
+            if self.settings["chats.spellcheck"] and deps.have("spelling") else None
         self.settings.connect("changed::chats.toolbar", lambda *_: self.toolbar.set_visible(
             self.settings["chats.toolbar"]))
         self._update_placeholder()

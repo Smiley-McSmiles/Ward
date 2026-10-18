@@ -375,6 +375,22 @@ class WardApplication(Adw.Application):
                     w.conversation.composer.buffer.set_text(body)
             aio.spawn(go())
 
+    def install_encryption(self, parent=None) -> None:
+        from .dialogs import ExtrasDialog
+
+        self.activate()
+        ExtrasDialog(self.window).present(parent or self.window)
+
+    def restart(self) -> None:
+        """After installing libraries: start a fresh process with the same environment."""
+        import sys
+
+        async def go():
+            if self.core is not None and self.core.started:
+                await self.core.shutdown()
+            os.execv(sys.executable, [sys.executable, "-m", "ward"])
+        aio.spawn(go())
+
     # ================================================================== windows
     def show_preferences(self, page: str = "") -> None:
         self.activate()

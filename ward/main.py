@@ -31,7 +31,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv if argv is None else argv)
     args = _parser().parse_args(argv[1:])
-    from . import i18n, log
+    from . import extras, i18n, log
+
+    extras.activate()
 
     i18n.setup()
     log.setup("verbose" if args.debug else "off", to_file=False if args.debug else None)

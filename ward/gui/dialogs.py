@@ -914,3 +914,57 @@ def text_view_dialog(parent: Gtk.Widget, title: str, text: str) -> None:
     d.set_child(tv)
     d.present(parent)
 
+
+
+class ExtrasDialog(BaseDialog):
+    """Downloads the OMEMO libraries with pip into Ward's own folder, then offers a restart."""
+
+    def __init__(self, window):
+        from .. import deps
+
+        super().__init__(window, _("Encryption support"), _("Install"), width=520, height=560)
+        g = self.group(description=_("Ward encrypts messages with OMEMO. Your system has no packages for its "
+                                     "libraries, so Ward can download them from the Python Package Index into "
+                                     "its own folder. Nothing else on your system changes."))
+        self.legacy = Adw.SwitchRow(title=_("Legacy OMEMO for today's apps"), active=True,
+                                    subtitle=_("Conversations, Monal, Dino, Gajim and Siskin still use it. "
+                                               "The library (oldmemo) is licensed under the AGPL-3.0."))
+        g.add(self.legacy)
+        self.log_view = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR,
+                                     top_margin=6, bottom_margin=6, left_margin=6, right_margin=6)
+        sc = Gtk.ScrolledWindow(min_content_height=160, css_classes=["card"])
+        sc.set_child(self.log_view)
+        self.scroller = sc
+        out = self.group(_("Progress"))
+        out.add(sc)
+        out.set_visible(False)
+        self.out_group = out
+        if not deps.have("pip"):
+            g.set_description(g.get_description() + "\n\n" + _("pip is missing: %s") % (
+                deps.install_hint("pip") or "python3 -m ensurepip --user"))
+
+    def _line(self, text: str) -> None:
+        def add():
+            b = self.log_view.get_buffer()
+            b.insert(b.get_end_iter(), text + "\n")
+            adj = self.scroller.get_vadjustment()
+            adj.set_value(adj.get_upper())
+            return False
+        GLib.idle_add(add)
+
+    def on_action(self) -> None:
+        from .. import aio, extras
+
+        if self.action_button.get_label() == _("Restart Ward"):
+            self.window.app.restart()
+            return
+        packages = list(extras.OMEMO) + (list(extras.LEGACY_OMEMO) if self.legacy.get_active() else [])
+        self.out_group.set_visible(True)
+
+        async def go():
+            await aio.run_in_thread(extras.install, packages, None, self._line)
+
+        def done(_r):
+            self.action_button.set_label(_("Restart Ward"))
+            self.toasts.add_toast(Adw.Toast(title=_("Installed. Restart Ward to turn on encryption.")))
+        self.run(go(), done)

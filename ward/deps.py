@@ -124,7 +124,8 @@ def install_hint(*components: str) -> str:
     if pkgs:
         parts.append("%s %s" % (INSTALL_CMD[pm], " ".join(pkgs)))
     if vendored:
-        parts.append("./install.sh --vendor (adds %s)" % ", ".join(vendored))
+        parts.append("Ward installs %s itself (Preferences > Encryption), or ./install.sh --vendor"
+                     % ", ".join(vendored))
     return "; ".join(parts)
 
 
@@ -198,7 +199,10 @@ def have(name: str) -> bool:
     if name == "source":
         return _typelib("GtkSource", "5")[0]
     if name == "spelling":
-        return _typelib("Spelling", "1")[0]
+        # some distributions ship the typelib without the library (or the other way round)
+        import ctypes.util
+
+        return ctypes.util.find_library("spelling-1") is not None and _typelib("Spelling", "1")[0]
     if name == "secret":
         return _typelib("Secret", "1")[0]
     if name == "pillow":

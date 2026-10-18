@@ -5,7 +5,6 @@ import itertools
 import os
 
 import pytest
-
 from helpers import befriend, fresh, make_core, stop, wait_for
 
 pytestmark = [pytest.mark.integration, pytest.mark.gui]
@@ -158,6 +157,8 @@ async def _settle(seconds: float = 0.3) -> None:
 
 def test_register_group_and_dialogs(app, prosody, run, errors):
     """Create an account from the welcome page, create a group, then open every dialog once."""
+    from gi.repository import Gtk
+
     from ward.gui import admin, details, dialogs, prefs, tools, trust
 
     user = "newbie%d" % (os.getpid() % 100000)
@@ -191,8 +192,7 @@ def test_register_group_and_dialogs(app, prosody, run, errors):
         pw_row.set_text("correct horse battery")
         pw2_row.set_text("correct horse battery")
         button = content.get_last_child()
-        while button is not None and not hasattr(button, "get_label") or (button and button.get_label() !=
-                                                                             "Create account"):
+        while not (isinstance(button, Gtk.Button) and button.get_label() == "Create account"):
             button = button.get_prev_sibling()
         button.emit("clicked")
         await wait_for(lambda: w.top.get_visible_child_name() == "main", 30, "the main view after registering")

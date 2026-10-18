@@ -1,0 +1,9 @@
+#compdef ward
+_arguments \
+  '(-b --background)'{-b,--background}'[start without a window and stay connected]' \
+  '(-q --quit)'{-q,--quit}'[quit the running instance]' \
+  '--check[show which libraries and features are available]' \
+  '--debug[verbose logging to the terminal]' \
+  '--version[print the version]' \
+  '(-h --help)'{-h,--help}'[show help]' \
+  '*:xmpp link:'

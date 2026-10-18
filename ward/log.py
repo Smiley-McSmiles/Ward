@@ -60,6 +60,8 @@ def setup(level: str = "off", to_file: bool | None = None) -> None:
     set_file_logging(level != "off" if to_file is None else to_file, level)
     # slixmpp is very chatty at DEBUG; its stanza dumps are what the XML console is for
     logging.getLogger("slixmpp").setLevel(logging.DEBUG if level == "verbose" and env == "debug" else logging.WARNING)
+    # "Using slower stringprep": true, harmless, and not something users can act on
+    logging.getLogger("slixmpp.stringprep").setLevel(logging.ERROR)
 
 
 def set_file_logging(enabled: bool, level: str = "normal") -> None:

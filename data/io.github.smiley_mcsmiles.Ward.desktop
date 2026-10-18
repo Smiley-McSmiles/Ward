@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=Ward
+GenericName=Chat
+Comment=Private messaging on the open XMPP network, encrypted by default
+Exec=ward %U
+Icon=io.github.smiley_mcsmiles.Ward
+Terminal=false
+StartupNotify=true
+StartupWMClass=io.github.smiley_mcsmiles.Ward
+Categories=Network;InstantMessaging;Chat;GTK;
+Keywords=XMPP;Jabber;Chat;Messenger;OMEMO;Encryption;Groups;Gajim;
+MimeType=x-scheme-handler/xmpp;
+X-GNOME-UsesNotifications=true
+X-Purism-FormFactor=Workstation;Mobile;
+Actions=quit;
+
+[Desktop Action quit]
+Name=Quit
+Exec=ward --quit

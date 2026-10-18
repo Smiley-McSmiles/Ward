@@ -34,7 +34,8 @@ MIN = 60 * 1000
 CHAT = [
     (1, "Sam Rivera", -180, "Did you try the new build? The **OMEMO** setup was painless for me 🎉"),
     (0, "", -178, "Yes! Scanning the QR code verified my laptop in a second."),
-    (1, "Sam Rivera", -177, "Here's the config I used:\n```toml\n[encryption]\ndefault = \"always\"\ntrust = \"btbv\"\n```"),
+    (1, "Sam Rivera", -177, "Here's the config I used:\n```toml\n[encryption]\ndefault = \"always\"\n"
+                            "trust = \"btbv\"\n```"),
     (0, "", -60, "Nice. Quick list for tomorrow:\n- [x] update the server\n- [ ] invite the team\n- [ ] ~~print~~ "
                  "share the slides"),
     (1, "Sam Rivera", -58, "> invite the team\nI can do that, I'm admin on the group anyway"),
@@ -53,7 +54,6 @@ GROUP = [
 async def populate(home: str, scenario: dict) -> None:
     from ward.core.chats import insert_message_job
     from ward.core.core import Core
-    from ward.core.models import OccupantItem
     from ward.settings import Settings
 
     settings = Settings()
@@ -96,7 +96,7 @@ async def populate(home: str, scenario: dict) -> None:
                      "'[\"❤️\"]', 0 FROM messages WHERE body LIKE 'Here''s the config%'")
     await db.execute("INSERT INTO reactions (message_id, sender, emojis, timestamp) SELECT id, 'jun', "
                      "'[\"🎉\", \"👍\"]', 0 FROM messages WHERE body LIKE 'It did%'")
-    for chat, minutes, preview in ((kim, -1500, "Thanks for the invite!"), (lee, -4000, "📎 photo.jpg")):
+    for chat, minutes in ((kim, -1500), (lee, -4000)):
         chat.last_activity = NOW + minutes * MIN
     sam.update(unread=0, pinned=True, last_activity=NOW - 2 * MIN)
     group.update(unread=3, mentions=1, last_activity=NOW - 5 * MIN, subject="Building a better XMPP client",
@@ -109,7 +109,6 @@ async def populate(home: str, scenario: dict) -> None:
 
 
 def run_scenario(name: str, out: str) -> int:
-    scenario = SCENARIOS[name]
     home = tempfile.mkdtemp(prefix="ward-shot-")
     env = dict(os.environ, WARD_HOME=home, WARD_SECRETS="memory", WARD_OFFLINE="1", GSK_RENDERER="cairo",
                GTK_A11Y="none", NO_AT_BRIDGE="1", PYTHONPATH=ROOT, LANG=os.environ.get("LANG", "C.UTF-8"))

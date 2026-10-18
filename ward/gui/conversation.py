@@ -437,6 +437,12 @@ class ConversationView(Gtk.Box):
         elif chat.type == "groupchat" and not chat.joined:
             show("dialog-warning-symbolic", chat.join_error or _("You are not in this group right now"),
                  [(_("Join"), self._rejoin, "suggested-action")])
+        elif chat.encryption_state == "blocked" and self.core.omemo is None and \
+                self.core.e2e.method(chat) == "omemo":
+            show("ward-shield-warning-symbolic", _("Encryption support is not installed yet, so messages can't be "
+                                                   "sent encrypted."),
+                 [(_("Send unencrypted"), lambda: self._set_encryption("off"), ""),
+                  (_("Install"), lambda: self.window.app.install_encryption(), "suggested-action")])
         elif chat.encryption_state == "blocked":
             buttons = [(_("Devices"), self.show_devices, "")]
             if chat.type != "groupchat" or chat.encryptable:

@@ -192,6 +192,15 @@ class Preferences:
             self._account_rows.append(row)
 
     def _page_encryption(self, page, groups) -> None:
+        if self.core.omemo is None or not deps.legacy_omemo_available():
+            enc = groups.get("Encryption")
+            if enc is not None:
+                row = Adw.ActionRow(title=_("Install encryption support…") if self.core.omemo is None
+                                    else _("Add legacy OMEMO for older apps…"), activatable=True,
+                                    subtitle=_("Downloads the OMEMO libraries into Ward's own folder"))
+                row.add_suffix(Gtk.Image.new_from_icon_name("folder-download-symbolic"))
+                row.connect("activated", lambda *_: self.window.app.install_encryption(self.d))
+                enc.add(row)
         g = Adw.PreferencesGroup(title=_("Your devices"))
         page.add(g)
         for acc in self.core.accounts.list():
