@@ -18,9 +18,9 @@ def _gtk():
 
     gi.require_version("Gtk", "4.0")
     gi.require_version("Adw", "1")
-    from gi.repository import Gtk
+    from gi.repository import Gdk, Gtk
 
-    if not Gtk.init_check():
+    if not Gtk.init_check() or Gdk.Display.get_default() is None:
         pytest.skip("GTK cannot open the display")
 
 

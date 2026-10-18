@@ -143,10 +143,16 @@ packages() {
         pkg) P=$(pyver)
              REQ="python3 $P-gobject3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
              OPT="gtksourceview5 libspelling libsecret $P-pillow $P-linkify-it-py $P-pip gnupg desktop-file-utils" ;;
-        pkg_add) REQ="python%3 py3-gobject3 gtk+4 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
-                 OPT="gtksourceview5 libsecret py3-Pillow py3-pip gnupg desktop-file-utils" ;;
-        pkgin) P=$(pyver)
-               REQ="python311 $P-gobject3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
+        pkg_add) if [ "$OS" = NetBSD ]; then
+                     P=$(pyver); V=${P#py}
+                     REQ="python$V $P-gobject3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
+                     OPT="gtksourceview5 libsecret $P-Pillow $P-pip gnupg2 desktop-file-utils"
+                 else
+                     REQ="python%3 py3-gobject3 gtk+4 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
+                     OPT="gtksourceview5 libsecret py3-Pillow py3-pip gnupg desktop-file-utils"
+                 fi ;;
+        pkgin) P=$(pyver); V=${P#py}
+               REQ="python$V $P-gobject3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
                OPT="gtksourceview5 libsecret $P-Pillow $P-pip gnupg2 desktop-file-utils" ;;
         *) REQ=""; OPT="" ;;
     esac
@@ -203,6 +209,10 @@ install_deps() {
     [ "$(pm_name)" = apt-get ] && { $AS_ROOT apt-get update || warn "apt-get update failed"; }
     # shellcheck disable=SC2086
     [ "$(pm_name)" = xbps-install ] && { $AS_ROOT xbps-install -S >/dev/null 2>&1 || true; }
+    # FreeBSD: the repository's python3 may be newer than the one already on the machine, and the pyXY- module
+    # names must match the interpreter Ward will use (py311-* disappears when python3 becomes 3.12).  Install the
+    # interpreter before choosing those names.
+    [ "$(pm_name)" = pkg ] && { install_pkgs python3 >/dev/null 2>&1 || true; }
     packages
     # all at once; if the package manager refuses (one name it doesn't know makes most refuse everything), one by
     # one, so the rest still get installed and the warning names exactly what is missing
