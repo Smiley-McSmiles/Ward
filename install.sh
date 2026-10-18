@@ -402,6 +402,9 @@ done
 cp "$SRC/data/icons/hicolor/scalable/apps/$APPID.svg" "$D$SHAREDIR/pixmaps/"
 # a private copy that does not depend on the system icon cache being fresh
 cp -R "$SRC/data/icons" "$D$SHAREDIR/ward/"
+# the notification sound, for systems without the freedesktop sound theme (Void, minimal installs); Ward plays the
+# theme's own sound when there is one
+cp -R "$SRC/data/sounds" "$D$SHAREDIR/ward/"
 cp "$SRC/data/ward.1" "$D$MANDIR/ward.1"
 mkdir -p "$D$SHAREDIR/bash-completion/completions" "$D$SHAREDIR/zsh/site-functions" "$D$SHAREDIR/fish/vendor_completions.d"
 cp "$SRC/data/completions/ward.bash" "$D$SHAREDIR/bash-completion/completions/ward"

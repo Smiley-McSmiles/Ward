@@ -36,7 +36,8 @@ def test_install_stages_everything(staged):
                 "share/icons/hicolor/256x256/apps/%s.png" % APPID, "share/man/man1/ward.1",
                 "share/bash-completion/completions/ward", "share/zsh/site-functions/_ward",
                 "share/fish/vendor_completions.d/ward.fish", "share/ward/icons", "lib/systemd/user/ward.service",
-                "share/ward/runit/run", "share/ward/runit/log/run"):
+                "share/ward/runit/run", "share/ward/runit/log/run",
+                "share/ward/sounds/message-new-instant.oga"):
         assert (usr / rel).exists(), rel
     assert os.access(usr / "bin/ward", os.X_OK) and os.access(usr / "share/ward/runit/run", os.X_OK)
     assert "exec /usr/bin/ward --background" in (usr / "share/ward/runit/run").read_text()
