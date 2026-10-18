@@ -66,7 +66,7 @@ PACKAGES: dict[str, dict[str, str]] = {
                "crypto": "dev-python/cryptography", "pillow": "dev-python/pillow", "gpg": "app-crypt/gnupg",
                "media": "media-plugins/gst-plugins-meta", "zbar": "media-gfx/zbar", "pip": "dev-python/pip",
                "omemo": "-"},
-    "pkg": {"python": "python3", "gi": PY + "-gobject3", "gtk": "gtk4", "adw": "libadwaita",
+    "pkg": {"python": "python3", "gi": PY + "-pygobject", "gtk": "gtk4", "adw": "libadwaita",
             "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
             "slixmpp": PY + "-slixmpp", "markdown": PY + "-markdown-it-py", "mdit": PY + "-mdit-py-plugins",
             "linkify": PY + "-linkify-it-py", "crypto": PY + "-cryptography", "pillow": PY + "-pillow",
