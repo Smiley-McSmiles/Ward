@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print the CHANGELOG.md section of one version (for the GitHub release text).
 
-    tools/release_notes.py 0.1.0"""
+    tools/release_notes.py 1.0.0"""
 
 import os
 import sys
@@ -18,7 +18,7 @@ def main() -> int:
         if line.startswith("## "):
             if inside:
                 break
-            inside = line[3:].split()[0] == version
+            inside = line[3:].split()[0].lstrip("v") == version
             continue
         if inside:
             out.append(line)

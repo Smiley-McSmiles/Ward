@@ -190,6 +190,7 @@ $(printf '%s' "$POSTRM_COMMON")
 /usr/bin/ward
 /usr/lib/ward
 /usr/share/ward
+/usr/lib/systemd/user/ward.service
 /usr/share/applications/$APPID.desktop
 /usr/share/metainfo/$APPID.metainfo.xml
 /usr/share/icons/hicolor/*/apps/$APPID*
@@ -295,6 +296,8 @@ checksum=SKIP
 do_install() {
 	DESTDIR=\${DESTDIR} ./install.sh --prefix /usr --no-post
 	vlicense LICENSE
+	# no systemd on Void: the runit user service is in /usr/share/ward/runit
+	rm -rf \${DESTDIR}/usr/lib/systemd
 }
 TPL
 }
@@ -440,7 +443,7 @@ do-install:
 MK
     printf '%s\n\nWWW: %s\n' "$LONGDESC" "$URL" > "$port/pkg-descr"
     local s=$BUILD/plist/freebsd
-    stage "$s" /usr/local --mandir /usr/local/share/man/man1
+    WARD_NO_SYSTEMD=1 stage "$s" /usr/local --mandir /usr/local/share/man/man1
     python3 "$ROOT/packaging/plist.py" "$s" /usr/local freebsd > "$port/pkg-plist"
 }
 
@@ -451,7 +454,7 @@ build_freebsd() {
     fi
     log "freebsd"
     local root=$BUILD/freebsd/stage
-    stage "$root" /usr/local --mandir /usr/local/share/man/man1 --no-system-links
+    WARD_NO_SYSTEMD=1 stage "$root" /usr/local --mandir /usr/local/share/man/man1 --no-system-links
     gzip -9nf "$root/usr/local/share/man/man1/ward.1"
     local py
     py=$(python3 -c 'import sys; print("py%d%d" % sys.version_info[:2])')
@@ -522,7 +525,7 @@ do-install:
 MK
     echo "$LONGDESC" > "$port/pkg/DESCR"
     local s=$BUILD/plist/openbsd
-    stage "$s" /usr/local --mandir /usr/local/man/man1
+    WARD_NO_SYSTEMD=1 stage "$s" /usr/local --mandir /usr/local/man/man1
     python3 "$ROOT/packaging/plist.py" "$s" /usr/local openbsd > "$port/pkg/PLIST"
 }
 
@@ -569,7 +572,7 @@ do-install:
 MK
     echo "$LONGDESC" > "$pkg/DESCR"
     local s=$BUILD/plist/netbsd
-    stage "$s" /usr/pkg --mandir /usr/pkg/man/man1
+    WARD_NO_SYSTEMD=1 stage "$s" /usr/pkg --mandir /usr/pkg/man/man1
     python3 "$ROOT/packaging/plist.py" "$s" /usr/pkg netbsd > "$pkg/PLIST"
 }
 

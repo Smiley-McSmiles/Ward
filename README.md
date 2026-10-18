@@ -1,4 +1,4 @@
-# Ward
+# Ward v1.0.0
 
 **Private messaging on the open XMPP network, for Linux and the BSDs.**
 
@@ -47,10 +47,10 @@ and libadwaita 1.4+**. Download from the [releases page](https://github.com/smil
 
 | System | How |
 | --- | --- |
-| Any Linux with Flatpak | `flatpak install --user ward-0.1.0.flatpak` (everything included) |
-| Debian 13+, Ubuntu 24.04+, Mint 22+, Pop!_OS | `sudo apt install ./ward_0.1.0_all.deb` |
-| Fedora 40+, RHEL 10, openSUSE | `sudo dnf install ./ward-0.1.0-1.noarch.rpm` (`zypper install` on openSUSE) |
-| Arch, Manjaro, EndeavourOS | `sudo pacman -U ward-0.1.0-1-any.pkg.tar.xz`, or the PKGBUILD from `recipes.tar.gz` |
+| Any Linux with Flatpak | `flatpak install --user ward-1.0.0.flatpak` (everything included) |
+| Debian 13+, Ubuntu 24.04+, Mint 22+, Pop!_OS | `sudo apt install ./ward_1.0.0_all.deb` |
+| Fedora 40+, RHEL 10, openSUSE | `sudo dnf install ./ward-1.0.0-1.noarch.rpm` (`zypper install` on openSUSE) |
+| Arch, Manjaro, EndeavourOS | `sudo pacman -U ward-1.0.0-1-any.pkg.tar.xz`, or the PKGBUILD from `recipes.tar.gz` |
 | Void | `xbps-install -R . ward` from a `./package.sh void` build, or the template in the recipes |
 | Alpine, postmarketOS | the APKBUILD in the recipes (`abuild -r`) |
 | Gentoo | the ebuild in the recipes, in a local overlay |
@@ -86,6 +86,52 @@ out, and talk OMEMO 2 only.
 GtkSourceView 5 (code highlighting), libspelling (spell check), libsecret (passwords in the system keyring), GnuPG
 (OpenPGP), Pillow (smaller images), segno (QR codes), linkify-it-py (better link detection) and the GStreamer media
 plugins (video and audio). `ward --check` lists what you have.
+
+## Running in the background, systemd and runit
+
+Closing the window keeps Ward connected (Preferences > General); **Ctrl+Q** or Quit stops it completely, including
+the background part. "Start at login" uses XDG autostart, which works with any init system. If you prefer a
+supervised service, both are installed and optional:
+
+```sh
+systemctl --user enable --now ward                               # systemd
+mkdir -p ~/.config/service && cp -r /usr/share/ward/runit ~/.config/service/ward   # runit (Void, with turnstile)
+```
+
+Quitting from the app is respected by both: systemd only restarts Ward after a crash, and under runit Ward marks its
+service down before exiting. Nothing in Ward depends on systemd (sleep and resume are noticed through logind or
+elogind when either is there).
+
+## Tray icon
+
+The tray icon (StatusNotifierItem) shows on KDE Plasma, Cinnamon, XFCE, LXQt, MATE, Budgie and on GNOME with the
+[AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/). "Automatic" shows it
+whenever such a tray is running, and it appears by itself when you turn the extension on later. Clicking it shows or
+hides the window; its menu has Show, Preferences and Quit, and it signals unread messages.
+
+## Keyboard
+
+Everything works from the keyboard; **Ctrl+?** or **F1** lists every shortcut.
+
+| Keys | Action |
+| --- | --- |
+| Ctrl+K | Find a chat or contact |
+| Ctrl+N / Ctrl+Shift+N / Ctrl+J / Ctrl+Shift+A | New chat / new group / join a group / add a contact |
+| Alt+Up, Alt+Down (Ctrl+Page Up/Down) | Previous / next chat |
+| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous chat with unread messages |
+| Alt+1 … Alt+9 | Go to chat 1 to 9 |
+| Ctrl+F / Ctrl+Shift+F | Search in this chat / search chats |
+| Ctrl+R / Ctrl+E (or Up) | Reply to the last message / edit your last message |
+| Page Up / Page Down, Ctrl+End | Scroll the messages, jump to the latest |
+| Ctrl+L | Write a message |
+| Ctrl+U or Ctrl+O | Send a file |
+| Ctrl+B / Ctrl+I | Bold / italic |
+| Ctrl+Shift+R / Ctrl+Shift+M / Ctrl+Shift+P / Ctrl+Shift+I | Mark read / mute / pin / chat details |
+| Escape | Cancel reply or edit, close search, back to the list on small screens |
+| Ctrl+Plus / Ctrl+Minus / Ctrl+0 | Text size |
+| Ctrl+, / F10 | Preferences / main menu |
+| Ctrl+W | Close the window (Ward stays connected in the background) |
+| Ctrl+Q | Quit Ward completely |
 
 ## OpenPGP and GPGMan
 

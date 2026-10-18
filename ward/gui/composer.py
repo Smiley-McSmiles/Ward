@@ -287,6 +287,9 @@ class Composer(Gtk.Box):
                 self.cancel()
                 return True
             return False
+        if keyval in (Gdk.KEY_Page_Up, Gdk.KEY_Page_Down) and not ctrl:
+            self._scroll_messages(-1 if keyval == Gdk.KEY_Page_Up else 1)
+            return True
         if keyval == Gdk.KEY_Up and not self._text() and not ctrl:
             last = self._last_own_message()
             if last is not None:
@@ -301,6 +304,16 @@ class Composer(Gtk.Box):
         if keyval == Gdk.KEY_Tab and not ctrl and self.chat is not None and self.chat.type == "groupchat":
             return self._tab_nick()
         return False
+
+    def edit_last(self) -> None:
+        last = self._last_own_message()
+        if last is not None:
+            self.start_edit(last)
+
+    def _scroll_messages(self, pages: float) -> None:
+        adj = self.view.vadj
+        adj.set_value(max(0, min(adj.get_upper() - adj.get_page_size(),
+                                 adj.get_value() + pages * adj.get_page_size() * 0.9)))
 
     def _last_own_message(self) -> MessageItem | None:
         ml = self.view.ml

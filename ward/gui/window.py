@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import APP_NAME
 from ..core.models import AccountItem, ChatItem
@@ -18,14 +18,25 @@ log = logging.getLogger("ward.gui")
 
 SHORTCUTS = (
     (_("General"), (("<Ctrl>k", _("Find a chat or contact")), ("<Ctrl>n", _("New chat")),
-                    ("<Ctrl>comma", _("Preferences")), ("<Ctrl>question", _("Keyboard shortcuts")),
-                    ("<Ctrl>w", _("Close the window")), ("<Ctrl>q", _("Quit")))),
-    (_("Chats"), (("<Ctrl>Page_Down <Ctrl>Tab", _("Next chat")), ("<Ctrl>Page_Up <Ctrl><Shift>Tab", _("Previous chat")),
+                    ("<Ctrl><Shift>n", _("New group")), ("<Ctrl>j", _("Join a group")),
+                    ("<Ctrl><Shift>a", _("Add a contact")), ("<Ctrl>comma", _("Preferences")),
+                    ("<Ctrl>question F1", _("Keyboard shortcuts")), ("F10", _("Main menu")),
+                    ("<Ctrl>w", _("Close the window (Ward keeps running in the background)")),
+                    ("<Ctrl>q", _("Quit Ward, including the background service")))),
+    (_("Chats"), (("<Alt>Down <Ctrl>Page_Down", _("Next chat")), ("<Alt>Up <Ctrl>Page_Up", _("Previous chat")),
+                  ("<Ctrl>Tab", _("Next chat with unread messages")),
+                  ("<Ctrl><Shift>Tab", _("Previous chat with unread messages")),
                   ("<Alt>1...9", _("Go to chat 1 to 9")), ("<Ctrl>f", _("Search in the chat")),
-                  ("<Ctrl><Shift>f", _("Search chats")), ("<Ctrl>i", _("Chat details")))),
-    (_("Writing"), (("Return", _("Send")), ("<Shift>Return", _("New line")), ("Up", _("Edit your last message")),
+                  ("<Ctrl><Shift>f", _("Search chats")), ("<Ctrl><Shift>i", _("Chat details")),
+                  ("<Ctrl><Shift>r", _("Mark as read")), ("<Ctrl><Shift>m", _("Mute or unmute")),
+                  ("<Ctrl><Shift>p", _("Pin or unpin")), ("Escape", _("Back to the chat list (on small screens)")))),
+    (_("Messages"), (("<Ctrl>r", _("Reply to the last message")), ("<Ctrl>e Up", _("Edit your last message")),
+                     ("Page_Up Page_Down", _("Scroll the messages")), ("<Ctrl>End", _("Jump to the latest message")),
+                     ("<Ctrl>l", _("Write a message")))),
+    (_("Writing"), (("Return", _("Send")), ("<Shift>Return", _("New line")),
                     ("Escape", _("Cancel reply or edit")), ("<Ctrl>b", _("Bold")), ("<Ctrl>i", _("Italic")),
-                    ("<Ctrl>u", _("Send a file")), ("Tab", _("Complete a nickname")))),
+                    ("<Ctrl>u <Ctrl>o", _("Send a file")), ("<Ctrl>z", _("Undo")), ("<Ctrl><Shift>z", _("Redo")),
+                    ("Tab", _("Complete a nickname")))),
     (_("Text size"), (("<Ctrl>plus", _("Larger")), ("<Ctrl>minus", _("Smaller")), ("<Ctrl>0", _("Normal")))),
 )
 
@@ -209,19 +220,40 @@ class MainWindow(Adw.ApplicationWindow):
             if accels:
                 self.app.set_accels_for_action("win." + name, accels)
         add("start-chat", lambda: self._need_account() and dialogs.StartChatDialog(self).present(self), ["<Ctrl>n"])
-        add("new-group", lambda: self._need_account() and dialogs.NewGroupDialog(self).present(self))
+        add("new-group", lambda: self._need_account() and dialogs.NewGroupDialog(self).present(self),
+            ["<Ctrl><Shift>n"])
         add("join-group", lambda: self._need_account() and dialogs.JoinGroupDialog(self).present(self), ["<Ctrl>j"])
-        add("add-contact", lambda: self._need_account() and dialogs.AddContactDialog(self).present(self))
+        add("add-contact", lambda: self._need_account() and dialogs.AddContactDialog(self).present(self),
+            ["<Ctrl><Shift>a"])
         add("quick-switcher", lambda: dialogs.QuickSwitcher(self).present(self), ["<Ctrl>k"])
         add("search-chats", self.sidebar.focus_search, ["<Ctrl><Shift>f"])
-        add("next-chat", lambda: self.sidebar.select_relative(1), ["<Ctrl>Page_Down", "<Ctrl>Tab"])
-        add("prev-chat", lambda: self.sidebar.select_relative(-1), ["<Ctrl>Page_Up", "<Ctrl><Shift>Tab",
-                                                                   "<Ctrl><Shift>ISO_Left_Tab"])
-        add("chat-details", self.conversation.show_details, ["<Ctrl>i"])
+        add("next-chat", lambda: self.sidebar.select_relative(1), ["<Alt>Down", "<Ctrl>Page_Down"])
+        add("prev-chat", lambda: self.sidebar.select_relative(-1), ["<Alt>Up", "<Ctrl>Page_Up"])
+        add("next-unread", lambda: self.sidebar.select_unread(1), ["<Ctrl>Tab"])
+        add("prev-unread", lambda: self.sidebar.select_unread(-1), ["<Ctrl><Shift>Tab", "<Ctrl><Shift>ISO_Left_Tab"])
+        add("chat-details", self.conversation.show_details, ["<Ctrl><Shift>i"])
+        add("mark-read", lambda: self.current_chat is not None and widgets.run(
+            self, self.core.messaging.mark_read(self.current_chat)), ["<Ctrl><Shift>r"])
+        add("toggle-mute", lambda: self.current_chat is not None and self.conversation._mute(
+            0 if self.current_chat.muted(GLib.get_real_time() // 1000) else -1), ["<Ctrl><Shift>m"])
+        add("toggle-pin", lambda: self.current_chat is not None and self.conversation._toggle_flag("pinned"),
+            ["<Ctrl><Shift>p"])
+        add("reply-last", lambda: self.current_chat is not None and self.conversation.reply_last(), ["<Ctrl>r"])
+        add("edit-last", lambda: self.current_chat is not None and self.conversation.composer.edit_last(),
+            ["<Ctrl>e"])
+        add("focus-composer", lambda: self.current_chat is not None and self.conversation.focus_composer(),
+            ["<Ctrl>l"])
+        add("jump-latest", lambda: self.current_chat is not None and self.conversation.scroll_to_bottom(),
+            ["<Ctrl>End"])
+        # Escape last of all (bubble phase): dialogs, popovers and the composer get it first
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", lambda _c, kv, _code, st: kv == Gdk.KEY_Escape and not (
+            st & Gtk.accelerator_get_default_mod_mask()) and self._back())
+        self.add_controller(keys)
         add("search-chat", lambda: self.current_chat is not None and self.conversation.search_button.set_active(True),
             ["<Ctrl>f"])
         add("send-file", lambda: self.current_chat is not None and self.conversation.composer.choose_files(),
-            ["<Ctrl>u"])
+            ["<Ctrl>u", "<Ctrl>o"])
         add("close", self.close, ["<Ctrl>w"])
         add("zoom-in", lambda: self._zoom(10), ["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"])
         add("zoom-out", lambda: self._zoom(-10), ["<Ctrl>minus", "<Ctrl>KP_Subtract"])
@@ -231,7 +263,18 @@ class MainWindow(Adw.ApplicationWindow):
         add("disco", self._disco)
         for i in range(1, 10):
             add("chat-%d" % i, lambda i=i: self.sidebar.select_index(i - 1), ["<Alt>%d" % i])
-        self.app.set_accels_for_action("win.show-help-overlay", ["<Ctrl>question"])
+        self.app.set_accels_for_action("win.show-help-overlay", ["<Ctrl>question", "F1"])
+
+    def _back(self) -> bool:
+        """Escape: close the in-chat search, or go back to the chat list on a narrow window."""
+        conv = self.conversation
+        if conv.search_button.get_active():
+            conv.search_button.set_active(False)
+            return True
+        if self.narrow and self.split.get_show_content():
+            self.split.set_show_content(False)
+            return True
+        return False
 
     def _need_account(self) -> bool:
         if not self.core.accounts.list():

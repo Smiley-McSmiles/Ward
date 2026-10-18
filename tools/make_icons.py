@@ -58,19 +58,22 @@ SYMBOLIC = {
 
 APP = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="sh" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8e7e4"/>
+    </linearGradient>
+    <linearGradient id="bu" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#4a90e2"/><stop offset="1" stop-color="#1a5fb4"/>
     </linearGradient>
-    <linearGradient id="sh" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#deddda"/>
-    </linearGradient>
   </defs>
-  <rect x="8" y="12" width="112" height="108" rx="24" fill="#1c4f8f"/>
-  <rect x="8" y="8" width="112" height="108" rx="24" fill="url(#bg)"/>
-  <path d="M64 20 30 32v24c0 21 14.5 38.5 34 45 19.5-6.5 34-24 34-45V32z" fill="url(#sh)"/>
-  <path d="M46 46h36a6 6 0 0 1 6 6v18a6 6 0 0 1-6 6H62l-12 9v-9h-4a6 6 0 0 1-6-6V52a6 6 0 0 1 6-6z" fill="#3584e4"/>
-  <circle cx="53" cy="61" r="4" fill="#fff"/><circle cx="64" cy="61" r="4" fill="#fff"/>
-  <circle cx="75" cy="61" r="4" fill="#fff"/>
+  <!-- the shield fills the icon; a soft edge and shadow keep it visible on light backgrounds -->
+  <path d="M64 10 14 28v34c0 31 21.5 56 50 64 28.5-8 50-33 50-64V28z" fill="#000" fill-opacity=".12"
+        transform="translate(0 3)"/>
+  <path d="M64 8 14 26v34c0 31 21.5 56 50 64 28.5-8 50-33 50-64V26z" fill="url(#sh)" stroke="#9a9996"
+        stroke-width="2" stroke-opacity=".6"/>
+  <path d="M34 40h60a9 9 0 0 1 9 9v30a9 9 0 0 1-9 9H66l-19 14V88h-13a9 9 0 0 1-9-9V49a9 9 0 0 1 9-9z"
+        fill="url(#bu)"/>
+  <circle cx="46" cy="64" r="6.5" fill="#fff"/><circle cx="64" cy="64" r="6.5" fill="#fff"/>
+  <circle cx="82" cy="64" r="6.5" fill="#fff"/>
 </svg>
 """
 

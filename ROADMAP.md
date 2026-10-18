@@ -24,14 +24,14 @@ We build a complete Gajim replacement: an XMPP client for the Linux and BSD desk
   (FreeBSD, OpenBSD, NetBSD, DragonFly) are first-class: POSIX installer, no Linux-only APIs in the core.
 - No protocol bridges (Matrix, Signal). Users can still reach them through existing XMPP gateways such as Slidge, which work like normal contacts.
 
-## Status (0.1.0)
+## Status (v1.0.0)
 
 Decisions taken: the name is **Ward**, the license is **MIT**, Ward runs natively on **GTK 4.12+ and libadwaita
 1.4+** (Ubuntu 24.04's 1.5 included, newer widgets used when present), and the BSDs are supported alongside every
 Linux family. OMEMO is integrated directly on python-omemo (no slixmpp-omemo, which is AGPL); legacy OMEMO's library
 (oldmemo, AGPL) stays optional. OpenPGP (XEP-0373/0374) is in from the start, sharing keys with GPGMan.
 
-**Done in 0.1.0** (M0 to most of M5, see Milestones):
+**Done in v1.0.0** (M0 to most of M5, see Milestones):
 
 - Foundations: GLib-driven asyncio loop (`ward/aio.py`, works on PyGObject 3.42+), typed settings schema that also
   generates Preferences, SQLite on its own thread with numbered migrations and backups, gettext.
@@ -58,7 +58,7 @@ Linux family. OMEMO is integrated directly on python-omemo (no slixmpp-omemo, wh
 - Tests: 90+ unit, integration (real Prosody, two slixmpp versions) and interface tests (Xvfb), CI for lint, mypy,
   distribution containers, BSD VMs, packages and Flatpak.
 
-**Still to do before 1.0:** trust center across all contacts and bulk trust actions, "move this device", global
+**Still to do after v1.0.0:** trust center across all contacts and bulk trust actions, "move this device", global
 search window, chat export and full profile backup, Gajim import, folders, voice messages, link previews, swipe to
 reply, PEP browser, GNOME Shell search provider, presence presets and auto-away, vCard4 profile fields, blocked
 contacts page, accessibility pass with Orca, translations on Weblate, Hypothesis fuzzing, ejabberd in CI, and the
@@ -930,4 +930,4 @@ The biggest risks are in libraries we depend on, not in the GTK work; each has a
 
 - [ ] Try it with your own server and an admin account (the Server pages and invites are tested against Prosody only).
 - [ ] Decide on the database passphrase question and on ejabberd in CI.
-- [ ] Create the first release tag (`v0.1.0`); the release workflow builds every package and the Flatpak bundle.
+- [ ] Create the first release tag (`v1.0.0`); the release workflow builds every package and the Flatpak bundle.

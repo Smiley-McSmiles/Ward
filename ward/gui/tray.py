@@ -46,25 +46,42 @@ MENU_XML = """<node><interface name="com.canonical.dbusmenu">
 <signal name="ItemsPropertiesUpdated"><arg type="a(ia{sv})"/><arg type="a(ias)"/></signal>
 </interface></node>"""
 
-ITEMS = ((1, "show"), (2, "separator"), (3, "quit"))
+ITEMS = ((1, "show"), (4, "preferences"), (2, "separator"), (3, "quit"))
+LABELS = {"show": "Show Ward", "preferences": "Preferences", "quit": "Quit"}
 
 
-def wanted(setting: str) -> bool:
+def watcher_running(bus) -> bool:
+    """A tray host is listening: KDE Plasma, Cinnamon (xapp-sn-watcher), XFCE, LXQt, MATE, Budgie, or GNOME with the
+    AppIndicator extension."""
+    try:
+        res = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner",
+                            GLib.Variant("(s)", ("org.kde.StatusNotifierWatcher",)), GLib.VariantType("(b)"),
+                            Gio.DBusCallFlags.NONE, 2000, None)
+        return bool(res.unpack()[0])
+    except GLib.Error:
+        return False
+
+
+def wanted(setting: str, bus=None) -> bool:
     if setting == "never":
         return False
     if setting == "always":
         return True
-    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
-    return "gnome" not in desktop and "phosh" not in desktop
+    # automatic: show it wherever a tray host runs (plain GNOME has none, GNOME + AppIndicator has one)
+    return bus is not None and watcher_running(bus)
 
 
 class Tray:
     def __init__(self, app):
-        if not wanted(app.core.settings["general.tray"]):
-            raise RuntimeError("tray not wanted on this desktop")
+        self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        if not wanted(app.core.settings["general.tray"], self.bus):
+            raise RuntimeError("no tray host on this desktop")
         self.app = app
         self.unread = 0
-        self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        from .. import paths
+
+        icons = os.path.join(paths.share_dir(), "icons") if paths.share_dir() else ""
+        self.icon_path = icons if icons and os.path.isdir(icons) else ""
         self.name = "org.kde.StatusNotifierItem-%d-1" % os.getpid()
         self._ids = []
         sni = Gio.DBusNodeInfo.new_for_xml(SNI_XML).interfaces[0]
@@ -118,7 +135,7 @@ class Tray:
             "Category": GLib.Variant("s", "Communications"), "Id": GLib.Variant("s", APP_ID),
             "Title": GLib.Variant("s", APP_NAME), "Status": GLib.Variant("s", self._status()),
             "IconName": GLib.Variant("s", APP_ID), "AttentionIconName": GLib.Variant("s", APP_ID),
-            "IconThemePath": GLib.Variant("s", ""), "ItemIsMenu": GLib.Variant("b", False),
+            "IconThemePath": GLib.Variant("s", self.icon_path), "ItemIsMenu": GLib.Variant("b", False),
             "Menu": GLib.Variant("o", "/MenuBar"),
             "ToolTip": GLib.Variant("(sa(iiay)ss)", (APP_ID, [], APP_NAME, tip)),
         }
@@ -134,7 +151,7 @@ class Tray:
         if kind == "separator":
             props = {"type": GLib.Variant("s", "separator")}
         else:
-            props = {"label": GLib.Variant("s", _("Show Ward") if kind == "show" else _("Quit")),
+            props = {"label": GLib.Variant("s", _(LABELS[kind])),
                      "enabled": GLib.Variant("b", True), "visible": GLib.Variant("b", True)}
         return GLib.Variant("(ia{sv}av)", (item_id, props, []))
 
@@ -177,6 +194,8 @@ class Tray:
     def _clicked(self, item_id: int) -> None:
         if item_id == 1:
             self.app.activate()
+        elif item_id == 4:
+            self.app.show_preferences()
         elif item_id == 3:
             self.app.quit_app(force=True)
 

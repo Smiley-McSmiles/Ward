@@ -578,6 +578,20 @@ class Sidebar(Gtk.Box):
         i = 0 if cur == Gtk.INVALID_LIST_POSITION else (cur + delta) % n
         self.window.show_chat(self.sorted.get_item(i))
 
+    def select_unread(self, delta: int) -> None:
+        """Ctrl+Tab: the next chat with unread messages (or simply the next chat when nothing is unread)."""
+        n = self.sorted.get_n_items()
+        if not n:
+            return
+        cur = self.selection.get_selected()
+        start = 0 if cur == Gtk.INVALID_LIST_POSITION else cur
+        for step in range(1, n + 1):
+            chat = self.sorted.get_item((start + delta * step) % n)
+            if chat is not None and (chat.unread or chat.mentions) and chat is not self.window.current_chat:
+                self.window.show_chat(chat)
+                return
+        self.select_relative(delta)
+
     def select_index(self, i: int) -> None:
         if 0 <= i < self.sorted.get_n_items():
             self.window.show_chat(self.sorted.get_item(i))

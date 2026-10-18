@@ -77,7 +77,7 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
-    <release version="0.1.0" date="2026-10-18">
+    <release version="1.0.0" date="2026-10-18">
       <description>
         <p>The first release: encrypted chats and groups, Markdown, files, several accounts, OpenPGP with GPGMan
         keys, server administration, and packages for many Linux distributions and the BSDs.</p>

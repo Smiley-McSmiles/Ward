@@ -927,5 +927,14 @@ class ConversationView(Gtk.Box):
             for row in list(self.rows.values()):
                 row._changed()
 
+    def reply_last(self) -> None:
+        """Ctrl+R: reply to the newest message from someone else."""
+        if self.ml is None:
+            return
+        for m in reversed(self.ml.items()):
+            if not m.outgoing and not m.retracted and m.kind in ("text", "me", "file"):
+                self.start_reply(m)
+                return
+
     def focus_composer(self) -> None:
         self.composer.grab_focus_text()

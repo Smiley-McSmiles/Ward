@@ -342,7 +342,7 @@ link_system_dirs() {
 uninstall() {
     say "Removing Ward from $PREFIX"
     rm -rf "$D$LIBDIR" "$D$SHAREDIR/ward"
-    rm -f "$D$BINDIR/ward"
+    rm -f "$D$BINDIR/ward" "$D$PREFIX/lib/systemd/user/ward.service"
     rm -f "$D$SHAREDIR/applications/$APPID.desktop" "$D$SHAREDIR/metainfo/$APPID.metainfo.xml" \
           "$D$SHAREDIR/pixmaps/$APPID.svg" "$D$MANDIR/ward.1" "$D$SHAREDIR/bash-completion/completions/ward" \
           "$D$SHAREDIR/zsh/site-functions/_ward" "$D$SHAREDIR/fish/vendor_completions.d/ward.fish"
@@ -402,9 +402,22 @@ cp "$SRC/data/completions/ward.bash" "$D$SHAREDIR/bash-completion/completions/wa
 cp "$SRC/data/completions/_ward" "$D$SHAREDIR/zsh/site-functions/_ward"
 cp "$SRC/data/completions/ward.fish" "$D$SHAREDIR/fish/vendor_completions.d/ward.fish"
 compile_translations
+# optional background services; Ward needs neither (its "Start at login" uses XDG autostart, which every init
+# system's desktop session honours)
+render() {  # render <template> <dest> <mode>
+    mkdir -p "$(dirname "$D$2")"
+    sed -e "s|@BINDIR@|$BINDIR|g" -e "s|@SHAREDIR@|$SHAREDIR|g" "$1" > "$D$2"
+    chmod "$3" "$D$2"
+}
+case "$OS:${WARD_NO_SYSTEMD:-}" in
+    Linux:) render "$SRC/data/init/ward.service" "$PREFIX/lib/systemd/user/ward.service" 644 ;;
+esac
+render "$SRC/data/init/runit/run" "$SHAREDIR/ward/runit/run" 755
+render "$SRC/data/init/runit/log/run" "$SHAREDIR/ward/runit/log/run" 755
 
 # cp keeps the source modes: a tarball unpacked with a strict umask must still install world-readable files
 chmod -R go+rX "$D$LIBDIR" "$D$SHAREDIR/ward"
+chmod 755 "$D$SHAREDIR/ward/runit/run" "$D$SHAREDIR/ward/runit/log/run"
 find "$D$SHAREDIR" \( -name "$APPID*" -o -name 'ward.1' -o -name 'ward' -o -name '_ward' -o -name 'ward.fish' \
     -o -name 'ward.mo' \) -type f -exec chmod 644 {} + 2>/dev/null || true
 chmod 755 "$D$BINDIR/ward"

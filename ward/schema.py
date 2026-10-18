@@ -63,7 +63,9 @@ SPECS: dict[str, Spec] = {
                             page="general", group=N_("Running")),
     "general.autostart": S("bool", False, N_("Start at login"), N_("Start hidden, in the background"),
                            page="general", group=N_("Running")),
-    "general.tray": S("choice", "auto", N_("Tray icon"), N_("GNOME has no tray, so automatic hides it there"),
+    "general.tray": S("choice", "auto", N_("Tray icon"),
+                      N_("Automatic shows it when the desktop has a tray: KDE, Cinnamon, XFCE, or GNOME with the "
+                         "AppIndicator extension"),
                       page="general", group=N_("Running"),
                       choices=(("auto", N_("Automatic")), ("always", N_("Always")), ("never", N_("Never")))),
     "general.confirm_quit": S("bool", False, N_("Confirm before quitting"), page="general", group=N_("Running")),

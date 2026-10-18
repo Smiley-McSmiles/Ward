@@ -273,7 +273,7 @@ def missing_required() -> list[Feature]:
 def report() -> str:
     from .i18n import _
 
-    lines = ["Ward %s on %s %s, Python %s" % (_ward_version(), platform.system(), platform.release(),
+    lines = ["Ward v%s on %s %s, Python %s" % (_ward_version(), platform.system(), platform.release(),
                                                platform.python_version())]
     pm = package_manager()
     lines.append("Package manager: %s" % (pm or ("Flatpak sandbox" if os.path.exists("/.flatpak-info")

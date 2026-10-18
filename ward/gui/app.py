@@ -3,6 +3,7 @@ the window is closed, and turns the core's notifications into desktop notificati
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -67,6 +68,11 @@ class WardApplication(Adw.Application):
         if settings["general.background"]:
             self._hold(True)
         aio.spawn(self._start_core())
+        import signal
+
+        self._write_session_env()
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, self._on_signal)
         if settings["general.tray"] != "never":
             self._setup_tray()
 
@@ -160,6 +166,11 @@ class WardApplication(Adw.Application):
         aio.spawn(self._shutdown())
 
     async def _shutdown(self) -> None:
+        # under runit, tell the supervisor this exit is wanted, or runsv would start Ward again right away
+        svc = os.environ.get("WARD_RUNIT_SERVICE")
+        if svc and shutil.which("sv"):
+            with contextlib.suppress(OSError):
+                subprocess.Popen(["sv", "-w", "0", "down", svc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             if self.core is not None and self.core.started:
                 await self.core.shutdown()
@@ -223,6 +234,8 @@ class WardApplication(Adw.Application):
             log.info("background portal: %s", e)
 
     def _setup_tray(self) -> None:
+        if self.tray is not None:
+            return
         try:
             from .tray import Tray
 
@@ -230,6 +243,36 @@ class WardApplication(Adw.Application):
         except Exception as e:
             log.debug("no tray: %s", e)
             self.tray = None
+        if not getattr(self, "_tray_watch", 0):
+            # a tray host can appear later (Plasma restarting, the GNOME AppIndicator extension being switched on)
+            self._tray_watch = Gio.bus_watch_name(Gio.BusType.SESSION, "org.kde.StatusNotifierWatcher",
+                                                  Gio.BusNameWatcherFlags.NONE,
+                                                  lambda *_: self.tray is None and self._tray_wanted()
+                                                  and self._setup_tray(), None)
+
+    @staticmethod
+    def _write_session_env() -> None:
+        """For the runit user service: runsvdir does not inherit the desktop session's variables, so a Ward started
+        from the desktop leaves them where data/init/runit/run reads them."""
+        rt = os.environ.get("XDG_RUNTIME_DIR")
+        if not rt or os.environ.get("WARD_RUNIT_SERVICE") or not os.path.isdir(rt):
+            return
+        keep = ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE",
+                "XAUTHORITY")
+        lines = ["export %s='%s'" % (k, os.environ[k].replace("'", "")) for k in keep if os.environ.get(k)]
+        with contextlib.suppress(OSError):
+            path = os.path.join(rt, "ward.env")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+            os.chmod(path, 0o600)
+
+    def _tray_wanted(self) -> bool:
+        return self.core is not None and self.core.settings["general.tray"] != "never"
+
+    def _on_signal(self) -> bool:
+        """SIGTERM/SIGINT from systemd, runit (sv down) or a terminal: shut down cleanly."""
+        self.quit_app(force=True)
+        return False
 
     # ================================================================== notifications
     def _on_notification(self, _notifier, note) -> None:
@@ -400,7 +443,7 @@ class WardApplication(Adw.Application):
 
     def show_about(self) -> None:
         self.activate()
-        kw = dict(application_name=APP_NAME, application_icon=APP_ID, version=__version__, website=URL,
+        kw = dict(application_name=APP_NAME, application_icon=APP_ID, version="v" + __version__, website=URL,
                   issue_url=URL + "/issues", license_type=Gtk.License.MIT_X11, developer_name="Ward contributors",
                   comments=_("A private, modern XMPP client"),
                   copyright="© Ward contributors")

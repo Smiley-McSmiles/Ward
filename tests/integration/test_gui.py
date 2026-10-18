@@ -262,6 +262,12 @@ def test_register_group_and_dialogs(app, prosody, run, errors):
         w.conversation.search_entry.set_text("first")
         await wait_for(lambda: w.conversation.stack.get_visible_child_name() == "results", 10, "search results")
         w.conversation.search_button.set_active(False)
+        # the keyboard shortcuts run without errors
+        for action in ("reply-last", "edit-last", "focus-composer", "jump-latest", "mark-read", "toggle-mute",
+                       "toggle-mute", "toggle-pin", "next-unread", "prev-chat", "next-chat", "search-chat"):
+            w.activate_action("win." + action, None)
+            await _settle(0.1)
+        assert w._back() is True             # Escape closes the search opened by search-chat
         await app.core.shutdown()
 
     run(scenario(), timeout=180)

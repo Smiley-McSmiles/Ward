@@ -24,7 +24,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("-q", "--quit", action="store_true", help="quit the running instance")
     p.add_argument("--check", action="store_true", help="show which libraries and features are available")
     p.add_argument("--debug", action="store_true", help="verbose logging to the terminal")
-    p.add_argument("--version", action="version", version="%s %s" % (APP_NAME, __version__))
+    p.add_argument("--version", action="version", version="%s v%s" % (APP_NAME, __version__))
     return p
 
 

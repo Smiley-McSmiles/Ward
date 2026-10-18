@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: Ward 0.1.0\n"
+"Project-Id-Version: Ward 1.0.0\n"
 "Report-Msgid-Bugs-To: https://github.com/smiley-mcsmiles/ward/issues\n"
-"POT-Creation-Date: 2026-10-18 02:39+0000\n"
+"POT-Creation-Date: 2026-10-18 02:49+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -276,7 +276,7 @@ msgstr ""
 msgid "Message request"
 msgstr ""
 
-#: ward/core/notify.py:111 ward/core/notify.py:113 ward/schema.py:174
+#: ward/core/notify.py:111 ward/core/notify.py:113 ward/schema.py:176
 msgid "New message"
 msgstr ""
 
@@ -704,61 +704,60 @@ msgstr ""
 msgid "Finish"
 msgstr ""
 
-#: ward/gui/app.py:89
+#: ward/gui/app.py:95
 msgid "Ward could not start"
 msgstr ""
 
-#: ward/gui/app.py:89 ward/gui/app.py:156 ward/gui/sidebar.py:64
-#: ward/gui/tray.py:137 ward/gui/window.py:22
+#: ward/gui/app.py:95 ward/gui/app.py:162 ward/gui/sidebar.py:64
 msgid "Quit"
 msgstr ""
 
-#: ward/gui/app.py:155
+#: ward/gui/app.py:161
 msgid "Quit Ward?"
 msgstr ""
 
-#: ward/gui/app.py:155
+#: ward/gui/app.py:161
 msgid "You won't get messages until you start it again."
 msgstr ""
 
-#: ward/gui/app.py:156 ward/gui/composer.py:571 ward/gui/conversation.py:582
+#: ward/gui/app.py:162 ward/gui/composer.py:584 ward/gui/conversation.py:582
 #: ward/gui/conversation.py:745 ward/gui/conversation.py:754
 #: ward/gui/conversation.py:806 ward/gui/conversation.py:823
 #: ward/gui/conversation.py:851 ward/gui/details.py:195 ward/gui/details.py:205
 #: ward/gui/details.py:308 ward/gui/dialogs.py:37 ward/gui/dialogs.py:817
 #: ward/gui/members.py:187 ward/gui/message_row.py:344 ward/gui/prefs.py:470
 #: ward/gui/prefs.py:514 ward/gui/trust.py:242 ward/gui/trust.py:323
-#: ward/gui/trust.py:341 ward/gui/window.py:267
+#: ward/gui/trust.py:341 ward/gui/window.py:310
 msgid "Cancel"
 msgstr ""
 
-#: ward/gui/app.py:186
+#: ward/gui/app.py:197
 #, python-format
 msgid "custom.css: %s"
 msgstr ""
 
-#: ward/gui/app.py:216
+#: ward/gui/app.py:227
 msgid "Receive messages in the background"
 msgstr ""
 
-#: ward/gui/app.py:245 ward/gui/sidebar.py:280
+#: ward/gui/app.py:288 ward/gui/sidebar.py:280 ward/gui/window.py:31
 msgid "Mark as read"
 msgstr ""
 
-#: ward/gui/app.py:355
+#: ward/gui/app.py:398
 msgid "Some fingerprints in the link did not match"
 msgstr ""
 
-#: ward/gui/app.py:357 ward/gui/trust.py:268
+#: ward/gui/app.py:400 ward/gui/trust.py:268
 #, python-format
 msgid "Verified %d devices"
 msgstr ""
 
-#: ward/gui/app.py:405
+#: ward/gui/app.py:448
 msgid "A private, modern XMPP client"
 msgstr ""
 
-#: ward/gui/app.py:410
+#: ward/gui/app.py:453
 msgid ""
 "Legacy OMEMO support (oldmemo) is licensed under the AGPL-3.0 and is "
 "optional."
@@ -819,7 +818,7 @@ msgstr ""
 msgid "Quote"
 msgstr ""
 
-#: ward/gui/composer.py:118 ward/gui/window.py:28
+#: ward/gui/composer.py:118 ward/gui/window.py:38
 msgid "Send a file"
 msgstr ""
 
@@ -827,12 +826,12 @@ msgstr ""
 msgid "Emoji"
 msgstr ""
 
-#: ward/gui/composer.py:151 ward/gui/composer.py:571 ward/gui/tools.py:69
-#: ward/gui/window.py:26
+#: ward/gui/composer.py:151 ward/gui/composer.py:584 ward/gui/tools.py:69
+#: ward/gui/window.py:36
 msgid "Send"
 msgstr ""
 
-#: ward/gui/composer.py:211 ward/gui/composer.py:428
+#: ward/gui/composer.py:211 ward/gui/composer.py:441
 msgid "Edit message"
 msgstr ""
 
@@ -849,58 +848,58 @@ msgstr ""
 msgid "Message"
 msgstr ""
 
-#: ward/gui/composer.py:416
+#: ward/gui/composer.py:429
 #, python-format
 msgid "Reply to %s"
 msgstr ""
 
-#: ward/gui/composer.py:468
+#: ward/gui/composer.py:481
 msgid "Could not edit"
 msgstr ""
 
-#: ward/gui/composer.py:478 ward/gui/conversation.py:689
+#: ward/gui/composer.py:491 ward/gui/conversation.py:689
 msgid "Could not send"
 msgstr ""
 
-#: ward/gui/composer.py:501
+#: ward/gui/composer.py:514
 #, python-format
 msgid "/%s only works in groups"
 msgstr ""
 
-#: ward/gui/composer.py:507
+#: ward/gui/composer.py:520
 msgid "Could not change the topic"
 msgstr ""
 
-#: ward/gui/composer.py:510 ward/gui/dialogs.py:369
+#: ward/gui/composer.py:523 ward/gui/dialogs.py:369
 #, python-format
 msgid "Invited %s"
 msgstr ""
 
-#: ward/gui/composer.py:513 ward/gui/members.py:194
+#: ward/gui/composer.py:526 ward/gui/members.py:194
 #, python-format
 msgid "Could not remove %s"
 msgstr ""
 
-#: ward/gui/composer.py:516 ward/gui/members.py:200
+#: ward/gui/composer.py:529 ward/gui/members.py:200
 #, python-format
 msgid "Could not ban %s"
 msgstr ""
 
-#: ward/gui/composer.py:521
+#: ward/gui/composer.py:534
 #, python-format
 msgid "Usage: /%s …"
 msgstr ""
 
-#: ward/gui/composer.py:526
+#: ward/gui/composer.py:539
 msgid "Send files"
 msgstr ""
 
-#: ward/gui/composer.py:543
+#: ward/gui/composer.py:556
 #, python-format
 msgid "Could not send %s"
 msgstr ""
 
-#: ward/gui/composer.py:571
+#: ward/gui/composer.py:584
 msgid "Send this image?"
 msgstr ""
 
@@ -922,9 +921,9 @@ msgid "Search (Ctrl+F)"
 msgstr ""
 
 #: ward/gui/conversation.py:91 ward/gui/details.py:103 ward/gui/details.py:253
-#: ward/gui/dialogs.py:535 ward/schema.py:54 ward/schema.py:183
-#: ward/schema.py:186 ward/schema.py:190 ward/schema.py:194 ward/schema.py:198
-#: ward/schema.py:201
+#: ward/gui/dialogs.py:535 ward/schema.py:54 ward/schema.py:185
+#: ward/schema.py:188 ward/schema.py:192 ward/schema.py:196 ward/schema.py:200
+#: ward/schema.py:203
 msgid "Encryption"
 msgstr ""
 
@@ -932,7 +931,7 @@ msgstr ""
 msgid "Search this chat (from: has:file before: after:)"
 msgstr ""
 
-#: ward/gui/conversation.py:141
+#: ward/gui/conversation.py:141 ward/gui/window.py:34
 msgid "Jump to the latest message"
 msgstr ""
 
@@ -970,7 +969,7 @@ msgid "%s is not in your contacts. Messages from strangers can be spam."
 msgstr ""
 
 #: ward/gui/conversation.py:427 ward/gui/conversation.py:851
-#: ward/gui/details.py:195 ward/gui/dialogs.py:676 ward/schema.py:216
+#: ward/gui/details.py:195 ward/gui/dialogs.py:676 ward/schema.py:218
 msgid "Block"
 msgstr ""
 
@@ -1112,8 +1111,8 @@ msgstr ""
 msgid "Default"
 msgstr ""
 
-#: ward/gui/conversation.py:513 ward/schema.py:106 ward/schema.py:142
-#: ward/schema.py:185 ward/schema.py:235 ward/schema.py:291
+#: ward/gui/conversation.py:513 ward/schema.py:108 ward/schema.py:144
+#: ward/schema.py:187 ward/schema.py:237 ward/schema.py:293
 msgid "Off"
 msgstr ""
 
@@ -1359,8 +1358,8 @@ msgid "Fingerprints and verification"
 msgstr ""
 
 #: ward/gui/details.py:109 ward/gui/details.py:251 ward/schema.py:52
-#: ward/schema.py:156 ward/schema.py:158 ward/schema.py:162 ward/schema.py:163
-#: ward/schema.py:168 ward/schema.py:170 ward/schema.py:172
+#: ward/schema.py:158 ward/schema.py:160 ward/schema.py:164 ward/schema.py:165
+#: ward/schema.py:170 ward/schema.py:172 ward/schema.py:174
 msgid "Notifications"
 msgstr ""
 
@@ -1574,11 +1573,11 @@ msgid "The account"
 msgstr ""
 
 #: ward/gui/dialogs.py:124 ward/gui/sidebar.py:70 ward/gui/sidebar.py:75
-#: ward/gui/window.py:20 ward/gui/window.py:83
+#: ward/gui/window.py:20 ward/gui/window.py:94
 msgid "New chat"
 msgstr ""
 
-#: ward/gui/dialogs.py:124 ward/gui/window.py:90 ward/gui/window.py:169
+#: ward/gui/dialogs.py:124 ward/gui/window.py:101 ward/gui/window.py:180
 msgid "Chat"
 msgstr ""
 
@@ -1650,7 +1649,7 @@ msgstr ""
 msgid "No channels found"
 msgstr ""
 
-#: ward/gui/dialogs.py:291 ward/gui/sidebar.py:71
+#: ward/gui/dialogs.py:291 ward/gui/sidebar.py:71 ward/gui/window.py:21
 msgid "New group"
 msgstr ""
 
@@ -1921,7 +1920,7 @@ msgstr ""
 msgid "No requests"
 msgstr ""
 
-#: ward/gui/dialogs.py:700 ward/schema.py:310
+#: ward/gui/dialogs.py:700 ward/schema.py:312
 msgid "Profile"
 msgstr ""
 
@@ -1937,8 +1936,8 @@ msgstr ""
 msgid "A link others can open to add you"
 msgstr ""
 
-#: ward/gui/dialogs.py:726 ward/schema.py:282 ward/schema.py:283
-#: ward/schema.py:285 ward/schema.py:286 ward/schema.py:289 ward/schema.py:292
+#: ward/gui/dialogs.py:726 ward/schema.py:284 ward/schema.py:285
+#: ward/schema.py:287 ward/schema.py:288 ward/schema.py:291 ward/schema.py:294
 msgid "Security"
 msgstr ""
 
@@ -2094,7 +2093,7 @@ msgstr ""
 msgid "(you)"
 msgstr ""
 
-#: ward/gui/members.py:131 ward/schema.py:176
+#: ward/gui/members.py:131 ward/schema.py:178
 msgid "Mention"
 msgstr ""
 
@@ -2253,7 +2252,7 @@ msgstr ""
 msgid "Accounts"
 msgstr ""
 
-#: ward/gui/prefs.py:169 ward/gui/window.py:145
+#: ward/gui/prefs.py:169 ward/gui/window.py:156
 msgid "Add account"
 msgstr ""
 
@@ -2313,7 +2312,7 @@ msgstr ""
 msgid "Usage"
 msgstr ""
 
-#: ward/gui/prefs.py:240 ward/schema.py:223 ward/schema.py:227
+#: ward/gui/prefs.py:240 ward/schema.py:225 ward/schema.py:229
 msgid "Cache"
 msgstr ""
 
@@ -2321,7 +2320,7 @@ msgstr ""
 msgid "Message database"
 msgstr ""
 
-#: ward/gui/prefs.py:245 ward/schema.py:92 ward/schema.py:114
+#: ward/gui/prefs.py:245 ward/schema.py:94 ward/schema.py:116
 msgid "Compact"
 msgstr ""
 
@@ -2389,7 +2388,7 @@ msgstr ""
 msgid "Stop trusting"
 msgstr ""
 
-#: ward/gui/prefs.py:417 ward/gui/trust.py:210 ward/schema.py:292
+#: ward/gui/prefs.py:417 ward/gui/trust.py:210 ward/schema.py:294
 msgid "OpenPGP key"
 msgstr ""
 
@@ -2419,8 +2418,8 @@ msgstr ""
 msgid "gpg is not installed"
 msgstr ""
 
-#: ward/gui/prefs.py:442 ward/gui/welcome.py:115 ward/schema.py:165
-#: ward/schema.py:262
+#: ward/gui/prefs.py:442 ward/gui/welcome.py:115 ward/schema.py:167
+#: ward/schema.py:264
 msgid "None"
 msgstr ""
 
@@ -2483,7 +2482,7 @@ msgstr ""
 msgid "Accounts and status"
 msgstr ""
 
-#: ward/gui/sidebar.py:54 ward/gui/window.py:21
+#: ward/gui/sidebar.py:54 ward/gui/window.py:22
 msgid "Preferences"
 msgstr ""
 
@@ -2507,16 +2506,16 @@ msgstr ""
 msgid "Service discovery"
 msgstr ""
 
-#: ward/gui/sidebar.py:67
+#: ward/gui/sidebar.py:67 ward/gui/window.py:23
 msgid "Main menu"
 msgstr ""
 
-#: ward/gui/sidebar.py:92 ward/gui/window.py:23 ward/gui/window.py:77
+#: ward/gui/sidebar.py:92 ward/gui/window.py:26 ward/gui/window.py:88
 #: ward/schema.py:51
 msgid "Chats"
 msgstr ""
 
-#: ward/gui/sidebar.py:112 ward/gui/window.py:25
+#: ward/gui/sidebar.py:112 ward/gui/window.py:30
 msgid "Search chats"
 msgstr ""
 
@@ -2559,7 +2558,7 @@ msgstr[1] ""
 msgid "Password needed"
 msgstr ""
 
-#: ward/gui/sidebar.py:443 ward/schema.py:120
+#: ward/gui/sidebar.py:443 ward/schema.py:122
 msgid "Enter"
 msgstr ""
 
@@ -2664,13 +2663,9 @@ msgstr ""
 msgid "Extended information"
 msgstr ""
 
-#: ward/gui/tray.py:116
+#: ward/gui/tray.py:133
 #, python-format
 msgid "%d unread"
-msgstr ""
-
-#: ward/gui/tray.py:137
-msgid "Show Ward"
 msgstr ""
 
 #: ward/gui/trust.py:50
@@ -2905,19 +2900,19 @@ msgstr ""
 msgid "Your address looks like an email address: name@server"
 msgstr ""
 
-#: ward/gui/welcome.py:84 ward/schema.py:286
+#: ward/gui/welcome.py:84 ward/schema.py:288
 msgid "Remember password"
 msgstr ""
 
-#: ward/gui/welcome.py:86 ward/schema.py:287
+#: ward/gui/welcome.py:86 ward/schema.py:289
 msgid "In the system keyring"
 msgstr ""
 
-#: ward/gui/welcome.py:86 ward/schema.py:287
+#: ward/gui/welcome.py:86 ward/schema.py:289
 msgid "In a file (less safe)"
 msgstr ""
 
-#: ward/gui/welcome.py:87 ward/schema.py:188 ward/schema.py:288
+#: ward/gui/welcome.py:87 ward/schema.py:190 ward/schema.py:290
 msgid "Ask every time"
 msgstr ""
 
@@ -2941,24 +2936,24 @@ msgstr ""
 msgid "Connection encryption"
 msgstr ""
 
-#: ward/gui/welcome.py:111 ward/schema.py:68 ward/schema.py:245
-#: ward/schema.py:273
+#: ward/gui/welcome.py:111 ward/schema.py:70 ward/schema.py:247
+#: ward/schema.py:275
 msgid "Automatic"
 msgstr ""
 
-#: ward/gui/welcome.py:111 ward/schema.py:273
+#: ward/gui/welcome.py:111 ward/schema.py:275
 msgid "Direct TLS"
 msgstr ""
 
-#: ward/gui/welcome.py:113 ward/schema.py:277
+#: ward/gui/welcome.py:113 ward/schema.py:279
 msgid "Proxy"
 msgstr ""
 
-#: ward/gui/welcome.py:115 ward/schema.py:262
+#: ward/gui/welcome.py:115 ward/schema.py:264
 msgid "System settings"
 msgstr ""
 
-#: ward/gui/welcome.py:115 ward/schema.py:263
+#: ward/gui/welcome.py:115 ward/schema.py:265
 msgid "Tor (127.0.0.1:9050)"
 msgstr ""
 
@@ -3120,117 +3115,176 @@ msgid "Find a chat or contact"
 msgstr ""
 
 #: ward/gui/window.py:21
-msgid "Keyboard shortcuts"
+msgid "Join a group"
 msgstr ""
 
 #: ward/gui/window.py:22
-msgid "Close the window"
+msgid "Add a contact"
 msgstr ""
 
 #: ward/gui/window.py:23
-msgid "Next chat"
-msgstr ""
-
-#: ward/gui/window.py:23
-msgid "Previous chat"
+msgid "Keyboard shortcuts"
 msgstr ""
 
 #: ward/gui/window.py:24
-msgid "Go to chat 1 to 9"
-msgstr ""
-
-#: ward/gui/window.py:24
-msgid "Search in the chat"
+msgid "Close the window (Ward keeps running in the background)"
 msgstr ""
 
 #: ward/gui/window.py:25
-msgid "Chat details"
-msgstr ""
-
-#: ward/gui/window.py:26 ward/schema.py:119 ward/schema.py:121
-#: ward/schema.py:122 ward/schema.py:124 ward/schema.py:125 ward/schema.py:127
-msgid "Writing"
+msgid "Quit Ward, including the background service"
 msgstr ""
 
 #: ward/gui/window.py:26
-msgid "New line"
+msgid "Next chat"
 msgstr ""
 
 #: ward/gui/window.py:26
-msgid "Edit your last message"
+msgid "Previous chat"
 msgstr ""
 
 #: ward/gui/window.py:27
-msgid "Cancel reply or edit"
-msgstr ""
-
-#: ward/gui/window.py:27
-msgid "Bold"
-msgstr ""
-
-#: ward/gui/window.py:27
-msgid "Italic"
+msgid "Next chat with unread messages"
 msgstr ""
 
 #: ward/gui/window.py:28
+msgid "Previous chat with unread messages"
+msgstr ""
+
+#: ward/gui/window.py:29
+msgid "Go to chat 1 to 9"
+msgstr ""
+
+#: ward/gui/window.py:29
+msgid "Search in the chat"
+msgstr ""
+
+#: ward/gui/window.py:30
+msgid "Chat details"
+msgstr ""
+
+#: ward/gui/window.py:31
+msgid "Mute or unmute"
+msgstr ""
+
+#: ward/gui/window.py:32
+msgid "Pin or unpin"
+msgstr ""
+
+#: ward/gui/window.py:32
+msgid "Back to the chat list (on small screens)"
+msgstr ""
+
+#: ward/gui/window.py:33 ward/schema.py:98 ward/schema.py:101
+#: ward/schema.py:105 ward/schema.py:107 ward/schema.py:109 ward/schema.py:112
+#: ward/schema.py:132 ward/schema.py:135 ward/schema.py:137 ward/schema.py:139
+#: ward/schema.py:143 ward/schema.py:147
+msgid "Messages"
+msgstr ""
+
+#: ward/gui/window.py:33
+msgid "Reply to the last message"
+msgstr ""
+
+#: ward/gui/window.py:33
+msgid "Edit your last message"
+msgstr ""
+
+#: ward/gui/window.py:34
+msgid "Scroll the messages"
+msgstr ""
+
+#: ward/gui/window.py:35
+msgid "Write a message"
+msgstr ""
+
+#: ward/gui/window.py:36 ward/schema.py:121 ward/schema.py:123
+#: ward/schema.py:124 ward/schema.py:126 ward/schema.py:127 ward/schema.py:129
+msgid "Writing"
+msgstr ""
+
+#: ward/gui/window.py:36
+msgid "New line"
+msgstr ""
+
+#: ward/gui/window.py:37
+msgid "Cancel reply or edit"
+msgstr ""
+
+#: ward/gui/window.py:37
+msgid "Bold"
+msgstr ""
+
+#: ward/gui/window.py:37
+msgid "Italic"
+msgstr ""
+
+#: ward/gui/window.py:38
+msgid "Undo"
+msgstr ""
+
+#: ward/gui/window.py:38
+msgid "Redo"
+msgstr ""
+
+#: ward/gui/window.py:39
 msgid "Complete a nickname"
 msgstr ""
 
-#: ward/gui/window.py:29 ward/schema.py:87
+#: ward/gui/window.py:40 ward/schema.py:89
 msgid "Text size"
 msgstr ""
 
-#: ward/gui/window.py:29
+#: ward/gui/window.py:40
 msgid "Larger"
 msgstr ""
 
-#: ward/gui/window.py:29
+#: ward/gui/window.py:40
 msgid "Smaller"
 msgstr ""
 
-#: ward/gui/window.py:29 ward/schema.py:92 ward/schema.py:235
+#: ward/gui/window.py:40 ward/schema.py:94 ward/schema.py:237
 msgid "Normal"
 msgstr ""
 
-#: ward/gui/window.py:81
+#: ward/gui/window.py:92
 msgid "No chat selected"
 msgstr ""
 
-#: ward/gui/window.py:82
+#: ward/gui/window.py:93
 msgid "Pick a chat on the left, or start a new one"
 msgstr ""
 
-#: ward/gui/window.py:249
+#: ward/gui/window.py:292
 msgid "No account is enabled"
 msgstr ""
 
-#: ward/gui/window.py:265
+#: ward/gui/window.py:308
 msgid "Turn on developer tools?"
 msgstr ""
 
-#: ward/gui/window.py:266
+#: ward/gui/window.py:309
 msgid "The XML console shows the raw protocol, including message contents."
 msgstr ""
 
-#: ward/gui/window.py:267
+#: ward/gui/window.py:310
 msgid "Turn on"
 msgstr ""
 
-#: ward/gui/window.py:307
+#: ward/gui/window.py:350
 #, python-format
 msgid "%s: the password was not accepted"
 msgstr ""
 
-#: ward/gui/window.py:337
+#: ward/gui/window.py:380
 msgid "New device"
 msgstr ""
 
-#: ward/gui/window.py:337
+#: ward/gui/window.py:380
 #, python-format
 msgid "%s added a new device"
 msgstr ""
 
-#: ward/schema.py:39 ward/schema.py:78 ward/schema.py:108
+#: ward/schema.py:39 ward/schema.py:80 ward/schema.py:110
 msgid "Follow system"
 msgstr ""
 
@@ -3288,7 +3342,7 @@ msgid ""
 "still arrive"
 msgstr ""
 
-#: ward/schema.py:63 ward/schema.py:65 ward/schema.py:67 ward/schema.py:69
+#: ward/schema.py:63 ward/schema.py:65 ward/schema.py:69 ward/schema.py:71
 msgid "Running"
 msgstr ""
 
@@ -3304,764 +3358,760 @@ msgstr ""
 msgid "Tray icon"
 msgstr ""
 
-#: ward/schema.py:66
-msgid "GNOME has no tray, so automatic hides it there"
+#: ward/schema.py:67
+msgid ""
+"Automatic shows it when the desktop has a tray: KDE, Cinnamon, XFCE, or "
+"GNOME with the AppIndicator extension"
 msgstr ""
 
-#: ward/schema.py:68 ward/schema.py:100 ward/schema.py:106 ward/schema.py:138
-#: ward/schema.py:143 ward/schema.py:290
+#: ward/schema.py:70 ward/schema.py:102 ward/schema.py:108 ward/schema.py:140
+#: ward/schema.py:145 ward/schema.py:292
 msgid "Always"
 msgstr ""
 
-#: ward/schema.py:68 ward/schema.py:101 ward/schema.py:138 ward/schema.py:196
-#: ward/schema.py:229
+#: ward/schema.py:70 ward/schema.py:103 ward/schema.py:140 ward/schema.py:198
+#: ward/schema.py:231
 msgid "Never"
 msgstr ""
 
-#: ward/schema.py:69
+#: ward/schema.py:71
 msgid "Confirm before quitting"
 msgstr ""
 
-#: ward/schema.py:70
+#: ward/schema.py:72
 msgid "Open xmpp: links with Ward"
 msgstr ""
 
-#: ward/schema.py:71
+#: ward/schema.py:73
 msgid "Links to contacts and groups in your browser open the right chat"
 msgstr ""
 
-#: ward/schema.py:72 ward/schema.py:75
+#: ward/schema.py:74 ward/schema.py:77
 msgid "Links"
 msgstr ""
 
-#: ward/schema.py:73
+#: ward/schema.py:75
 msgid "Show contacts in desktop search"
 msgstr ""
 
-#: ward/schema.py:74
+#: ward/schema.py:76
 msgid "Lets GNOME Shell search find your contacts and chats by name"
 msgstr ""
 
-#: ward/schema.py:77
+#: ward/schema.py:79
 msgid "Style"
 msgstr ""
 
-#: ward/schema.py:77 ward/schema.py:79 ward/schema.py:83 ward/schema.py:86
+#: ward/schema.py:79 ward/schema.py:81 ward/schema.py:85 ward/schema.py:88
 msgid "Colours"
 msgstr ""
 
-#: ward/schema.py:78
+#: ward/schema.py:80
 msgid "Light"
 msgstr ""
 
-#: ward/schema.py:78
+#: ward/schema.py:80
 msgid "Dark"
 msgstr ""
 
-#: ward/schema.py:79
+#: ward/schema.py:81
 msgid "Accent colour"
 msgstr ""
 
-#: ward/schema.py:81
+#: ward/schema.py:83
 msgid "Coloured nicknames"
 msgstr ""
 
-#: ward/schema.py:82
+#: ward/schema.py:84
 msgid "The same colour for a person as in Conversations and Dino"
 msgstr ""
 
-#: ward/schema.py:84
+#: ward/schema.py:86
 msgid "Code block colour scheme"
 msgstr ""
 
-#: ward/schema.py:85
+#: ward/schema.py:87
 msgid "“auto” uses a matching light and dark pair"
 msgstr ""
 
-#: ward/schema.py:87
+#: ward/schema.py:89
 msgid "Also Ctrl+Plus and Ctrl+Minus"
 msgstr ""
 
-#: ward/schema.py:88 ward/schema.py:89 ward/schema.py:90 ward/schema.py:91
-#: ward/schema.py:95
+#: ward/schema.py:90 ward/schema.py:91 ward/schema.py:92 ward/schema.py:93
+#: ward/schema.py:97
 msgid "Text"
 msgstr ""
 
-#: ward/schema.py:89
+#: ward/schema.py:91
 msgid "Message font"
 msgstr ""
 
-#: ward/schema.py:90
+#: ward/schema.py:92
 msgid "Code font"
 msgstr ""
 
-#: ward/schema.py:91
+#: ward/schema.py:93
 msgid "Line spacing"
 msgstr ""
 
-#: ward/schema.py:93
+#: ward/schema.py:95
 msgid "Relaxed"
 msgstr ""
 
-#: ward/schema.py:94
+#: ward/schema.py:96
 msgid "Large emoji in emoji-only messages"
 msgstr ""
 
-#: ward/schema.py:96
+#: ward/schema.py:98
 msgid "Message layout"
 msgstr ""
 
-#: ward/schema.py:96 ward/schema.py:99 ward/schema.py:103 ward/schema.py:105
-#: ward/schema.py:107 ward/schema.py:110 ward/schema.py:130 ward/schema.py:133
-#: ward/schema.py:135 ward/schema.py:137 ward/schema.py:141 ward/schema.py:145
-msgid "Messages"
-msgstr ""
-
-#: ward/schema.py:97
+#: ward/schema.py:99
 msgid "Bubbles"
 msgstr ""
 
-#: ward/schema.py:97
+#: ward/schema.py:99
 msgid "Cozy: names and avatars"
 msgstr ""
 
-#: ward/schema.py:98
+#: ward/schema.py:100
 msgid "Compact: like IRC"
 msgstr ""
 
-#: ward/schema.py:99
+#: ward/schema.py:101
 msgid "Avatars in chats"
 msgstr ""
 
-#: ward/schema.py:100
+#: ward/schema.py:102
 msgid "Groups only"
 msgstr ""
 
-#: ward/schema.py:102
+#: ward/schema.py:104
 msgid "Avatar shape"
 msgstr ""
 
-#: ward/schema.py:104
+#: ward/schema.py:106
 msgid "Circle"
 msgstr ""
 
-#: ward/schema.py:104
+#: ward/schema.py:106
 msgid "Rounded square"
 msgstr ""
 
-#: ward/schema.py:105
+#: ward/schema.py:107
 msgid "Timestamps"
 msgstr ""
 
-#: ward/schema.py:106 ward/schema.py:138
+#: ward/schema.py:108 ward/schema.py:140
 msgid "On hover"
 msgstr ""
 
-#: ward/schema.py:107
+#: ward/schema.py:109
 msgid "Time format"
 msgstr ""
 
-#: ward/schema.py:108
+#: ward/schema.py:110
 msgid "12-hour"
 msgstr ""
 
-#: ward/schema.py:109
+#: ward/schema.py:111
 msgid "24-hour"
 msgstr ""
 
-#: ward/schema.py:110
+#: ward/schema.py:112
 msgid "Show seconds"
 msgstr ""
 
-#: ward/schema.py:112
+#: ward/schema.py:114
 msgid "Chat list density"
 msgstr ""
 
-#: ward/schema.py:113 ward/schema.py:116
+#: ward/schema.py:115 ward/schema.py:118
 msgid "Chat list"
 msgstr ""
 
-#: ward/schema.py:114
+#: ward/schema.py:116
 msgid "Comfortable"
 msgstr ""
 
-#: ward/schema.py:115
+#: ward/schema.py:117
 msgid "Message previews in the chat list"
 msgstr ""
 
-#: ward/schema.py:118
+#: ward/schema.py:120
 msgid "Send with"
 msgstr ""
 
-#: ward/schema.py:119
+#: ward/schema.py:121
 msgid "The other key combination adds a new line"
 msgstr ""
 
-#: ward/schema.py:120
+#: ward/schema.py:122
 msgid "Ctrl+Enter"
 msgstr ""
 
-#: ward/schema.py:121
+#: ward/schema.py:123
 msgid "Formatting toolbar"
 msgstr ""
 
-#: ward/schema.py:122
+#: ward/schema.py:124
 msgid "Convert :shortcodes: to emoji"
 msgstr ""
 
-#: ward/schema.py:123
+#: ward/schema.py:125
 msgid "Convert smileys like :) to emoji"
 msgstr ""
 
-#: ward/schema.py:125
+#: ward/schema.py:127
 msgid "Spell check"
 msgstr ""
 
-#: ward/schema.py:126
+#: ward/schema.py:128
 msgid "Spell check languages"
 msgstr ""
 
-#: ward/schema.py:127
+#: ward/schema.py:129
 msgid "Empty means the system language"
 msgstr ""
 
-#: ward/schema.py:129
+#: ward/schema.py:131
 msgid "Quick reactions"
 msgstr ""
 
-#: ward/schema.py:130
+#: ward/schema.py:132
 msgid "The six emoji in the reaction bar"
 msgstr ""
 
-#: ward/schema.py:131
+#: ward/schema.py:133
 msgid "Render Markdown from other apps"
 msgstr ""
 
-#: ward/schema.py:132
+#: ward/schema.py:134
 msgid "Other apps use simpler styling, where *text* is bold instead of italic"
 msgstr ""
 
-#: ward/schema.py:134
+#: ward/schema.py:136
 msgid "Collapse long messages after"
 msgstr ""
 
-#: ward/schema.py:135
+#: ward/schema.py:137
 msgid "Lines; 0 never collapses"
 msgstr ""
 
-#: ward/schema.py:136
+#: ward/schema.py:138
 msgid "lines"
 msgstr ""
 
-#: ward/schema.py:137
+#: ward/schema.py:139
 msgid "Play animated images"
 msgstr ""
 
-#: ward/schema.py:139
+#: ward/schema.py:141
 msgid "Link previews"
 msgstr ""
 
-#: ward/schema.py:140
+#: ward/schema.py:142
 msgid "Fetching a preview shows your IP address to the website"
 msgstr ""
 
-#: ward/schema.py:142
+#: ward/schema.py:144
 msgid "Only from contacts"
 msgstr ""
 
-#: ward/schema.py:144
+#: ward/schema.py:146
 msgid "Confirm “Delete for everyone”"
 msgstr ""
 
-#: ward/schema.py:146
+#: ward/schema.py:148
 msgid "Send typing indicators"
 msgstr ""
 
-#: ward/schema.py:146 ward/schema.py:147 ward/schema.py:148 ward/schema.py:149
+#: ward/schema.py:148 ward/schema.py:149 ward/schema.py:150 ward/schema.py:151
 msgid "Sharing"
 msgstr ""
 
-#: ward/schema.py:147
+#: ward/schema.py:149
 msgid "Show typing indicators"
 msgstr ""
 
-#: ward/schema.py:148
+#: ward/schema.py:150
 msgid "Send read markers"
 msgstr ""
 
-#: ward/schema.py:149
+#: ward/schema.py:151
 msgid "Send delivery receipts"
 msgstr ""
 
-#: ward/schema.py:150
+#: ward/schema.py:152
 msgid "Join and leave lines in groups"
 msgstr ""
 
-#: ward/schema.py:151
+#: ward/schema.py:153
 msgid "Groups"
 msgstr ""
 
-#: ward/schema.py:152
+#: ward/schema.py:154
 msgid "Summary"
 msgstr ""
 
-#: ward/schema.py:152
+#: ward/schema.py:154
 msgid "Every line"
 msgstr ""
 
-#: ward/schema.py:152
+#: ward/schema.py:154
 msgid "Hidden"
 msgstr ""
 
-#: ward/schema.py:153
+#: ward/schema.py:155
 msgid "Voice message quality"
 msgstr ""
 
-#: ward/schema.py:154
+#: ward/schema.py:156
 msgid "Media"
 msgstr ""
 
-#: ward/schema.py:154
+#: ward/schema.py:156
 msgid "Standard"
 msgstr ""
 
-#: ward/schema.py:154
+#: ward/schema.py:156
 msgid "High"
 msgstr ""
 
-#: ward/schema.py:157
+#: ward/schema.py:159
 msgid "Show in notification"
 msgstr ""
 
-#: ward/schema.py:159
+#: ward/schema.py:161
 msgid "Sender and text"
 msgstr ""
 
-#: ward/schema.py:159
+#: ward/schema.py:161
 msgid "Sender only"
 msgstr ""
 
-#: ward/schema.py:160
+#: ward/schema.py:162
 msgid "Nothing"
 msgstr ""
 
-#: ward/schema.py:161
+#: ward/schema.py:163
 msgid "Hide text for encrypted chats"
 msgstr ""
 
-#: ward/schema.py:163
+#: ward/schema.py:165
 msgid "Group chats"
 msgstr ""
 
-#: ward/schema.py:164
+#: ward/schema.py:166
 msgid "All messages"
 msgstr ""
 
-#: ward/schema.py:164
+#: ward/schema.py:166
 msgid "Mentions and replies"
 msgstr ""
 
-#: ward/schema.py:166
+#: ward/schema.py:168
 msgid "Highlight words"
 msgstr ""
 
-#: ward/schema.py:167
+#: ward/schema.py:169
 msgid "Your nickname always counts; one word per line"
 msgstr ""
 
-#: ward/schema.py:169
+#: ward/schema.py:171
 msgid "Quiet hours"
 msgstr ""
 
-#: ward/schema.py:169
+#: ward/schema.py:171
 msgid "No sounds or pop-ups in this daily range"
 msgstr ""
 
-#: ward/schema.py:171
+#: ward/schema.py:173
 msgid "Unread count on the dock icon"
 msgstr ""
 
-#: ward/schema.py:173 ward/schema.py:175 ward/schema.py:177 ward/schema.py:179
+#: ward/schema.py:175 ward/schema.py:177 ward/schema.py:179 ward/schema.py:181
 msgid "Sounds"
 msgstr ""
 
-#: ward/schema.py:178
+#: ward/schema.py:180
 msgid "Contact request"
 msgstr ""
 
-#: ward/schema.py:181 ward/schema.py:289
+#: ward/schema.py:183 ward/schema.py:291
 msgid "Default encryption"
 msgstr ""
 
-#: ward/schema.py:182
+#: ward/schema.py:184
 msgid "Each account and chat can override this"
 msgstr ""
 
-#: ward/schema.py:184
+#: ward/schema.py:186
 msgid "Always (recommended)"
 msgstr ""
 
-#: ward/schema.py:184 ward/schema.py:291
+#: ward/schema.py:186 ward/schema.py:293
 msgid "When available"
 msgstr ""
 
-#: ward/schema.py:186
+#: ward/schema.py:188
 msgid "Trust new devices"
 msgstr ""
 
-#: ward/schema.py:187
+#: ward/schema.py:189
 msgid "Blind trust before verification"
 msgstr ""
 
-#: ward/schema.py:189
+#: ward/schema.py:191
 msgid "Tell me about new devices"
 msgstr ""
 
-#: ward/schema.py:191
+#: ward/schema.py:193
 msgid "Chat banner"
 msgstr ""
 
-#: ward/schema.py:192
+#: ward/schema.py:194
 msgid "Banner and notification"
 msgstr ""
 
-#: ward/schema.py:193
+#: ward/schema.py:195
 msgid "Mark devices inactive after"
 msgstr ""
 
-#: ward/schema.py:195 ward/schema.py:228 ward/schema.py:301
+#: ward/schema.py:197 ward/schema.py:230 ward/schema.py:303
 msgid "30 days"
 msgstr ""
 
-#: ward/schema.py:195 ward/schema.py:228 ward/schema.py:301
+#: ward/schema.py:197 ward/schema.py:230 ward/schema.py:303
 msgid "90 days"
 msgstr ""
 
-#: ward/schema.py:195
+#: ward/schema.py:197
 msgid "180 days"
 msgstr ""
 
-#: ward/schema.py:197
+#: ward/schema.py:199
 msgid "Allow legacy OMEMO (0.3)"
 msgstr ""
 
-#: ward/schema.py:198
+#: ward/schema.py:200
 msgid "Most other apps still use it"
 msgstr ""
 
-#: ward/schema.py:199
+#: ward/schema.py:201
 msgid "Limit unencrypted extras with legacy OMEMO"
 msgstr ""
 
-#: ward/schema.py:200
+#: ward/schema.py:202
 msgid "Legacy OMEMO only encrypts the text: don’t send reactions or typing"
 msgstr ""
 
-#: ward/schema.py:202 ward/schema.py:204 ward/schema.py:207 ward/schema.py:209
-#: ward/schema.py:211
+#: ward/schema.py:204 ward/schema.py:206 ward/schema.py:209 ward/schema.py:211
+#: ward/schema.py:213
 msgid "OpenPGP"
 msgstr ""
 
-#: ward/schema.py:203
+#: ward/schema.py:205
 msgid ""
 "Optional end-to-end encryption with your GnuPG keys (XEP-0373), for chats "
 "with Gajim OpenPGP users"
 msgstr ""
 
-#: ward/schema.py:205
+#: ward/schema.py:207
 msgid "Share GPGMan’s keyring"
 msgstr ""
 
-#: ward/schema.py:206
+#: ward/schema.py:208
 msgid ""
 "Use the gpg program and key folder chosen in GPGMan, so both apps see the "
 "same keys"
 msgstr ""
 
-#: ward/schema.py:208
+#: ward/schema.py:210
 msgid "gpg program"
 msgstr ""
 
-#: ward/schema.py:208
+#: ward/schema.py:210
 msgid "Empty finds gpg automatically"
 msgstr ""
 
-#: ward/schema.py:210
+#: ward/schema.py:212
 msgid "GnuPG folder"
 msgstr ""
 
-#: ward/schema.py:210
+#: ward/schema.py:212
 msgid "Empty uses ~/.gnupg"
 msgstr ""
 
-#: ward/schema.py:212
+#: ward/schema.py:214
 msgid "Strip image location and camera data"
 msgstr ""
 
-#: ward/schema.py:213
+#: ward/schema.py:215
 msgid "Before sending a photo"
 msgstr ""
 
-#: ward/schema.py:213 ward/schema.py:215 ward/schema.py:219 ward/schema.py:293
-#: ward/schema.py:294 ward/schema.py:295 ward/schema.py:297
+#: ward/schema.py:215 ward/schema.py:217 ward/schema.py:221 ward/schema.py:295
+#: ward/schema.py:296 ward/schema.py:297 ward/schema.py:299
 msgid "Privacy"
 msgstr ""
 
-#: ward/schema.py:214
+#: ward/schema.py:216
 msgid "Messages from strangers"
 msgstr ""
 
-#: ward/schema.py:216
+#: ward/schema.py:218
 msgid "Requests folder"
 msgstr ""
 
-#: ward/schema.py:217
+#: ward/schema.py:219
 msgid "Allow"
 msgstr ""
 
-#: ward/schema.py:218
+#: ward/schema.py:220
 msgid "Load images and previews from strangers"
 msgstr ""
 
-#: ward/schema.py:221
+#: ward/schema.py:223
 msgid "Cache size limit"
 msgstr ""
 
-#: ward/schema.py:222
+#: ward/schema.py:224
 msgid "Downloaded files, thumbnails, avatars and previews"
 msgstr ""
 
-#: ward/schema.py:225
+#: ward/schema.py:227
 msgid "Unlimited"
 msgstr ""
 
-#: ward/schema.py:226
+#: ward/schema.py:228
 msgid "Delete downloaded files after"
 msgstr ""
 
-#: ward/schema.py:228 ward/schema.py:302
+#: ward/schema.py:230 ward/schema.py:304
 msgid "365 days"
 msgstr ""
 
-#: ward/schema.py:231
+#: ward/schema.py:233
 msgid "Developer tools"
 msgstr ""
 
-#: ward/schema.py:232
+#: ward/schema.py:234
 msgid "XML console, service discovery and PEP browser"
 msgstr ""
 
-#: ward/schema.py:233 ward/schema.py:234 ward/schema.py:238
+#: ward/schema.py:235 ward/schema.py:236 ward/schema.py:240
 msgid "Developer"
 msgstr ""
 
-#: ward/schema.py:234
+#: ward/schema.py:236
 msgid "Debug log"
 msgstr ""
 
-#: ward/schema.py:235
+#: ward/schema.py:237
 msgid "Verbose"
 msgstr ""
 
-#: ward/schema.py:236
+#: ward/schema.py:238
 msgid "Load custom.css"
 msgstr ""
 
-#: ward/schema.py:237
+#: ward/schema.py:239
 msgid "A style sheet in the config folder, loaded last"
 msgstr ""
 
-#: ward/schema.py:239
+#: ward/schema.py:241
 msgid "Keepalive ping interval"
 msgstr ""
 
-#: ward/schema.py:239 ward/schema.py:241 ward/schema.py:244 ward/schema.py:266
-#: ward/schema.py:267 ward/schema.py:269 ward/schema.py:270 ward/schema.py:272
-#: ward/schema.py:275 ward/schema.py:276 ward/schema.py:277 ward/schema.py:278
-#: ward/schema.py:279 ward/schema.py:280
+#: ward/schema.py:241 ward/schema.py:243 ward/schema.py:246 ward/schema.py:268
+#: ward/schema.py:269 ward/schema.py:271 ward/schema.py:272 ward/schema.py:274
+#: ward/schema.py:277 ward/schema.py:278 ward/schema.py:279 ward/schema.py:280
+#: ward/schema.py:281 ward/schema.py:282
 msgid "Connection"
 msgstr ""
 
-#: ward/schema.py:240
+#: ward/schema.py:242
 msgid "seconds"
 msgstr ""
 
-#: ward/schema.py:241
+#: ward/schema.py:243
 msgid "Reconnect delay cap"
 msgstr ""
 
-#: ward/schema.py:242
+#: ward/schema.py:244
 msgid "minutes"
 msgstr ""
 
-#: ward/schema.py:243
+#: ward/schema.py:245
 msgid "Internet protocol"
 msgstr ""
 
-#: ward/schema.py:245
+#: ward/schema.py:247
 msgid "Prefer IPv4"
 msgstr ""
 
-#: ward/schema.py:246
+#: ward/schema.py:248
 msgid "Prefer IPv6"
 msgstr ""
 
-#: ward/schema.py:247
+#: ward/schema.py:249
 msgid "Signed prekey rotation"
 msgstr ""
 
-#: ward/schema.py:247 ward/schema.py:249
+#: ward/schema.py:249 ward/schema.py:251
 msgid "OMEMO"
 msgstr ""
 
-#: ward/schema.py:248
+#: ward/schema.py:250
 msgid "days"
 msgstr ""
 
-#: ward/schema.py:249
+#: ward/schema.py:251
 msgid "Refill prekeys below"
 msgstr ""
 
-#: ward/schema.py:266
+#: ward/schema.py:268
 msgid "Enabled"
 msgstr ""
 
-#: ward/schema.py:267
+#: ward/schema.py:269
 msgid "Connect on startup"
 msgstr ""
 
-#: ward/schema.py:268
+#: ward/schema.py:270
 msgid "Server address"
 msgstr ""
 
-#: ward/schema.py:268
+#: ward/schema.py:270
 msgid "Empty looks the server up automatically"
 msgstr ""
 
-#: ward/schema.py:270
+#: ward/schema.py:272
 msgid "Port"
 msgstr ""
 
-#: ward/schema.py:270
+#: ward/schema.py:272
 msgid "0 for the default"
 msgstr ""
 
-#: ward/schema.py:272
+#: ward/schema.py:274
 msgid "Encryption of the connection"
 msgstr ""
 
-#: ward/schema.py:274
+#: ward/schema.py:276
 msgid "Resource"
 msgstr ""
 
-#: ward/schema.py:274
+#: ward/schema.py:276
 msgid "The name of this device on the server"
 msgstr ""
 
-#: ward/schema.py:276
+#: ward/schema.py:278
 msgid "Priority"
 msgstr ""
 
-#: ward/schema.py:278
+#: ward/schema.py:280
 msgid "Proxy host"
 msgstr ""
 
-#: ward/schema.py:279
+#: ward/schema.py:281
 msgid "Proxy port"
 msgstr ""
 
-#: ward/schema.py:280
+#: ward/schema.py:282
 msgid "Proxy user name"
 msgstr ""
 
-#: ward/schema.py:281
+#: ward/schema.py:283
 msgid "Allow PLAIN sign-in"
 msgstr ""
 
-#: ward/schema.py:282
+#: ward/schema.py:284
 msgid "Only over an encrypted connection; needed by some old servers"
 msgstr ""
 
-#: ward/schema.py:284
+#: ward/schema.py:286
 msgid "Client certificate"
 msgstr ""
 
-#: ward/schema.py:284
+#: ward/schema.py:286
 msgid "Sign in with a certificate (SASL EXTERNAL)"
 msgstr ""
 
-#: ward/schema.py:290
+#: ward/schema.py:292
 msgid "Like Preferences"
 msgstr ""
 
-#: ward/schema.py:293
+#: ward/schema.py:295
 msgid "Tell others which app you use"
 msgstr ""
 
-#: ward/schema.py:294
+#: ward/schema.py:296
 msgid "Tell others your local time"
 msgstr ""
 
-#: ward/schema.py:295
+#: ward/schema.py:297
 msgid "Tell others when you were last active"
 msgstr ""
 
-#: ward/schema.py:296
+#: ward/schema.py:298
 msgid "Send idle time"
 msgstr ""
 
-#: ward/schema.py:296
+#: ward/schema.py:298
 msgid "Contacts see how long you have been away"
 msgstr ""
 
-#: ward/schema.py:298
+#: ward/schema.py:300
 msgid "Days of history to load on first sync"
 msgstr ""
 
-#: ward/schema.py:298 ward/schema.py:300
+#: ward/schema.py:300 ward/schema.py:302
 msgid "History"
 msgstr ""
 
-#: ward/schema.py:300
+#: ward/schema.py:302
 msgid "Keep local history"
 msgstr ""
 
-#: ward/schema.py:301
+#: ward/schema.py:303
 msgid "Forever"
 msgstr ""
 
-#: ward/schema.py:303
+#: ward/schema.py:305
 msgid "Image upload quality"
 msgstr ""
 
-#: ward/schema.py:303 ward/schema.py:307 ward/schema.py:309
+#: ward/schema.py:305 ward/schema.py:309 ward/schema.py:311
 msgid "Files"
 msgstr ""
 
-#: ward/schema.py:304
+#: ward/schema.py:306
 msgid "Original"
 msgstr ""
 
-#: ward/schema.py:304
+#: ward/schema.py:306
 msgid "Balanced"
 msgstr ""
 
-#: ward/schema.py:305
+#: ward/schema.py:307
 msgid "Small"
 msgstr ""
 
-#: ward/schema.py:306
+#: ward/schema.py:308
 msgid "Download automatically up to"
 msgstr ""
 
-#: ward/schema.py:307
+#: ward/schema.py:309
 msgid "Images and voice messages from contacts"
 msgstr ""
 
-#: ward/schema.py:309
+#: ward/schema.py:311
 msgid "Allow uploads larger than 100 MB"
 msgstr ""
 
-#: ward/schema.py:310
+#: ward/schema.py:312
 msgid "Nickname"
 msgstr ""

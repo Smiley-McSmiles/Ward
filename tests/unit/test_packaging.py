@@ -35,9 +35,12 @@ def test_install_stages_everything(staged):
                 "share/icons/hicolor/symbolic/apps/%s-symbolic.svg" % APPID,
                 "share/icons/hicolor/256x256/apps/%s.png" % APPID, "share/man/man1/ward.1",
                 "share/bash-completion/completions/ward", "share/zsh/site-functions/_ward",
-                "share/fish/vendor_completions.d/ward.fish", "share/ward/icons"):
+                "share/fish/vendor_completions.d/ward.fish", "share/ward/icons", "lib/systemd/user/ward.service",
+                "share/ward/runit/run", "share/ward/runit/log/run"):
         assert (usr / rel).exists(), rel
-    assert os.access(usr / "bin/ward", os.X_OK)
+    assert os.access(usr / "bin/ward", os.X_OK) and os.access(usr / "share/ward/runit/run", os.X_OK)
+    assert "exec /usr/bin/ward --background" in (usr / "share/ward/runit/run").read_text()
+    assert "ExecStart=/usr/bin/ward --background" in (usr / "lib/systemd/user/ward.service").read_text()
     assert not list(usr.rglob("__pycache__"))
     desktop = (usr / ("share/applications/%s.desktop" % APPID)).read_text()
     assert "Exec=/usr/bin/ward %U" in desktop and "x-scheme-handler/xmpp" in desktop
@@ -60,7 +63,7 @@ def test_mkdeb(staged, tmp_path):
     root = tmp_path / "deb"
     shutil.copytree(staged, root)
     (root / "DEBIAN").mkdir()
-    (root / "DEBIAN/control").write_text("Package: ward\nVersion: 0.1.0\nArchitecture: all\nMaintainer: x <x@y>\n"
+    (root / "DEBIAN/control").write_text("Package: ward\nVersion: 1.0.0\nArchitecture: all\nMaintainer: x <x@y>\n"
                                          "Description: test\n test\n")
     out = tmp_path / "ward.deb"
     subprocess.run([sys.executable, os.path.join(ROOT, "packaging/mkdeb.py"), str(root), str(out)], check=True)
@@ -76,13 +79,13 @@ def test_mkdeb(staged, tmp_path):
 def test_mkarch(staged, tmp_path):
     out = tmp_path / "ward.pkg.tar.xz"
     subprocess.run([sys.executable, os.path.join(ROOT, "packaging/mkarch.py"), str(staged), str(out), "--name", "ward",
-                    "--version", "0.1.0", "--desc", "test", "--url", "https://example.org", "--depend", "python"],
+                    "--version", "1.0.0", "--desc", "test", "--url", "https://example.org", "--depend", "python"],
                    check=True, capture_output=True)
     with tarfile.open(out) as t:
         names = t.getnames()
         assert names[0] == ".PKGINFO" and ".MTREE" in names[:3]
         info = t.extractfile(".PKGINFO").read().decode()
-        assert "pkgver = 0.1.0-1" in info and "depend = python" in info
+        assert "pkgver = 1.0.0-1" in info and "depend = python" in info
         assert "usr/bin/ward" in names
         assert all(m.uid == 0 and m.gid == 0 for m in t.getmembers())
 
