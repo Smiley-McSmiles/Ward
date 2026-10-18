@@ -78,7 +78,7 @@ PACKAGES: dict[str, dict[str, str]] = {
                 "linkify": "py3-linkify-it-py", "crypto": "py3-cryptography", "pillow": "py3-Pillow",
                 "gpg": "gnupg", "media": "gstreamer1-plugins-good", "zbar": "zbar", "pip": "py3-pip",
                 "omemo": "-"},
-    "pkgin": {"python": "python311", "gi": PY + "-gobject3", "gtk": "gtk4", "adw": "libadwaita",
+    "pkgin": {"python": "python" + PY[2:], "gi": PY + "-gobject3", "gtk": "gtk4", "adw": "libadwaita",
               "source": "gtksourceview5", "spelling": "-", "secret": "libsecret", "slixmpp": PY + "-slixmpp",
               "markdown": PY + "-markdown-it-py", "mdit": PY + "-mdit-py-plugins", "linkify": "-",
               "crypto": PY + "-cryptography", "pillow": PY + "-Pillow", "gpg": "gnupg2",

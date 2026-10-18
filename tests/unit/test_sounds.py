@@ -52,7 +52,7 @@ def test_play_sound_plays_a_chosen_file(tmp_path):
     assert played == [str(ding)]
 
 
-def test_sound_row_shows_default_or_file_name():
+def test_sound_row_shows_default_or_file_name(display):
     import gi
 
     gi.require_version("Adw", "1")

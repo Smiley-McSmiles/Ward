@@ -112,7 +112,9 @@ jobs:
           run: |
             sh ./install.sh --install-deps
             ward --version && ward --check
-            pkg install -y py311-pytest || true
+            # FreeBSD's package is named for the Python the repository provides, not necessarily py311
+            pkg install -y "py$(python3 -c 'import sys; print("%d%d" % sys.version_info[:2])')-pytest" \
+              || pkg install -y py311-pytest || true
             python3 -m pytest tests/unit -v
       - name: OpenBSD
         if: matrix.os == 'openbsd'
