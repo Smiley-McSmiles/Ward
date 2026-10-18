@@ -1,0 +1,97 @@
+# Ward is normally installed with ./install.sh or a distribution package (see README.md); this file also lets
+# `pip install .` work (Flatpak builds use it) and holds the configuration of the developer tools.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ward-xmpp"
+dynamic = ["version"]
+description = "An XMPP client for the Linux and BSD desktop, encrypted by default"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Ward contributors" }]
+classifiers = [
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: POSIX :: BSD",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: Chat",
+]
+# PyGObject, GTK 4 and libadwaita come from the system (they are not pip-installable in a useful way).
+dependencies = [
+    "slixmpp>=1.8.0",
+    "markdown-it-py>=2.0",
+    "cryptography>=3.3.2",
+]
+
+[project.optional-dependencies]
+# OMEMO 2 (MIT).  Legacy OMEMO 0.3 needs oldmemo, which is AGPL-3.0: see README.md "Licensing".
+omemo = ["omemo>=2.0,<3", "twomemo[xml]>=2.0,<3"]
+legacy-omemo = ["oldmemo[xml]>=2.0,<3"]
+extras = ["mdit-py-plugins>=0.3", "linkify-it-py>=2.0", "segno>=1.5", "Pillow>=9"]
+dev = ["pytest>=7", "hypothesis>=6", "ruff>=0.4", "mypy>=1.5"]
+
+[project.scripts]
+ward = "ward.main:main"
+
+[project.urls]
+Homepage = "https://github.com/Smiley-McSmiles/Ward"
+Issues = "https://github.com/Smiley-McSmiles/Ward/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "ward.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["ward*"]
+
+[tool.setuptools.package-data]
+"ward.core.storage" = ["migrations/*.sql"]
+"ward.core.markup" = ["*.json"]
+"ward.gui" = ["style.css", "icons/hicolor/scalable/actions/*.svg"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["build", "dist", "vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP", "SIM", "RUF"]
+ignore = [
+    "E402",    # gi.require_version() has to run before the gi.repository imports
+    "E731",    # small lambdas for callbacks are clearer than local functions
+    "B008",    # function calls in defaults are fine for our immutable defaults
+    "SIM105",  # contextlib.suppress is not clearer in hot paths
+    "SIM108",  # ternaries everywhere hurt readability
+    "RUF001", "RUF002", "RUF003",  # typographic quotes and dashes are on purpose in UI strings
+    "RUF012",  # class-level constant tables are not mutated
+    "UP031",   # %-formatting is used for translatable strings
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ward"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["ward/core", "ward/aio.py", "ward/paths.py", "ward/settings.py", "ward/schema.py"]
+ignore_missing_imports = true
+warn_unused_ignores = false
+check_untyped_defs = true
+no_implicit_optional = true
+disable_error_code = ["import-untyped"]
+
+[[tool.mypy.overrides]]
+module = ["gi.*", "slixmpp.*", "omemo.*", "twomemo.*", "oldmemo.*", "xeddsa.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: needs a local Prosody server (tools/run-prosody); skipped when prosody is missing",
+    "gui: needs GTK 4, libadwaita and a display (Xvfb in CI)",
+]
+filterwarnings = ["ignore::DeprecationWarning:slixmpp.*"]
