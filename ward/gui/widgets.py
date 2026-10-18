@@ -81,19 +81,24 @@ def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
     return t
 
 
-def emoji_button(button: Gtk.MenuButton, picked, closed=None) -> None:
-    """Give the menu button a Gtk.EmojiChooser, built when it opens and dropped when it closes: a chooser is a widget
-    for every emoji, about 10 MB, so one per message row added up to most of Ward's memory."""
+def emoji_button(button: Gtk.MenuButton, settings, picked, closed=None) -> None:
+    """Give the menu button an emoji picker, built when it opens and dropped when it closes (see emoji_picker for why
+    not Gtk.EmojiChooser, which is only the fallback)."""
     # the callbacks live on the button, where the garbage collector sees them (it cannot see into the popup func:
     # a closure there referring back to the row would keep the row alive for good)
-    button._ward_emoji = (picked, closed)
+    button._ward_emoji = (picked, closed, settings)
     button.set_create_popup_func(_create_emoji_chooser)
 
 
 def _create_emoji_chooser(button: Gtk.MenuButton, *_a) -> None:
     if button.get_popover() is not None:
         return
-    chooser = Gtk.EmojiChooser()
+    from . import emoji_picker
+
+    if emoji_picker.available():
+        chooser: Gtk.Popover = emoji_picker.EmojiPicker(button._ward_emoji[2])
+    else:
+        chooser = Gtk.EmojiChooser()
     chooser.connect("emoji-picked", lambda _c, e: button._ward_emoji[0](e))
 
     def on_closed(*_a) -> None:

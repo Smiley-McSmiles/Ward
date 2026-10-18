@@ -413,7 +413,7 @@ class MessageRow(Gtk.Box):
             bar.append(b)
         more = Gtk.MenuButton(icon_name="ward-react-symbolic", css_classes=["flat"], tooltip_text=_("Add reaction"))
         # keep the bar (and so the picker) while the picker is open: the pointer leaves the row to use it
-        widgets.emoji_button(more, lambda e: self.view.react(m, e), lambda: self._hover(False))
+        widgets.emoji_button(more, self.view.settings, lambda e: self.view.react(m, e), lambda: self._hover(False))
         self.react_button = more
         bar.append(more)
         reply = Gtk.Button(icon_name="ward-reply-symbolic", css_classes=["flat"], tooltip_text=_("Reply"))

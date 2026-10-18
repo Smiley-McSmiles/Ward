@@ -155,7 +155,7 @@ class Composer(Gtk.Box):
         box.append(overlay)
         self.emoji_button = Gtk.MenuButton(icon_name="ward-emoji-symbolic", css_classes=["flat", "circular"],
                                            valign=Gtk.Align.END, tooltip_text=_("Emoji"))
-        widgets.emoji_button(self.emoji_button, self._insert)
+        widgets.emoji_button(self.emoji_button, self.settings, self._insert)
         box.append(self.emoji_button)
         self.send_button = Gtk.Button(icon_name="ward-send-symbolic", css_classes=["suggested-action", "circular"],
                                       valign=Gtk.Align.END, sensitive=False, tooltip_text=_("Send"))

@@ -82,10 +82,14 @@ def test_closed_dialogs_are_freed(app, prosody, run, monkeypatch):  # noqa: F811
             d.close()
             opened += [weakref.ref(p), weakref.ref(d)]
         del p, d
-        await asyncio.sleep(2.5)
-        gc.collect()
-        alive = [type(r()).__name__ for r in opened if r() is not None]
-        assert not alive, "closed dialogs still in memory: %s" % alive
+
+        def alive() -> list[str]:
+            gc.collect()
+            return [type(r()).__name__ for r in opened if r() is not None]
+        try:
+            await wait_for(lambda: not alive(), 10, "closed dialogs to be freed")
+        except AssertionError:
+            raise AssertionError("closed dialogs still in memory: %s" % alive()) from None
         await app.core.shutdown()
 
     run(scenario(), timeout=120)
@@ -128,11 +132,11 @@ def test_background_window_is_freed(app, prosody, run, monkeypatch):  # noqa: F8
 
 
 def test_message_rows_are_light(app, prosody, run, tmp_path):  # noqa: F811
-    """A message row must not carry an emoji chooser (a widget per emoji, about 10 MB) until its reaction button
-    is used: built eagerly they made a chat of 60 messages take 600 MB."""
+    """A message row must not carry an emoji picker until its reaction button is used: built eagerly, GTK's
+    choosers made a chat of 60 messages take 600 MB.  Ward's own picker draws one category at a time."""
     import ctypes
 
-    from gi.repository import Gtk
+    from ward.gui import emoji_picker
 
     class Mallinfo2(ctypes.Structure):
         _fields_ = [(n, ctypes.c_size_t) for n in ("arena", "ordblks", "smblks", "hblks", "hblkhd", "usmblks",
@@ -179,10 +183,15 @@ def test_message_rows_are_light(app, prosody, run, tmp_path):  # noqa: F811
             assert row.react_button.get_popover() is None
             row.react_button.popup()
             chooser = row.react_button.get_popover()
-            assert isinstance(chooser, Gtk.EmojiChooser)
-            chooser.emit("emoji-picked", "🎉")
+            assert isinstance(chooser, emoji_picker.EmojiPicker)
+            await asyncio.sleep(0.3)
+            # one category at a time, searchable, and the pick goes to the message
+            assert 0 < len(chooser.grid.items) < 500
+            chooser.search.set_text("party pop")
+            await wait_for(lambda: [e for e, _n in chooser.grid.items] == ["🎉"], 5, "search")
+            chooser.search.emit("activate")
             assert reacted == ["🎉"]
-            row.react_button.popdown()
+            assert app.core.settings["chats.recent_emoji"][0] == "🎉"
             await wait_for(lambda: row.react_button.get_popover() is None, 5, "picker freed")
         finally:
             await stop(peer)
