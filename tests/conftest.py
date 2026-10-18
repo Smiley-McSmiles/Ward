@@ -9,6 +9,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# libraries install.sh fetched with pip (WARD_VENDOR), as the installed launcher would find them
+if os.environ.get("WARD_VENDOR") and os.path.isdir(os.environ["WARD_VENDOR"]):
+    sys.path.append(os.environ["WARD_VENDOR"])
+
 os.environ.setdefault("WARD_LOG", "warning")
 os.environ["GSETTINGS_BACKEND"] = "memory"
 

@@ -92,7 +92,7 @@ jobs:
       - name: Unit tests
         run: |
           ${{ matrix.pytest }}
-          python3 -m pytest tests/unit -v
+          WARD_VENDOR=/usr/local/lib/ward/vendor python3 -m pytest tests/unit -v
 
   bsd:
     name: ${{ matrix.os }}

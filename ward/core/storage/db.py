@@ -185,6 +185,10 @@ class Database:
             except OSError:
                 pass
 
+    @property
+    def is_open(self) -> bool:
+        return self._thread is not None
+
     # ------------------------------------------------------------------ running jobs
     def run(self, func: Callable[[sqlite3.Connection], T]) -> asyncio.Future[T]:
         """Run func(conn) on the database thread inside one transaction; await the result."""

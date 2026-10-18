@@ -239,7 +239,7 @@ class Chats(GObject.Object):
             elif f in CHAT_FIELDS:
                 v = getattr(chat, f)
                 values[f] = int(v) if isinstance(v, bool) else v
-        if values:
+        if values and self.db.is_open:     # a toggle made as Ward quits is not worth an error
             await self.db.update("chats", values, "id = ?", (chat.id,))
 
     async def delete(self, chat: ChatItem) -> None:
