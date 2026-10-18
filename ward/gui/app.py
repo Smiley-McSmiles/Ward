@@ -328,7 +328,7 @@ class WardApplication(Adw.Application):
             n.set_icon(Gio.FileIcon.new(Gio.File.new_for_path(note.icon)))
         n.set_default_action_and_target("app.open-chat", GLib.Variant("s", str(note.chat_id)))
         if not note.is_request:
-            n.add_button_with_target_value(_("Mark as read"), "app.mark-read", GLib.Variant("s", str(note.chat_id)))
+            n.add_button_with_target(_("Mark as read"), "app.mark-read", GLib.Variant("s", str(note.chat_id)))
         self.send_notification(note.id, n)
         if note.sound:
             self.play_sound(self.core.settings[note.sound])
