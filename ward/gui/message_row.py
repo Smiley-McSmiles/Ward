@@ -222,7 +222,7 @@ class MessageRow(Gtk.Box):
                 icon.set_tooltip_text(_("Kept on this device only: you have no other device that can read it"))
             box.append(icon)
         elif m.extra.get("unencrypted"):
-            icon = Gtk.Image.new_from_icon_name("ward-lock-open-symbolic", css_classes=["lock-off"])
+            icon = Gtk.Image(icon_name="ward-lock-open-symbolic", css_classes=["lock-off"])
             icon.set_tooltip_text(_("Not encrypted"))
             box.append(icon)
         if m.edited:
