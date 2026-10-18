@@ -145,7 +145,7 @@ class Renderer:
         lbl = Gtk.Label(xalign=0, wrap=True, selectable=True, css_classes=["message-text"], hexpand=True,
                         max_width_chars=90)
         lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-        lbl.set_can_focus(False)
+        # focusable, or a selection could not be copied with Ctrl+C
         if self.action:
             lbl.add_css_class("action")
         revealed: set[int] = set()

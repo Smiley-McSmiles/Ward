@@ -27,6 +27,22 @@ ENC_TITLES = {"omemo": "Encrypted with OMEMO", "omemo-legacy": "Encrypted with l
               "pgp": "Encrypted with OpenPGP", "plain": "Not encrypted", "blocked": "Can't send encrypted"}
 
 
+def selected_text(widget: Gtk.Widget) -> str:
+    """Text the user selected in a message's labels, for Copy in the message menu."""
+    if isinstance(widget, Gtk.Label) and widget.get_selectable():
+        ok, start, end = widget.get_selection_bounds()
+        if ok and end > start:
+            return widget.get_text()[start:end]
+    child = widget.get_first_child()
+    parts = []
+    while child is not None:
+        t = selected_text(child)
+        if t:
+            parts.append(t)
+        child = child.get_next_sibling()
+    return "\n".join(parts)
+
+
 class ConversationView(Gtk.Box):
     __gtype_name__ = "WardConversationView"
 
@@ -44,6 +60,7 @@ class ConversationView(Gtk.Box):
         self._stick = True
         self._loading_older = False
         self._menu_msg: MessageItem | None = None
+        self._menu_selection = ""
 
         self.toolbar = Adw.ToolbarView()
         self.append(self.toolbar)
@@ -177,7 +194,7 @@ class ConversationView(Gtk.Box):
     def _build_actions(self) -> None:
         group = Gio.SimpleActionGroup()
         for name, cb in (("reply", lambda m: self.start_reply(m)),
-                         ("copy", lambda m: widgets.copy_text(self, m.body)),
+                         ("copy", lambda m: widgets.copy_text(self, self._menu_selection or m.body)),
                          ("quote", lambda m: self.composer.quote(m)),
                          ("edit", lambda m: self.composer.start_edit(m)),
                          ("delete-me", self._delete_for_me),
@@ -713,12 +730,13 @@ class ConversationView(Gtk.Box):
         if m is None or m.kind == "status" or self.chat is None:
             return
         self._menu_msg = m
+        self._menu_selection = selected_text(row)
         menu = Gio.Menu()
         sec = Gio.Menu()
         if not m.retracted:
             sec.append(_("Reply"), "msg.reply")
             if m.body:
-                sec.append(_("Copy text"), "msg.copy")
+                sec.append(_("Copy selection") if self._menu_selection else _("Copy text"), "msg.copy")
                 sec.append(_("Quote"), "msg.quote")
             sec.append(_("Forward…"), "msg.forward")
             if self.chat.type == "groupchat" and m.stanza_id:
