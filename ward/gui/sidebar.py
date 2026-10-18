@@ -485,7 +485,8 @@ class Sidebar(Gtk.Box):
         for acc in accounts:
             row = Adw.ExpanderRow(title=widgets.escape(acc.display_name),
                                   subtitle=widgets.escape(self._account_state_text(acc)))
-            av = widgets.Avatar(32, acc.display_name, acc.avatar, acc.show if acc.state == "online" else "offline")
+            av = widgets.RowAvatar(32, acc.display_name, acc.avatar,
+                                   acc.show if acc.state == "online" else "offline")
             row.add_prefix(av)
             if len(accounts) > 1:
                 only = Gtk.Button(icon_name="object-select-symbolic" if self.account_filter == str(acc.id)
@@ -503,8 +504,10 @@ class Sidebar(Gtk.Box):
             status = Adw.EntryRow(title=_("Status message"), text=acc.status, show_apply_button=True)
             status.connect("apply", lambda e, acc=acc: self._set_presence(acc, acc.show if acc.show != "offline"
                                                                            else "available", e.get_text()))
+            status.add_prefix(Gtk.Image.new_from_icon_name("document-edit-symbolic"))   # lines up with the rows above
             row.add_row(status)
             prof = Adw.ActionRow(title=_("Profile…"), activatable=True)
+            prof.add_prefix(Gtk.Image.new_from_icon_name("avatar-default-symbolic"))
             prof.connect("activated", lambda *_a, acc=acc: (self.account_popover.popdown(),
                                                             self.window.show_profile(acc)))
             row.add_row(prof)

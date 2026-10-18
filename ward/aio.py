@@ -211,9 +211,11 @@ class GLibEventLoop(asyncio.SelectorEventLoop):
                 self._stopping = False
 
     @contextlib.contextmanager
-    def running(self) -> Iterator[GLibEventLoop]:
+    def running(self, quit_func=None) -> Iterator[GLibEventLoop]:
         """Mark the loop as running while GLib code (Gtk.Application.run, GLib.MainLoop.run) iterates the
-        context.  Nested use is allowed and only the outermost level sets things up."""
+        context.  Nested use is allowed and only the outermost level sets things up.  PyGObject 3.50 and newer
+        call this itself, with the quit function of the GLib loop it is about to run, from their run()
+        overrides: that loop is ours or nested in ours, so the argument needs no handling here."""
         if self._depth:
             self._depth += 1
             try:

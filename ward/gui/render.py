@@ -217,11 +217,13 @@ class _CodeScroller(Gtk.ScrolledWindow):
         font = Pango.FontDescription.from_string("monospace")
         layout.set_font_description(font)
         self.want = min(layout.get_pixel_size()[0] + 28, 900)
+        # never squeezed down to a few characters, while still fitting a phone-sized window
+        self.set_min_content_width(min(self.want, 240))
 
     def do_measure(self, orientation, for_size):
         mn, nat, mb, nb = Gtk.ScrolledWindow.do_measure(self, orientation, for_size)
         if orientation == Gtk.Orientation.HORIZONTAL:
-            nat = max(nat, self.want)
+            return mn, max(nat, self.want), -1, -1     # a horizontal measure has no baseline
         return mn, nat, mb, nb
 
 

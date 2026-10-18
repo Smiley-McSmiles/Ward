@@ -7,7 +7,7 @@ import os
 import re
 import tempfile
 
-from gi.repository import Gdk, GLib, Gtk, Pango
+from gi.repository import Adw, Gdk, GLib, Gtk, Pango
 
 from .. import deps, paths
 from ..core.markup import emoji
@@ -61,6 +61,14 @@ def _make_view() -> Gtk.TextView:
 
         buf = GtkSource.Buffer()
         buf.set_highlight_syntax(False)
+
+        def follow_style(*_a) -> None:     # the default scheme is the light one: dark text on a dark window
+            name = "Adwaita-dark" if Adw.StyleManager.get_default().get_dark() else "Adwaita"
+            scheme = GtkSource.StyleSchemeManager.get_default().get_scheme(name)
+            if scheme is not None:
+                buf.set_style_scheme(scheme)
+        follow_style()
+        Adw.StyleManager.get_default().connect("notify::dark", follow_style)
         return GtkSource.View(buffer=buf, wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
     except (ImportError, ValueError):
         return Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
