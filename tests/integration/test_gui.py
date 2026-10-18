@@ -153,7 +153,9 @@ def errors(monkeypatch):
     class Collect(logging.Handler):
         def emit(self, record):
             if record.levelno >= logging.ERROR:
-                seen.append(record.getMessage())
+                # with the exception, so a failure says what went wrong
+                exc = record.exc_info[1] if record.exc_info else None
+                seen.append(record.getMessage() + (" (%s: %s)" % (type(exc).__name__, exc) if exc else ""))
     h = Collect()
     logging.getLogger().addHandler(h)
     yield seen
