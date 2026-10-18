@@ -7,6 +7,7 @@ generic CommandSession: forms in, forms or notes out, with prev/next/complete/ca
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
@@ -36,7 +37,9 @@ ADMIN_NODES = {
     "unload": "http://prosody.im/protocol/modules#unload", "list-modules": "http://prosody.im/protocol/modules#list",
     "config-reload": "http://prosody.im/protocol/config#reload",
     "invite": "urn:xmpp:invite#invite", "create-account": "urn:xmpp:invite#create-account",
-    "uptime": "http://prosody.im/protocol/uptime",
+    "uptime": "uptime",
+    "global-reload": "http://prosody.im/protocol/modules#global-reload",
+    "s2s-list": "http://prosody.im/protocol/s2s#list",
 }
 
 
@@ -146,8 +149,9 @@ class AdminService:
                                   else step.default_action or "next", f)
 
     async def stats(self, session) -> dict[str, str]:
-        """Overview numbers that the server offers (registered, online, active users)."""
-        out = {}
+        """Overview numbers that the server offers: registered/online/active user counts (XEP-0133), or what
+        can be derived (Prosody 0.12 offers an online-users list and an uptime command instead)."""
+        out: dict[str, str] = {}
         for key in ("get-registered-users-num", "get-online-users-num", "get-active-users-num"):
             if not self.offers(session.account.id, key):
                 continue
@@ -159,20 +163,37 @@ class AdminService:
                             out[f.var] = f.value
             except Exception as e:
                 log.debug("%s failed: %s", key, e)
+        if "onlineusersnum" not in out and self.offers(session.account.id, "get-online-users-list"):
+            with contextlib.suppress(Exception):
+                out["onlineusersnum"] = str(len(await self._jid_list(session, "get-online-users-list")))
+        if self.offers(session.account.id, "uptime"):
+            with contextlib.suppress(Exception):
+                step = await self.execute(session, session.domain, ADMIN_NODES["uptime"])
+                text = " ".join(n.text for n in step.notes) or (step.form.fields[0].value if step.form and
+                                                                step.form.fields else "")
+                if text:
+                    out["uptime"] = text
         return out
 
-    async def users(self, session) -> list[str]:
-        key = "get-registered-users-list"
-        if not self.offers(session.account.id, key):
-            return []
+    async def _jid_list(self, session, key: str) -> list[str]:
         step = await self.run(session, key, {"max_items": "all"})
-        if step.form is None:
-            return []
         out = []
-        for f in step.form.fields:
-            if f.type == "jid-multi" or f.var.endswith("registereduserjids") or f.var.endswith("users"):
-                out.extend(f.values)
+        if step.form is not None:
+            for f in step.form.fields:
+                if f.type == "jid-multi" or f.var.endswith("userjids") or f.var.endswith("users"):
+                    out.extend(f.values)
+            for item in step.form.items:
+                for v in item.values():
+                    out.extend(x for x in v if "@" in x)
         return sorted(set(out))
+
+    async def users(self, session) -> tuple[list[str], str]:
+        """(JIDs, "registered" | "online"): the full user list when the server offers it, else who is online."""
+        if self.offers(session.account.id, "get-registered-users-list"):
+            return await self._jid_list(session, "get-registered-users-list"), "registered"
+        if self.offers(session.account.id, "get-online-users-list"):
+            return await self._jid_list(session, "get-online-users-list"), "online"
+        return [], ""
 
     async def create_invite(self, session, contact_invite: bool = False) -> str:
         """Prosody mod_invites (XEP-0401 links): returns the invite URI or page."""

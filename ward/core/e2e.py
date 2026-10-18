@@ -55,10 +55,9 @@ class E2E:
                                     "other's addresses")
             return "plain", _("Public groups are not encrypted")
         if meth == "pgp":
-            pgp = self.core.pgp
-            if pgp is None or not pgp.ready(chat.account_id):
-                return "blocked", _("OpenPGP is not set up for this account")
-            return "pgp", ""
+            if self.core.pgp is None:
+                return "blocked", _("OpenPGP is not available")
+            return self.core.pgp.describe(chat)
         omemo = self.core.omemo
         if omemo is None or not omemo.available:
             if self.policy(chat) == "always":

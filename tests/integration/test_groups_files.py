@@ -155,6 +155,8 @@ def test_aesgcm_roundtrip(tmp_path):
     data = bytearray(enc.read_bytes())
     data[100] ^= 1
     enc.write_bytes(bytes(data))
-    with pytest.raises(Exception):
+    from cryptography.exceptions import InvalidTag
+
+    with pytest.raises(InvalidTag):
         files.decrypt_file(str(enc), str(tmp_path / "bad.bin"), key, iv)
     assert not (tmp_path / "bad.bin").exists()

@@ -77,6 +77,7 @@ c2s_require_encryption = true
 authentication = "internal_hashed"
 storage = "internal"
 allow_registration = true
+registration_invite_only = false
 min_seconds_between_registrations = 0
 admins = {{ "admin@{domain}" }}
 archive_expires_after = "never"

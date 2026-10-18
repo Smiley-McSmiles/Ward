@@ -608,3 +608,24 @@ def split_content(el: ET.Element) -> tuple[list[ET.Element], list[ET.Element]]:
     for child in list(el):
         (inside if child.tag in SCE_CONTENT else outside).append(child)
     return inside, outside
+
+
+def to_xml(el: ET.Element, parent_ns: str = NS_CLIENT) -> str:
+    """Serialise with plain xmlns declarations (no ns0: prefixes), the way XMPP servers like to read it."""
+    from xml.sax.saxutils import escape, quoteattr
+
+    tag = el.tag
+    ns = parent_ns
+    if tag.startswith("{"):
+        ns, tag = tag[1:].split("}", 1)
+    attrs = []
+    if ns != parent_ns:
+        attrs.append("xmlns=%s" % quoteattr(ns))
+    for k, v in el.attrib.items():
+        if k.startswith("{"):
+            kns, kname = k[1:].split("}", 1)
+            k = "xml:" + kname if kns == "http://www.w3.org/XML/1998/namespace" else kname
+        attrs.append("%s=%s" % (k, quoteattr(v)))
+    head = "<%s%s" % (tag, (" " + " ".join(attrs)) if attrs else "")
+    inner = escape(el.text or "") + "".join(to_xml(c, ns) + escape(c.tail or "") for c in el)
+    return head + ("/>" if not inner else ">%s</%s>" % (inner, tag))
