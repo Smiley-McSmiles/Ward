@@ -51,6 +51,10 @@ class MessageRow(Gtk.Box):
         self.append(self.overlay)
         self.row = Gtk.Box(spacing=10, css_classes=["message-row"])
         self.overlay.set_child(self.row)
+        # quick reactions and reply, under the message: they take their own room instead of squeezing the text
+        self.actions = Gtk.Box(spacing=0, css_classes=["hover-bar"], visible=False, margin_top=2,
+                               margin_start=12, margin_end=12)
+        self.append(self.actions)
         self.hover = None
         motion = Gtk.EventControllerMotion()
         motion.connect("enter", lambda *_: self._hover(True))
@@ -93,11 +97,9 @@ class MessageRow(Gtk.Box):
         self.view._layout_changing()
         widgets.clear(self.separator)
         widgets.clear(self.row)
-        if self.hover is not None:
-            if self.hover.get_parent() is self.overlay:
-                self.overlay.remove_overlay(self.hover)
-            self.hover = None
-        self.bubble_wrap = None
+        widgets.clear(self.actions)
+        self.actions.set_visible(False)
+        self.hover = None
         settings = self.view.settings
         layout = settings["appearance.layout"]
         for c in ("first", "outgoing", "selected", "highlight", "mention"):
@@ -150,12 +152,7 @@ class MessageRow(Gtk.Box):
             col.set_hexpand(False)
             col.set_halign(Gtk.Align.END if m.outgoing else Gtk.Align.START)
             self.row.set_halign(Gtk.Align.FILL)
-            wrap = Gtk.Box(hexpand=True, halign=Gtk.Align.END if m.outgoing else Gtk.Align.START, spacing=6)
-            wrap.append(col)
-            self.bubble_wrap = wrap
-            self.row.append(wrap)
-        else:
-            self.row.append(col)
+        self.row.append(col)
         bubbles = layout == "bubbles"
         if not cont and (not bubbles or (self.view.chat.type == "groupchat" and not m.outgoing)):
             col.append(self._header(m, with_meta=not bubbles))
@@ -403,8 +400,12 @@ class MessageRow(Gtk.Box):
     def _add_hover_bar(self, m: MessageItem) -> None:
         if m.retracted or m.kind == "status":
             return
-        bar = Gtk.Box(spacing=0, css_classes=["hover-bar"], halign=Gtk.Align.END, valign=Gtk.Align.START,
-                      margin_end=12, margin_top=0, visible=False)
+        bar = self.actions
+        # under the bubble, on its side; in the full-width layouts, at the right end of the message
+        if self.view.settings["appearance.layout"] == "bubbles" and not m.outgoing:
+            bar.set_halign(Gtk.Align.START)
+        else:
+            bar.set_halign(Gtk.Align.END)
         for e in self.view.settings["chats.quick_reactions"][:3]:
             b = Gtk.Button(label=e, css_classes=["flat"], tooltip_text=_("React with %s") % e)
             b.connect("clicked", lambda _b, e=e: self.view.react(m, e))
@@ -418,18 +419,6 @@ class MessageRow(Gtk.Box):
         reply.connect("clicked", lambda *_: self.view.start_reply(m))
         bar.append(reply)
         self.hover = bar
-        wrap = getattr(self, "bubble_wrap", None)
-        if wrap is not None:
-            # bubbles: beside the bubble, in the empty side of the row, so it never covers text to select
-            bar.set_halign(Gtk.Align.CENTER)
-            bar.set_valign(Gtk.Align.CENTER)
-            bar.set_margin_end(0)
-            if m.outgoing:
-                wrap.prepend(bar)
-            else:
-                wrap.append(bar)
-        else:
-            self.overlay.add_overlay(bar)
 
     def _hover(self, inside: bool) -> None:
         if self.hover is not None:
