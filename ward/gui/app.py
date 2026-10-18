@@ -380,6 +380,11 @@ class WardApplication(Adw.Application):
         get the copy Ward ships in share/ward/sounds."""
         if not name:
             return
+        if os.path.isabs(name):         # a file chosen in the preferences
+            if os.path.isfile(name):
+                self._play_file(name)
+                return
+            name = "message-new-instant"
         if not sound_theme_has(name):
             # Ward ships one sound: it stands in for the others (contact requests) too
             path = bundled_sound(name) or bundled_sound("message-new-instant")

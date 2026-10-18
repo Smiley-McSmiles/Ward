@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ward 1.0.0\n"
 "Report-Msgid-Bugs-To: https://github.com/smiley-mcsmiles/ward/issues\n"
-"POT-Creation-Date: 2026-10-18 04:09+0000\n"
+"POT-Creation-Date: 2026-10-18 06:32+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -708,61 +708,61 @@ msgstr ""
 msgid "Finish"
 msgstr ""
 
-#: ward/gui/app.py:98
+#: ward/gui/app.py:131
 msgid "Ward could not start"
 msgstr ""
 
-#: ward/gui/app.py:98 ward/gui/app.py:165 ward/gui/sidebar.py:64
+#: ward/gui/app.py:131 ward/gui/app.py:198 ward/gui/sidebar.py:64
 #: ward/gui/tray.py:249
 msgid "Quit"
 msgstr ""
 
-#: ward/gui/app.py:164
+#: ward/gui/app.py:197
 msgid "Quit Ward?"
 msgstr ""
 
-#: ward/gui/app.py:164
+#: ward/gui/app.py:197
 msgid "You won't get messages until you start it again."
 msgstr ""
 
-#: ward/gui/app.py:165 ward/gui/composer.py:592 ward/gui/conversation.py:600
+#: ward/gui/app.py:198 ward/gui/composer.py:592 ward/gui/conversation.py:600
 #: ward/gui/conversation.py:763 ward/gui/conversation.py:772
 #: ward/gui/conversation.py:824 ward/gui/conversation.py:841
 #: ward/gui/conversation.py:869 ward/gui/details.py:195 ward/gui/details.py:205
 #: ward/gui/details.py:308 ward/gui/dialogs.py:37 ward/gui/dialogs.py:817
-#: ward/gui/members.py:187 ward/gui/message_row.py:361 ward/gui/prefs.py:470
-#: ward/gui/prefs.py:514 ward/gui/trust.py:254 ward/gui/trust.py:335
+#: ward/gui/members.py:187 ward/gui/message_row.py:361 ward/gui/prefs.py:534
+#: ward/gui/prefs.py:578 ward/gui/trust.py:254 ward/gui/trust.py:335
 #: ward/gui/trust.py:353 ward/gui/window.py:310
 msgid "Cancel"
 msgstr ""
 
-#: ward/gui/app.py:202
+#: ward/gui/app.py:235
 #, python-format
 msgid "custom.css: %s"
 msgstr ""
 
-#: ward/gui/app.py:232
+#: ward/gui/app.py:265
 msgid "Receive messages in the background"
 msgstr ""
 
-#: ward/gui/app.py:331 ward/gui/sidebar.py:280 ward/gui/window.py:31
+#: ward/gui/app.py:364 ward/gui/sidebar.py:280 ward/gui/window.py:31
 msgid "Mark as read"
 msgstr ""
 
-#: ward/gui/app.py:441
+#: ward/gui/app.py:512
 msgid "Some fingerprints in the link did not match"
 msgstr ""
 
-#: ward/gui/app.py:443 ward/gui/trust.py:280
+#: ward/gui/app.py:514 ward/gui/trust.py:280
 #, python-format
 msgid "Verified %d devices"
 msgstr ""
 
-#: ward/gui/app.py:491
+#: ward/gui/app.py:562
 msgid "A private, modern XMPP client"
 msgstr ""
 
-#: ward/gui/app.py:496
+#: ward/gui/app.py:567
 msgid ""
 "Legacy OMEMO support (oldmemo) is licensed under the AGPL-3.0 and is "
 "optional."
@@ -1004,7 +1004,7 @@ msgstr ""
 msgid "Messages you write are sent when you are back online."
 msgstr ""
 
-#: ward/gui/conversation.py:453 ward/gui/dialogs.py:600 ward/gui/prefs.py:357
+#: ward/gui/conversation.py:453 ward/gui/dialogs.py:600 ward/gui/prefs.py:421
 msgid "Connect"
 msgstr ""
 
@@ -1113,7 +1113,7 @@ msgid "Only the people in this chat can read the messages, not the servers."
 msgstr ""
 
 #: ward/gui/conversation.py:528 ward/gui/prefs.py:50 ward/gui/prefs.py:58
-#: ward/gui/prefs.py:63 ward/gui/prefs.py:66
+#: ward/gui/prefs.py:63 ward/gui/prefs.py:66 ward/gui/prefs.py:109
 msgid "Default"
 msgstr ""
 
@@ -1237,7 +1237,7 @@ msgid "It is removed for everyone in the group."
 msgstr ""
 
 #: ward/gui/conversation.py:772 ward/gui/details.py:205 ward/gui/details.py:383
-#: ward/gui/dialogs.py:817 ward/gui/members.py:192 ward/gui/prefs.py:514
+#: ward/gui/dialogs.py:817 ward/gui/members.py:192 ward/gui/prefs.py:578
 #: ward/gui/trust.py:254
 msgid "Remove"
 msgstr ""
@@ -1263,7 +1263,7 @@ msgstr ""
 msgid "Messages are deleted from this computer only."
 msgstr ""
 
-#: ward/gui/conversation.py:824 ward/gui/prefs.py:241 ward/gui/tools.py:36
+#: ward/gui/conversation.py:824 ward/gui/prefs.py:305 ward/gui/tools.py:36
 msgid "Clear"
 msgstr ""
 
@@ -1660,7 +1660,7 @@ msgstr ""
 msgid "New group"
 msgstr ""
 
-#: ward/gui/dialogs.py:291 ward/gui/prefs.py:470
+#: ward/gui/dialogs.py:291 ward/gui/prefs.py:534
 msgid "Create"
 msgstr ""
 
@@ -1680,7 +1680,7 @@ msgstr ""
 msgid "Invite (addresses, separated by commas)"
 msgstr ""
 
-#: ward/gui/dialogs.py:304 ward/gui/prefs.py:120 ward/schema.py:56
+#: ward/gui/dialogs.py:304 ward/gui/prefs.py:184 ward/schema.py:56
 msgid "Advanced"
 msgstr ""
 
@@ -1956,7 +1956,7 @@ msgstr ""
 msgid "Change password…"
 msgstr ""
 
-#: ward/gui/dialogs.py:735 ward/gui/prefs.py:341
+#: ward/gui/dialogs.py:735 ward/gui/prefs.py:405
 msgid "Remove account from Ward…"
 msgstr ""
 
@@ -1986,7 +1986,7 @@ msgid ""
 "your devices"
 msgstr ""
 
-#: ward/gui/dialogs.py:815 ward/gui/members.py:192 ward/gui/prefs.py:512
+#: ward/gui/dialogs.py:815 ward/gui/members.py:192 ward/gui/prefs.py:576
 #, python-format
 msgid "Remove %s?"
 msgstr ""
@@ -2263,227 +2263,248 @@ msgstr ""
 msgid "Add reaction"
 msgstr ""
 
-#: ward/gui/prefs.py:164
+#: ward/gui/prefs.py:124
+msgid "Choose a sound"
+msgstr ""
+
+#: ward/gui/prefs.py:125 ward/schema.py:175 ward/schema.py:177
+#: ward/schema.py:179 ward/schema.py:181
+msgid "Sounds"
+msgstr ""
+
+#: ward/gui/prefs.py:149
+msgid "Play"
+msgstr ""
+
+#: ward/gui/prefs.py:152
+msgid "Choose a sound file…"
+msgstr ""
+
+#: ward/gui/prefs.py:155
+msgid "Use the default sound"
+msgstr ""
+
+#: ward/gui/prefs.py:228
 msgid "Your desktop may stop apps running in the background"
 msgstr ""
 
-#: ward/gui/prefs.py:167 ward/schema.py:53
+#: ward/gui/prefs.py:231 ward/schema.py:53
 msgid "Accounts"
 msgstr ""
 
-#: ward/gui/prefs.py:169 ward/gui/window.py:156
+#: ward/gui/prefs.py:233 ward/gui/window.py:156
 msgid "Add account"
 msgstr ""
 
-#: ward/gui/prefs.py:190 ward/gui/tools.py:30
+#: ward/gui/prefs.py:254 ward/gui/tools.py:30
 msgid "No accounts"
 msgstr ""
 
-#: ward/gui/prefs.py:198 ward/gui/trust.py:93 ward/gui/trust.py:94
+#: ward/gui/prefs.py:262 ward/gui/trust.py:93 ward/gui/trust.py:94
 msgid "Install encryption support…"
 msgstr ""
 
-#: ward/gui/prefs.py:199
+#: ward/gui/prefs.py:263
 msgid "Add legacy OMEMO for older apps…"
 msgstr ""
 
-#: ward/gui/prefs.py:200
+#: ward/gui/prefs.py:264
 msgid "Downloads the OMEMO libraries into Ward's own folder"
 msgstr ""
 
-#: ward/gui/prefs.py:204 ward/gui/trust.py:81
+#: ward/gui/prefs.py:268 ward/gui/trust.py:81
 msgid "Your devices"
 msgstr ""
 
-#: ward/gui/prefs.py:207
+#: ward/gui/prefs.py:271
 msgid "Fingerprints, QR code, trust export"
 msgstr ""
 
-#: ward/gui/prefs.py:218
+#: ward/gui/prefs.py:282
 #, python-format
 msgid "gpg: %s"
 msgstr ""
 
-#: ward/gui/prefs.py:218
+#: ward/gui/prefs.py:282
 msgid "not found"
 msgstr ""
 
-#: ward/gui/prefs.py:220
+#: ward/gui/prefs.py:284
 #, python-format
 msgid "GPGMan settings found: keyring %s"
 msgstr ""
 
-#: ward/gui/prefs.py:222
+#: ward/gui/prefs.py:286
 msgid "GPGMan is installed"
 msgstr ""
 
-#: ward/gui/prefs.py:224
+#: ward/gui/prefs.py:288
 msgid ""
 "GPGMan (github.com/Smiley-McSmiles/GPGMan) manages GnuPG keys and shares "
 "them with Ward"
 msgstr ""
 
-#: ward/gui/prefs.py:228
+#: ward/gui/prefs.py:292
 msgid "Open GPGMan"
 msgstr ""
 
-#: ward/gui/prefs.py:238
+#: ward/gui/prefs.py:302
 msgid "Usage"
 msgstr ""
 
-#: ward/gui/prefs.py:240 ward/schema.py:225 ward/schema.py:229
+#: ward/gui/prefs.py:304 ward/schema.py:225 ward/schema.py:229
 msgid "Cache"
 msgstr ""
 
-#: ward/gui/prefs.py:244
+#: ward/gui/prefs.py:308
 msgid "Message database"
 msgstr ""
 
-#: ward/gui/prefs.py:245 ward/schema.py:94 ward/schema.py:116
+#: ward/gui/prefs.py:309 ward/schema.py:94 ward/schema.py:116
 msgid "Compact"
 msgstr ""
 
-#: ward/gui/prefs.py:248
+#: ward/gui/prefs.py:312
 msgid "Data folder"
 msgstr ""
 
-#: ward/gui/prefs.py:272
+#: ward/gui/prefs.py:336
 msgid "About this installation"
 msgstr ""
 
-#: ward/gui/prefs.py:274
+#: ward/gui/prefs.py:338
 msgid "Config folder"
 msgstr ""
 
-#: ward/gui/prefs.py:278
+#: ward/gui/prefs.py:342
 msgid "Libraries and optional features"
 msgstr ""
 
-#: ward/gui/prefs.py:279
+#: ward/gui/prefs.py:343
 msgid "What is installed, and how to install what is missing"
 msgstr ""
 
-#: ward/gui/prefs.py:283
+#: ward/gui/prefs.py:347
 msgid "Log file"
 msgstr ""
 
-#: ward/gui/prefs.py:291
+#: ward/gui/prefs.py:355
 msgid "Libraries"
 msgstr ""
 
-#: ward/gui/prefs.py:328
+#: ward/gui/prefs.py:392
 msgid "Reconnect now"
 msgstr ""
 
-#: ward/gui/prefs.py:338 ward/gui/sidebar.py:523
+#: ward/gui/prefs.py:402 ward/gui/sidebar.py:523
 msgid "Profile…"
 msgstr ""
 
-#: ward/gui/prefs.py:339
+#: ward/gui/prefs.py:403
 msgid "Your devices and keys…"
 msgstr ""
 
-#: ward/gui/prefs.py:340
+#: ward/gui/prefs.py:404
 msgid "Server administration…"
 msgstr ""
 
-#: ward/gui/prefs.py:357
+#: ward/gui/prefs.py:421
 msgid "Disconnect"
 msgstr ""
 
-#: ward/gui/prefs.py:391
+#: ward/gui/prefs.py:455
 msgid "Reconnect to use the new connection settings"
 msgstr ""
 
-#: ward/gui/prefs.py:397
+#: ward/gui/prefs.py:461
 msgid "Trusted certificates"
 msgstr ""
 
-#: ward/gui/prefs.py:397
+#: ward/gui/prefs.py:461
 msgid "Certificates you accepted manually"
 msgstr ""
 
-#: ward/gui/prefs.py:403
+#: ward/gui/prefs.py:467
 msgid "Stop trusting"
 msgstr ""
 
-#: ward/gui/prefs.py:417 ward/gui/trust.py:222 ward/schema.py:294
+#: ward/gui/prefs.py:481 ward/gui/trust.py:222 ward/schema.py:294
 msgid "OpenPGP key"
 msgstr ""
 
-#: ward/gui/prefs.py:418
+#: ward/gui/prefs.py:482
 msgid ""
 "The key others use to encrypt to you with OpenPGP. Keys come from the GnuPG "
 "keyring that GPGMan shares, or a file GPGMan exported."
 msgstr ""
 
-#: ward/gui/prefs.py:422
+#: ward/gui/prefs.py:486
 msgid "Key"
 msgstr ""
 
-#: ward/gui/prefs.py:423
+#: ward/gui/prefs.py:487
 msgid "Loading…"
 msgstr ""
 
-#: ward/gui/prefs.py:427
+#: ward/gui/prefs.py:491
 msgid "Create a new key"
 msgstr ""
 
-#: ward/gui/prefs.py:430
+#: ward/gui/prefs.py:494
 msgid "Import a key file (.asc from GPGMan)…"
 msgstr ""
 
-#: ward/gui/prefs.py:438
+#: ward/gui/prefs.py:502
 msgid "gpg is not installed"
 msgstr ""
 
-#: ward/gui/prefs.py:442 ward/gui/welcome.py:115 ward/schema.py:167
+#: ward/gui/prefs.py:506 ward/gui/welcome.py:115 ward/schema.py:167
 #: ward/schema.py:264
 msgid "None"
 msgstr ""
 
-#: ward/gui/prefs.py:453
+#: ward/gui/prefs.py:517
 #, python-format
 msgid "Keys with “xmpp:%s” in the user id work best with other apps"
 msgstr ""
 
-#: ward/gui/prefs.py:459
+#: ward/gui/prefs.py:523
 msgid "Key published"
 msgstr ""
 
-#: ward/gui/prefs.py:459
+#: ward/gui/prefs.py:523
 msgid "No key"
 msgstr ""
 
-#: ward/gui/prefs.py:465
+#: ward/gui/prefs.py:529
 msgid "Creating a key; gpg may ask for a passphrase"
 msgstr ""
 
-#: ward/gui/prefs.py:468
+#: ward/gui/prefs.py:532
 msgid "Create an OpenPGP key?"
 msgstr ""
 
-#: ward/gui/prefs.py:469
+#: ward/gui/prefs.py:533
 #, python-format
 msgid ""
 "A new key for xmpp:%s is created in the shared GnuPG keyring, so GPGMan "
 "shows it too."
 msgstr ""
 
-#: ward/gui/prefs.py:473 ward/gui/trust.py:291
+#: ward/gui/prefs.py:537 ward/gui/trust.py:291
 msgid "Import an OpenPGP key"
 msgstr ""
 
-#: ward/gui/prefs.py:475 ward/gui/trust.py:110
+#: ward/gui/prefs.py:539 ward/gui/trust.py:110
 msgid "OpenPGP keys"
 msgstr ""
 
-#: ward/gui/prefs.py:495 ward/gui/trust.py:304
+#: ward/gui/prefs.py:559 ward/gui/trust.py:304
 #, python-format
 msgid "Imported %d keys"
 msgstr ""
 
-#: ward/gui/prefs.py:513
+#: ward/gui/prefs.py:577
 msgid ""
 "Ward forgets this account and its local history. The account keeps existing "
 "on the server."
@@ -3778,10 +3799,6 @@ msgstr ""
 
 #: ward/schema.py:173
 msgid "Unread count on the dock icon"
-msgstr ""
-
-#: ward/schema.py:175 ward/schema.py:177 ward/schema.py:179 ward/schema.py:181
-msgid "Sounds"
 msgstr ""
 
 #: ward/schema.py:180
