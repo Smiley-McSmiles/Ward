@@ -1,0 +1,16 @@
+# Ward in the background as a systemd user service (optional: "Start at login" in Preferences works without it).
+#   systemctl --user enable --now ward
+[Unit]
+Description=Ward XMPP client (background)
+Documentation=man:ward(1)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=@BINDIR@/ward --background
+# Ctrl+Q / Quit exits cleanly (code 0) and stays stopped; only crashes are restarted
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

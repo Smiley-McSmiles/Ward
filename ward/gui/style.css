@@ -1,0 +1,136 @@
+/* Ward - libadwaita refinements.  Colours come from the theme (@accent_color, @card_bg_color...), so light, dark,
+   high contrast and accent colours all work.  Users can override anything in ~/.config/ward/custom.css. */
+
+/* ---------------------------------------------------------------- sidebar */
+.chat-list { background: none; }
+.chat-list > row { padding: 0; border-radius: 10px; margin: 1px 6px; }
+.chat-row { padding: 8px 8px; }
+.chat-list.compact .chat-row { padding: 4px 8px; }
+.chat-row-title { font-weight: 600; }
+.chat-row.unread .chat-row-title { font-weight: 800; }
+.chat-row-preview { font-size: 0.9em; opacity: 0.7; }
+.chat-row.unread .chat-row-preview { opacity: 0.95; }
+.chat-row-time { font-size: 0.8em; opacity: 0.6; font-feature-settings: "tnum"; }
+.chat-row .typing { color: @accent_color; font-style: italic; opacity: 1; }
+.chat-row .draft { color: @error_color; }
+.unread-badge {
+  background-color: @accent_bg_color; color: @accent_fg_color; border-radius: 999px;
+  min-width: 18px; min-height: 18px; padding: 0 5px; font-size: 0.75em; font-weight: bold;
+}
+.unread-badge.muted { background-color: alpha(@window_fg_color, 0.3); }
+.unread-badge.mention { background-color: @error_bg_color; color: @error_fg_color; }
+.account-stripe { min-width: 3px; border-radius: 2px; margin: 4px 0; }
+.section-header { font-size: 0.8em; font-weight: bold; opacity: 0.6; margin: 10px 14px 2px 14px; }
+.filter-chips button { border-radius: 999px; padding: 2px 12px; min-height: 26px; }
+.request-row { background-color: alpha(@accent_bg_color, 0.08); }
+
+/* presence dots on avatars */
+.presence-dot { min-width: 10px; min-height: 10px; border-radius: 999px; border: 2px solid @window_bg_color; }
+.presence-dot.available, .presence-dot.chat { background-color: @success_color; }
+.presence-dot.away, .presence-dot.xa { background-color: @warning_color; }
+.presence-dot.dnd { background-color: @error_color; }
+.presence-dot.offline { background-color: transparent; border-color: transparent; }
+
+/* ---------------------------------------------------------------- conversation */
+.message-list { background: none; }
+.message-list > row { padding: 0; background: none; }
+.message-list > row:hover { background: none; }
+.message-row { padding: 2px 12px; }
+.message-row.first { padding-top: 8px; }
+.message-row:hover { background-color: alpha(@window_fg_color, 0.03); }
+.message-row.selected { background-color: alpha(@accent_bg_color, 0.15); }
+.message-row.highlight { background-color: alpha(@warning_color, 0.12); }
+.message-row.mention { background-color: alpha(@accent_bg_color, 0.07); }
+.message-sender { font-weight: bold; }
+.message-time { font-size: 0.8em; opacity: 0.55; font-feature-settings: "tnum"; }
+.message-meta { font-size: 0.8em; opacity: 0.65; }
+.message-text { }
+.message-text.emoji-only { font-size: 300%; }
+.message-text.action { font-style: italic; }
+.message-deleted { font-style: italic; opacity: 0.55; }
+.message-error { color: @error_color; font-size: 0.85em; }
+.message-unencrypted { border-left: 3px solid @error_color; padding-left: 6px; }
+.status-line { font-size: 0.85em; opacity: 0.6; padding: 2px 12px; }
+.date-separator { font-size: 0.85em; font-weight: bold; opacity: 0.6; margin: 12px 0 4px 0; }
+.new-messages { color: @accent_color; font-size: 0.8em; font-weight: bold; }
+.new-messages separator { background-color: @accent_color; }
+
+/* bubbles layout */
+.bubbles .message-content {
+  background-color: @card_bg_color; border-radius: 14px; padding: 6px 10px;
+  box-shadow: 0 1px 2px alpha(black, 0.08);
+}
+.bubbles .message-row.outgoing .message-content { background-color: alpha(@accent_bg_color, 0.18); }
+/* compact layout: IRC-like */
+.compact .message-row { padding-top: 0; padding-bottom: 0; }
+
+.quote-block { border-left: 3px solid alpha(@accent_color, 0.6); padding-left: 8px; margin: 2px 0; }
+.reply-preview {
+  border-left: 3px solid @accent_color; padding: 2px 8px; margin-bottom: 2px;
+  background-color: alpha(@accent_bg_color, 0.06); border-radius: 0 6px 6px 0;
+}
+.reply-preview label { font-weight: normal; }
+.reply-preview .author { font-weight: bold; color: @accent_color; font-size: 0.85em; }
+.reply-preview .text { font-size: 0.9em; opacity: 0.8; }
+button.message-meta { padding: 0 4px; min-height: 0; min-width: 0; font-weight: normal; }
+.code-block { border-radius: 8px; background-color: alpha(@window_fg_color, 0.06); }
+.code-block .code-header { font-size: 0.8em; padding: 2px 4px 2px 10px; opacity: 0.8; }
+.code-block textview, .code-block .message-code { background: none; padding: 6px 10px; font-family: monospace; }
+.message-table { border: 1px solid alpha(@window_fg_color, 0.15); border-radius: 6px; }
+.message-table label { padding: 3px 8px; }
+.message-table .header { font-weight: bold; background-color: alpha(@window_fg_color, 0.05); }
+.spoiler-hint { font-size: 0.85em; opacity: 0.7; }
+
+.reaction {
+  border-radius: 999px; padding: 0 8px; min-height: 24px; font-size: 0.9em;
+  background-color: alpha(@window_fg_color, 0.07);
+}
+.reaction.mine { background-color: alpha(@accent_bg_color, 0.25); box-shadow: inset 0 0 0 1px alpha(@accent_color, 0.5); }
+.hover-bar {
+  background-color: @popover_bg_color; border-radius: 10px; padding: 2px;
+  box-shadow: 0 1px 3px alpha(black, 0.2), 0 0 0 1px alpha(black, 0.05);
+}
+.hover-bar button { min-width: 28px; min-height: 28px; padding: 0 4px; }
+
+.attachment-card { border-radius: 10px; background-color: alpha(@window_fg_color, 0.06); padding: 8px 10px; }
+.attachment-image { border-radius: 10px; }
+.link-preview { border-left: 3px solid alpha(@accent_color, 0.5); padding: 4px 8px; border-radius: 0 8px 8px 0;
+  background-color: alpha(@window_fg_color, 0.04); }
+.link-preview .title { font-weight: bold; }
+
+/* composer */
+.composer { padding: 6px 8px; }
+.composer-box { border-radius: 14px; background-color: alpha(@window_fg_color, 0.06); padding: 4px 8px; }
+.composer textview, .composer text { background: none; }
+.composer-banner { padding: 4px 10px; font-size: 0.9em; border-radius: 10px; margin: 0 8px;
+  background-color: alpha(@accent_bg_color, 0.1); }
+.composer-banner.editing { background-color: alpha(@warning_color, 0.15); }
+.jump-button { margin: 12px; }
+.conversation-banner { padding: 6px 12px; background-color: alpha(@accent_bg_color, 0.1); }
+.conversation-banner button { padding: 2px 12px; }
+
+/* encryption and trust */
+.trust-verified { color: @success_color; }
+.trust-trusted { color: @accent_color; }
+.trust-undecided { color: @warning_color; }
+.trust-distrusted { color: @error_color; }
+.trust-inactive { opacity: 0.5; }
+.fingerprint { font-family: monospace; font-size: 0.95em; }
+.fingerprint-group { font-family: monospace; font-weight: bold; }
+.lock-off { color: @error_color; }
+
+/* members panel */
+.members-panel { background-color: @sidebar_bg_color; }
+.role-header { font-size: 0.8em; font-weight: bold; opacity: 0.6; margin: 10px 12px 2px 12px; }
+.hat { font-size: 0.75em; border-radius: 999px; padding: 0 6px; background-color: alpha(@accent_bg_color, 0.15); }
+
+/* tools */
+.xml-console textview { font-family: monospace; font-size: 0.9em; }
+.xml-in { color: @accent_color; }
+.xml-out { color: @success_color; }
+
+.welcome-logo { margin-bottom: 12px; }
+.step-done { color: @success_color; }
+.step-active { color: @accent_color; font-weight: bold; }
+.captcha { border-radius: 8px; }
+.qr-code { background-color: white; padding: 12px; border-radius: 12px; }

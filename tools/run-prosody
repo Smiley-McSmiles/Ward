@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Start a throwaway Prosody for trying Ward by hand (the same server the integration tests use).
+
+    tools/run-prosody            prints the ports and how to sign in, runs until Ctrl+C
+
+Users alice, bob, carol, dave and admin exist with the password "password".  The certificate is self-signed:
+Ward shows it and lets you trust it, or run Ward with WARD_EXTRA_CA=<the printed path>.  Needs prosody installed
+(apt install prosody, dnf install prosody, pkg install prosody...)."""
+
+import os
+import signal
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tests", "integration"))
+sys.path.insert(0, ROOT)
+
+from server import ProsodyServer  # noqa: E402
+
+
+def main() -> int:
+    if not ProsodyServer.available():
+        print("prosody is not installed", file=sys.stderr)
+        return 1
+    srv = ProsodyServer(loglevel=os.environ.get("WARD_PROSODY_LOG", "info"))
+    srv.start()
+    print("Prosody is running in %s\n" % srv.dir)
+    print("  STARTTLS        127.0.0.1:%d" % srv.c2s)
+    print("  direct TLS      127.0.0.1:%d" % srv.c2s_tls)
+    print("  file upload     https://localhost:%d" % srv.https)
+    print("  certificate     %s\n" % srv.cert)
+    print("Sign in as alice@localhost (password: password) with these connection settings:")
+    print("  server address 127.0.0.1, port %d, STARTTLS, proxy none" % srv.c2s)
+    print("or start Ward with:  WARD_EXTRA_CA=%s ward\n" % srv.cert)
+    print("Ctrl+C stops the server and deletes everything.")
+    try:
+        signal.pause()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        srv.stop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

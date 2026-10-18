@@ -1,0 +1,4 @@
+#!/bin/sh
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/ward/runit"
+mkdir -p "$dir"
+exec svlogd -tt "$dir"

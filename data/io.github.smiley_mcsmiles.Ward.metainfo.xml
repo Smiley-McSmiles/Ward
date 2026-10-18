@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 WOOSAH -->
+<component type="desktop-application">
+  <id>io.github.smiley_mcsmiles.Ward</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Ward</name>
+  <summary>Private messaging on the open XMPP network</summary>
+  <developer id="io.github.smiley_mcsmiles">
+    <name>Ward contributors</name>
+  </developer>
+  <description>
+    <p>
+      Ward is a modern XMPP (Jabber) client for Linux and the BSDs. Chats are end-to-end encrypted with OMEMO
+      by default, and Ward talks to Conversations, Monal, Dino, Gajim and every other XMPP app on any server,
+      including your own.
+    </p>
+    <ul>
+      <li>Encrypted by default: OMEMO 2 and legacy OMEMO, with QR-code verification and clear trust decisions</li>
+      <li>Optional OpenPGP that shares keys with GPGMan and GnuPG</li>
+      <li>Markdown messages with code highlighting, tables, quotes, spoilers and task lists</li>
+      <li>Groups and channels: invites, moderation, roles, bookmarks and group settings</li>
+      <li>Replies, reactions, edits, deleting for everyone, read receipts and typing notifications</li>
+      <li>Files and images, encrypted when the chat is</li>
+      <li>Several accounts, message requests, blocking, full-text search and history from the server</li>
+      <li>Server administration for admins, an XML console and service discovery for developers</li>
+      <li>Adaptive: works on desktops, tablets and Linux phones</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.smiley_mcsmiles.Ward.desktop</launchable>
+  <provides>
+    <binary>ward</binary>
+  </provides>
+  <url type="homepage">https://github.com/smiley-mcsmiles/ward</url>
+  <url type="bugtracker">https://github.com/smiley-mcsmiles/ward/issues</url>
+  <url type="vcs-browser">https://github.com/smiley-mcsmiles/ward</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>An encrypted chat</caption>
+      <image>https://raw.githubusercontent.com/smiley-mcsmiles/ward/main/docs/screenshots/chat.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A group with its members</caption>
+      <image>https://raw.githubusercontent.com/smiley-mcsmiles/ward/main/docs/screenshots/group.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Dark style</caption>
+      <image>https://raw.githubusercontent.com/smiley-mcsmiles/ward/main/docs/screenshots/chat-dark.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>On a phone</caption>
+      <image>https://raw.githubusercontent.com/smiley-mcsmiles/ward/main/docs/screenshots/narrow.png</image>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#99c1f1</color>
+    <color type="primary" scheme_preference="dark">#1a5fb4</color>
+  </branding>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+    <content_attribute id="social-audio">none</content_attribute>
+    <content_attribute id="social-contacts">intense</content_attribute>
+  </content_rating>
+  <keywords>
+    <keyword>XMPP</keyword>
+    <keyword>Jabber</keyword>
+    <keyword>OMEMO</keyword>
+    <keyword>Messenger</keyword>
+  </keywords>
+  <releases>
+    <release version="1.0.0" date="2026-10-18">
+      <description>
+        <p>The first release: encrypted chats and groups, Markdown, files, several accounts, OpenPGP with GPGMan
+        keys, server administration, and packages for many Linux distributions and the BSDs.</p>
+      </description>
+    </release>
+  </releases>
+</component>

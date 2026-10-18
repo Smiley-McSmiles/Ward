@@ -1,0 +1,12 @@
+#!/bin/sh
+# Ward as a runit user service (Void Linux: turnstile, or runsvdir ~/.config/service).
+#   mkdir -p ~/.config/service && cp -r @SHAREDIR@/ward/runit ~/.config/service/ward
+# Quitting Ward (Ctrl+Q) runs "sv down" on this service, so runsv does not start it again.
+exec 2>&1
+# the graphical session's variables, which runsvdir does not inherit
+ENV_FILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/ward.env"
+# shellcheck disable=SC1090
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+WARD_RUNIT_SERVICE=$(pwd)
+export WARD_RUNIT_SERVICE
+exec @BINDIR@/ward --background

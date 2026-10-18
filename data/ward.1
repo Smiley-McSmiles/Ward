@@ -1,0 +1,79 @@
+.TH WARD 1 "October 2026" "Ward v1.0.0" "User Commands"
+.SH NAME
+ward \- private messaging on the open XMPP network
+.SH SYNOPSIS
+.B ward
+[\fIOPTIONS\fR] [\fIURI\fR...]
+.SH DESCRIPTION
+.B ward
+is an XMPP (Jabber) client for GTK 4 and libadwaita. Chats are end-to-end encrypted with OMEMO by default;
+OpenPGP is available as an option and shares its keys with GPGMan and GnuPG.
+.PP
+Running
+.B ward
+while it is already running brings the existing window to the front. xmpp: links (RFC 5122) given on the
+command line open the right chat, group or invitation.
+.SH OPTIONS
+.TP
+.BR \-b ", " \-\-background
+Start without a window and stay connected; used by "Start at login".
+.TP
+.BR \-q ", " \-\-quit
+Quit the running instance.
+.TP
+.B \-\-check
+Print which libraries and optional features are available, with the commands to install what is missing,
+and exit.
+.TP
+.B \-\-debug
+Log everything to the terminal. Passwords and tokens are masked.
+.TP
+.B \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Show a short help.
+.SH ENVIRONMENT
+.TP
+.B WARD_HOME
+Keep all settings, history and caches in this folder instead of the XDG folders.
+.TP
+.B WARD_LOG
+Log level: debug, info or warning.
+.TP
+.B WARD_OFFLINE
+When set, open everything without connecting.
+.TP
+.B WARD_SECRETS
+Where passwords are kept: keyring, file or memory (overrides the per-account setting).
+.TP
+.B WARD_VENDOR
+An extra folder of Python libraries (set by the launcher that install.sh writes).
+.SH FILES
+.TP
+.I ~/.config/ward/settings.json
+Settings. Accounts and per-chat settings are in the database.
+.TP
+.I ~/.config/ward/custom.css
+Optional style sheet, loaded last when enabled in Preferences.
+.TP
+.I ~/.local/share/ward/ward.db
+Messages, contacts, chats and encryption keys (SQLite).
+.TP
+.I ~/.local/share/ward/python
+Libraries Ward installed itself (encryption support).
+.TP
+.I ~/.cache/ward
+Downloaded files, thumbnails and avatars.
+.SH EXAMPLES
+.TP
+.B ward xmpp:alex@example.org?message
+Open a chat with alex@example.org.
+.TP
+.B ward \-\-check
+See what is missing on this machine.
+.SH SEE ALSO
+.BR gpg (1),
+.BR prosody (1)
+.PP
+https://github.com/smiley-mcsmiles/ward

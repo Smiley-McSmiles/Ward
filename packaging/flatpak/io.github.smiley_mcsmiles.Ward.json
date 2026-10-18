@@ -1,0 +1,40 @@
+{
+  "id": "io.github.smiley_mcsmiles.Ward",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "48",
+  "sdk": "org.gnome.Sdk",
+  "command": "ward",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--socket=pulseaudio",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--own-name=org.kde.StatusNotifierItem-2-1"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "*.a",
+    "*.la"
+  ],
+  "modules": [
+    "python3-deps.json",
+    {
+      "name": "ward",
+      "buildsystem": "simple",
+      "build-commands": [
+        "./install.sh --prefix /app --no-post --no-system-links"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../..",
+          "skip": ["build", "dist", ".git", "tests/screenshots"]
+        }
+      ]
+    }
+  ]
+}

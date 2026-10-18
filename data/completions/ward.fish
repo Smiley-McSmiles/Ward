@@ -1,0 +1,6 @@
+complete -c ward -s b -l background -d 'Start without a window and stay connected'
+complete -c ward -s q -l quit -d 'Quit the running instance'
+complete -c ward -l check -d 'Show which libraries and features are available'
+complete -c ward -l debug -d 'Verbose logging to the terminal'
+complete -c ward -l version -d 'Print the version'
+complete -c ward -s h -l help -d 'Show help'
