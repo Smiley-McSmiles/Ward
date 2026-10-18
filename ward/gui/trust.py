@@ -80,10 +80,15 @@ class DevicesDialog(BaseDialog):
                                       _("Compare fingerprints with what the other person's app shows, in person "
                                         "or on a call, then mark the device as verified"))
         self.omemo_rows: list[Gtk.Widget] = []
-        if self.core.omemo is None or not self.core.omemo.available:
-            self.omemo_group.set_description(_("OMEMO is not installed. Install python-omemo, twomemo and "
-                                               "python-x3dh to use encryption."))
+        omemo_ok = self.core.omemo is not None and self.core.omemo.available
+        if not omemo_ok:
+            self.omemo_group.set_description(_("Encryption support is not installed yet"))
+            install = Adw.ButtonRow(title=_("Install encryption support…")) if hasattr(Adw, "ButtonRow") else \
+                Adw.ActionRow(title=_("Install encryption support…"), activatable=True)
+            install.connect("activated", lambda *_: window.app.install_encryption(self.dialog))
+            self.omemo_group.add(install)
         self.verify_group = self.group(_("Verify with a link"))
+        self.verify_group.set_visible(omemo_ok)
         entry = Adw.EntryRow(title=_("Paste an xmpp: link with fingerprints, or scan one"), show_apply_button=True)
         entry.connect("apply", lambda e: self._verify_link(e.get_text()))
         self.verify_group.add(entry)
@@ -102,7 +107,7 @@ class DevicesDialog(BaseDialog):
                                  tooltip_text=_("Import their key from a file (for example exported from GPGMan)"))
                 imp.connect("clicked", lambda *_: self._import_pgp())
                 self.pgp_group.set_header_suffix(imp)
-        if self.own:
+        if self.own and omemo_ok:
             tools = self.group(_("Manage"))
             rm = Adw.ActionRow(title=_("Remove inactive devices"), activatable=True,
                                subtitle=_("Devices that have not been used for a long time"))
