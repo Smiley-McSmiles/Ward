@@ -171,9 +171,12 @@ class WardApplication(Adw.Application):
 
     def do_activate(self) -> None:
         if self.window is None:
+            from . import lifetime
             from .window import MainWindow
 
-            self.window = MainWindow(self)
+            with lifetime.scope() as handlers:
+                self.window = MainWindow(self)
+            self.window.built_handlers = handlers
         self.window.present()
         self.core.set_window_state(self.window.is_active(), True)
 
@@ -219,6 +222,34 @@ class WardApplication(Adw.Application):
         if self.window is not None:
             self.window.destroy()
         self.quit()
+
+    def release_window_later(self, window) -> None:
+        """Running in the background with the window closed: let the window go after a while (reopening it soon
+        just shows it again), with everything GTK and its renderer hold for it, and give the freed memory back to
+        the system.  Opening Ward later builds a new window."""
+        from . import lifetime
+
+        def release() -> bool:
+            if self.window is window and not window.get_visible():
+                self.window = None
+                lifetime.unwatch_all()
+                window.teardown()
+                window.destroy()
+                GLib.timeout_add_seconds(2, self._trim_memory)
+            return False
+        GLib.timeout_add_seconds(lifetime.FORGET_AFTER, release)
+
+    @staticmethod
+    def _trim_memory() -> bool:
+        """Hand freed heap memory back to the system (glibc keeps it otherwise); a no-op elsewhere."""
+        import gc
+
+        gc.collect()
+        with contextlib.suppress(Exception):
+            import ctypes
+
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        return False
 
     def _on_setting(self, settings, key: str) -> None:
         if key == "notify.sounds" and self.tray is not None:

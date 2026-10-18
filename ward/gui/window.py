@@ -10,7 +10,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 from .. import APP_NAME
 from ..core.models import AccountItem, ChatItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .conversation import ConversationView
 from .sidebar import Sidebar
 
@@ -115,12 +115,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.connect("close-request", self._on_close)
         self.connect("notify::is-active", self._on_focus)
         self.connect("notify::visible", self._on_focus)
-        self.core.accounts.store.connect("items-changed", lambda *_: self._accounts_changed())
-        self.core.connect("cert-problem", lambda _c, acc, info: self.show_certificate(acc, info))
-        self.core.muc.connect("invite", lambda _m, acc, inv: self._on_invite(acc, inv))
-        self.core.connect("session-added", lambda _c, s: s.account.connect("notify::state", self._on_account_state))
+        lifetime.watch(self.core.accounts.store, "items-changed", lambda *_: self._accounts_changed())
+        lifetime.watch(self.core, "cert-problem", lambda _c, acc, info: self.show_certificate(acc, info))
+        lifetime.watch(self.core.muc, "invite", lambda _m, acc, inv: self._on_invite(acc, inv))
+        lifetime.watch(self.core, "session-added",
+                       lambda _c, s: lifetime.watch(s.account, "notify::state", self._on_account_state))
+        for s in self.core.sessions.values():
+            lifetime.watch(s.account, "notify::state", self._on_account_state)
         if self.core.omemo is not None:
-            self.core.omemo.connect("new-devices", self._on_new_devices)
+            lifetime.watch(self.core.omemo, "new-devices", self._on_new_devices)
         if self.core.started:
             self.ready()
 
@@ -144,6 +147,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.top.set_visible_child_name("main")
             if self.welcome is not None and self.welcome.get_parent() is self.top:
                 self.top.remove(self.welcome)
+                lifetime.dismantle_later(self.welcome)  # it refers to this window: it must not keep it
                 self.welcome = None
         else:
             self.show_chat(None)
@@ -250,6 +254,7 @@ class MainWindow(Adw.ApplicationWindow):
         keys.connect("key-pressed", lambda _c, kv, _code, st: kv == Gdk.KEY_Escape and not (
             st & Gtk.accelerator_get_default_mod_mask()) and self._back())
         self.add_controller(keys)
+        self._keys = keys
         add("search-chat", lambda: self.current_chat is not None and self.conversation.search_button.set_active(True),
             ["<Ctrl>f"])
         add("send-file", lambda: self.current_chat is not None and self.conversation.composer.choose_files(),
@@ -326,6 +331,21 @@ class MainWindow(Adw.ApplicationWindow):
         if self.is_active() and self.current_chat is not None:
             self.app.withdraw_chat_notification(self.current_chat)
 
+    def teardown(self) -> None:
+        """The window is being let go (Ward runs on in the background): break every link that would keep it."""
+        self.conversation.show_chat(None)       # unsubscribes from the open chat (a core object that outlives us)
+        popover = self.conversation.composer.popover       # see Composer: GtkTextView cannot remove it itself
+        if popover.get_parent() is not None:
+            popover.unparent()
+        lifetime.disconnect_scope(getattr(self, "built_handlers", []))
+        self.sidebar.drop_callbacks()
+        for name in self.list_actions():
+            self.remove_action(name)
+        self.remove_controller(self._keys)
+        if self.welcome is not None:
+            lifetime.dismantle(self.welcome)
+        lifetime.dismantle(self)
+
     def _on_close(self, *_a) -> bool:
         w, h = self.get_default_size()
         if not self.is_maximized() and w > 0 and h > 0:
@@ -337,6 +357,8 @@ class MainWindow(Adw.ApplicationWindow):
         if self.settings["general.background"]:
             self.set_visible(False)
             self.core.set_window_state(False, False)
+            if self.settings["advanced.free_window"]:
+                self.app.release_window_later(self)
             return True
         self.app.quit_app()
         return True

@@ -103,6 +103,14 @@ Quitting from the app is respected by both: systemd only restarts Ward after a c
 service down before exiting. Nothing in Ward depends on systemd (sleep and resume are noticed through logind or
 elogind when either is there).
 
+### Memory
+
+While Ward runs in the background with its window closed, the window is let go after 30 seconds, with everything GTK
+and the graphics driver held for it; opening Ward builds it again (Preferences > Advanced > Performance can keep it
+instead). Ward also asks GTK for its OpenGL renderer rather than Vulkan, which on many drivers uses several hundred MB
+more; Preferences > Advanced > Graphics renderer changes that, and `GSK_RENDERER` or `WARD_RENDERER` in the
+environment override it.
+
 ## Tray icon
 
 The tray icon (StatusNotifierItem) shows on KDE Plasma, Cinnamon, XFCE, LXQt, MATE, Budgie and on GNOME with the

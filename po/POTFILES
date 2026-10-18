@@ -57,6 +57,7 @@ ward/gui/conversation.py
 ward/gui/details.py
 ward/gui/dialogs.py
 ward/gui/forms_view.py
+ward/gui/lifetime.py
 ward/gui/members.py
 ward/gui/message_row.py
 ward/gui/prefs.py

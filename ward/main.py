@@ -28,6 +28,28 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+RENDERERS = {"opengl": "ngl", "software": "cairo"}
+
+
+def _choose_renderer() -> None:
+    """GTK's renderer, chosen before GTK starts: GSK_RENDERER from the environment wins, then WARD_RENDERER, then the
+    preference.  GTK picks Vulkan by default where it can, which on many drivers costs hundreds of MB more than
+    OpenGL for an app like this one, so Ward asks for OpenGL unless told otherwise."""
+    if os.environ.get("GSK_RENDERER"):
+        return
+    choice = os.environ.get("WARD_RENDERER", "")
+    if not choice:
+        try:
+            from .settings import Settings
+
+            choice = Settings()["advanced.renderer"]
+        except Exception:
+            choice = "opengl"
+    renderer = RENDERERS.get(choice, choice if choice not in ("auto", "") else "")
+    if renderer:
+        os.environ["GSK_RENDERER"] = renderer
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv if argv is None else argv)
     args = _parser().parse_args(argv[1:])
@@ -42,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print(deps.report())
         return 1 if deps.missing_required() else 0
+    _choose_renderer()
     try:
         import gi
 
@@ -61,8 +84,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("Missing: %s\n%s\n" % (", ".join(f.title for f in missing),
                                                 deps.install_hint(*[c for f in missing for c in f.components])))
         return 1
-    if os.environ.get("WARD_RENDERER"):
-        os.environ.setdefault("GSK_RENDERER", os.environ["WARD_RENDERER"])
     from . import aio
     from .gui.app import WardApplication
 

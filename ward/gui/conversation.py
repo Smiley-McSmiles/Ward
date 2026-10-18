@@ -13,7 +13,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
 from ..core import search as search_mod
 from ..core.models import AttachmentItem, ChatItem, MessageItem
 from ..i18n import _, ngettext
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .composer import Composer
 from .members import MembersPanel
 from .message_row import MessageRow
@@ -79,7 +79,7 @@ class ConversationView(Gtk.Box):
         drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
         drop.connect("drop", self._on_drop)
         self.add_controller(drop)
-        self.settings.connect("changed", self._on_setting)
+        lifetime.watch(self.settings, "changed", self._on_setting)
         self._apply_layout()
 
     # ================================================================== building

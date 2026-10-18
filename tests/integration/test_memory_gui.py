@@ -3,6 +3,7 @@ alive (their handlers refer back to them, a cycle through GTK the garbage collec
 
 import asyncio
 import gc
+import weakref
 
 import pytest
 from helpers import befriend, fresh, make_core, stop, wait_for
@@ -69,6 +70,7 @@ def test_closed_dialogs_are_freed(app, prosody, run, monkeypatch):  # noqa: F811
         await app.core.connect_account(acc, "password")
         await wait_for(lambda: acc.state == "online" and acc.step == "", 30, "online")
         w = app.window
+        opened = []
         for _ in range(3):
             p = prefs.Preferences(w, "")
             p.present(w)
@@ -78,12 +80,48 @@ def test_closed_dialogs_are_freed(app, prosody, run, monkeypatch):  # noqa: F811
             d.present(w)
             await asyncio.sleep(0.2)
             d.close()
+            opened += [weakref.ref(p), weakref.ref(d)]
         del p, d
         await asyncio.sleep(2.5)
         gc.collect()
-        for cls in (prefs.Preferences, trust.DevicesDialog):
-            alive = sum(1 for o in gc.get_objects() if isinstance(o, cls))
-            assert alive == 0, "%d closed %s still in memory" % (alive, cls.__name__)
+        alive = [type(r()).__name__ for r in opened if r() is not None]
+        assert not alive, "closed dialogs still in memory: %s" % alive
+        await app.core.shutdown()
+
+    run(scenario(), timeout=120)
+
+
+def test_background_window_is_freed(app, prosody, run, monkeypatch):  # noqa: F811
+    """With Ward in the background, a closed window is let go (and with it what GTK and the renderer hold for it);
+    opening Ward again builds a new one."""
+    from ward.gui import lifetime
+
+    monkeypatch.setattr(lifetime, "FORGET_AFTER", 1)
+
+    async def scenario():
+        await wait_for(lambda: app.core.started, 20, "core start")
+        app.core.settings.set("general.background", True)
+        user = fresh(prosody, "bg")
+        opts = {"host": "127.0.0.1", "port": prosody.c2s, "tls": "starttls", "proxy": "none"}
+        acc = await app.core.add_account("%s@localhost" % user, "password", "never", opts, connect=False)
+        await app.core.connect_account(acc, "password")
+        await wait_for(lambda: acc.state == "online" and acc.step == "", 30, "online")
+        for _ in range(2):
+            finalized: list[str] = []
+            w = app.window
+            w.weak_ref(lambda *_a, out=finalized: out.append("window"))
+            w.conversation.weak_ref(lambda *_a, out=finalized: out.append("conversation"))
+            w.close()
+            del w
+            await wait_for(lambda: app.window is None, 10, "the window let go")
+            await asyncio.sleep(0.5)
+            gc.collect()
+            await asyncio.sleep(0.2)
+            assert sorted(finalized) == ["conversation", "window"], finalized
+            assert app.core.sessions[acc.id].online         # still connected in the background
+            app.activate()
+            assert app.window is not None and app.window.get_visible()
+            await asyncio.sleep(0.5)
         await app.core.shutdown()
 
     run(scenario(), timeout=120)

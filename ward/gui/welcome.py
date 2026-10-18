@@ -11,7 +11,7 @@ from .. import APP_ID, APP_NAME, util
 from ..core import register
 from ..core import uri as urimod
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .forms_view import FormView
 
 log = logging.getLogger("ward.gui")
@@ -157,7 +157,8 @@ class WelcomePage(Gtk.Box):
         mode = opts.pop("store_password", "keyring")
         acc = await self.core.add_account(jid, pw, mode, dict(opts, store_password=mode), connect=False)
         self._acc = acc
-        self._acc_handlers = [acc.connect("notify::state", self._on_state), acc.connect("notify::step", self._on_state)]
+        self._acc_handlers = [lifetime.watch(acc, "notify::state", self._on_state),
+                              lifetime.watch(acc, "notify::step", self._on_state)]
         await self.core.connect_account(acc, pw)
 
     def _on_state(self, acc, _p) -> None:

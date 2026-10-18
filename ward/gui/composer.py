@@ -15,7 +15,7 @@ from .. import deps, paths
 from ..core.markup import emoji
 from ..core.models import ChatItem, MessageItem
 from ..i18n import _, ngettext
-from . import compat, widgets
+from . import compat, lifetime, widgets
 
 log = logging.getLogger("ward.gui")
 
@@ -72,7 +72,7 @@ def _make_view() -> Gtk.TextView:
             if scheme is not None:
                 buf.set_style_scheme(scheme)
         follow_style()
-        Adw.StyleManager.get_default().connect("notify::dark", follow_style)
+        lifetime.watch(Adw.StyleManager.get_default(), "notify::dark", follow_style)
         return GtkSource.View(buffer=buf, wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
     except (ImportError, ValueError):
         return Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
@@ -179,10 +179,14 @@ class Composer(Gtk.Box):
         self.popover_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=["navigation-sidebar"])
         self.popover_list.connect("row-activated", lambda _l, r: self._complete(r.get_index()))
         self.popover.set_child(self.popover_list)
+        # GtkTextView cannot remove a popover attached with set_parent and loops forever trying: detach it when
+        # the composer goes, before the text view is disposed
+        popover = self.popover
+        lifetime.when_unrooted(self, lambda: popover.get_parent() is not None and popover.unparent())
 
         self._spell = _spelling(self.text, self.settings["chats.spell_languages"]) \
             if self.settings["chats.spellcheck"] and deps.have("spelling") else None
-        self.settings.connect("changed::chats.toolbar", lambda *_: self.toolbar.set_visible(
+        lifetime.watch(self.settings, "changed::chats.toolbar", lambda *_: self.toolbar.set_visible(
             self.settings["chats.toolbar"]))
         self._update_placeholder()
         self.scroller.connect("notify::width", lambda *_: GLib.idle_add(self._fit))

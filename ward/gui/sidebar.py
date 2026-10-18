@@ -9,13 +9,17 @@ from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
 from ..core.models import AccountItem, ChatItem, ContactItem
 from ..i18n import _, ngettext
-from . import widgets
+from . import lifetime, widgets
 from .chatrow import ChatRow, ContactRow
 
 FILTERS = (("all", "All"), ("unread", "Unread"), ("people", "People"), ("groups", "Groups"))
 SHOWS = (("available", "Available", "user-available-symbolic"), ("away", "Away", "user-away-symbolic"),
          ("dnd", "Busy", "user-busy-symbolic"), ("xa", "Away for a while", "user-idle-symbolic"),
          ("offline", "Offline", "user-offline-symbolic"))
+
+
+# account colour stripes, added to the display once (not once per window)
+_STRIPE_CSS: dict[str, Gtk.CssProvider] = {}
 
 
 class Sidebar(Gtk.Box):
@@ -30,7 +34,7 @@ class Sidebar(Gtk.Box):
         self.chat_filter = self.settings["ui.chat_filter"]
         self.show_archived = False
         self._selecting = False
-        self._stripe_css: dict[str, Gtk.CssProvider] = {}
+        self._stripe_css = _STRIPE_CSS
 
         view = Adw.ToolbarView()
         view.set_vexpand(True)
@@ -94,13 +98,14 @@ class Sidebar(Gtk.Box):
         bar = Adw.ViewSwitcherBar(stack=self.stack, reveal=True)
         view.add_bottom_bar(bar)
 
-        self.core.accounts.store.connect("items-changed", lambda *_: self._accounts_changed())
-        self.core.chats.connect("activity", lambda *_: self._resort())
-        self.core.chats.connect("unread-changed", lambda *_: self._refilter())
-        self.core.chats.connect("added", lambda *_: self._refilter())
-        self.core.requests.connect("changed", lambda *_: self._update_requests())
-        self.core.contacts.connect("changed", lambda *_: self.contact_sorter.changed(Gtk.SorterChange.DIFFERENT))
-        self.settings.connect("changed", self._on_setting)
+        lifetime.watch(self.core.accounts.store, "items-changed", lambda *_: self._accounts_changed())
+        lifetime.watch(self.core.chats, "activity", lambda *_: self._resort())
+        lifetime.watch(self.core.chats, "unread-changed", lambda *_: self._refilter())
+        lifetime.watch(self.core.chats, "added", lambda *_: self._refilter())
+        lifetime.watch(self.core.requests, "changed", lambda *_: self._update_requests())
+        lifetime.watch(self.core.contacts, "changed",
+                       lambda *_: self.contact_sorter.changed(Gtk.SorterChange.DIFFERENT))
+        lifetime.watch(self.settings, "changed", self._on_setting)
         self._account_handlers: dict[int, list[int]] = {}
         self._accounts_changed()
         self._update_requests()
@@ -402,7 +407,7 @@ class Sidebar(Gtk.Box):
     def _accounts_changed(self) -> None:
         for acc in self.core.accounts.list():
             if acc.id not in self._account_handlers:
-                self._account_handlers[acc.id] = [acc.connect("notify::" + p, lambda *_: self._update_account())
+                self._account_handlers[acc.id] = [lifetime.watch(acc, "notify::" + p, lambda *_: self._update_account())
                                                   for p in ("state", "show", "avatar", "error", "step", "status")]
         if self.account_filter and self.core.accounts.get(int(self.account_filter)) is None:
             self.account_filter = ""
@@ -580,8 +585,17 @@ class Sidebar(Gtk.Box):
         elif key.startswith("appearance.") or key == "chats.show_typing":
             self.sorter.changed(Gtk.SorterChange.DIFFERENT)
 
+    def drop_callbacks(self) -> None:
+        """The window is being let go: the filters and sorters call back into this sidebar from inside GTK."""
+        for f in (self.filter, self.contact_filter):
+            f.set_filter_func(None)
+        for s in (self.sorter, self.contact_sorter):
+            s.set_sort_func(None)
+
     def _tick(self) -> bool:
         # relative times ("Mon", "12:30") and mute expiry move on their own
+        if self.get_root() is None:
+            return False        # the window was let go
         self.sorter.changed(Gtk.SorterChange.DIFFERENT)
         return True
 

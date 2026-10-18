@@ -7,7 +7,7 @@ from gi.repository import Gio, GLib, Gtk, Pango
 from ..core import colors
 from ..core.models import ChatItem, OccupantItem
 from ..i18n import _
-from . import compat, style, widgets
+from . import compat, lifetime, style, widgets
 
 ROLE_TITLES = {"moderator": "Moderators", "participant": "Members", "visitor": "Visitors", "none": "Others"}
 
@@ -38,7 +38,7 @@ class MembersPanel(Gtk.Box):
         sc.set_child(self.list)
         self.append(sc)
         self._refresh_pending = 0
-        self.core.muc.connect("occupants-changed", self._on_changed)
+        lifetime.watch(self.core.muc, "occupants-changed", self._on_changed)
 
         group = Gio.SimpleActionGroup()
         for name, cb in (("message", self._private_message), ("mention", self._mention),

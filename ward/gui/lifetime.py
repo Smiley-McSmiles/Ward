@@ -65,13 +65,38 @@ def teardown_row(_factory, item: Gtk.ListItem) -> None:
 
 
 # ------------------------------------------------------------------ handlers Ward connects to widgets
-_connect = Gtk.Widget.connect
+_connect = GObject.Object.connect
+_scopes: list[list[tuple[GObject.Object, int]]] = []
+
+
+class scope:
+    """with lifetime.scope() as handlers: every handler connected inside (on any object: list factories, actions,
+    widgets) is listed, for disconnecting when what was built there is let go."""
+
+    def __enter__(self) -> list[tuple[GObject.Object, int]]:
+        self.handlers: list[tuple[GObject.Object, int]] = []
+        _scopes.append(self.handlers)
+        return self.handlers
+
+    def __exit__(self, *_exc) -> None:
+        _scopes.remove(self.handlers)
+
+
+def disconnect_scope(handlers: list[tuple[GObject.Object, int]]) -> None:
+    while handlers:
+        obj, hid = handlers.pop()
+        if GObject.signal_handler_is_connected(obj, hid):
+            obj.disconnect(hid)
 
 
 def _tracked_connect(widget, signal: str, callback, *args):
     """Gtk.Widget.connect, remembering the handler: disconnect_all() undoes exactly Ward's handlers and never
     GTK's own (disconnecting those makes GTK complain when it later disconnects them itself)."""
     hid = _connect(widget, signal, callback, *args)
+    if _scopes:
+        _scopes[-1].append((widget, hid))
+    if not isinstance(widget, Gtk.Widget):
+        return hid
     ids = widget.__dict__.setdefault("_ward_handlers", [])
     ids.append(hid)
     if len(ids) > 64:          # a long-lived widget that connects again and again: forget handlers already gone
@@ -79,16 +104,21 @@ def _tracked_connect(widget, signal: str, callback, *args):
     return hid
 
 
-Gtk.Widget.connect = _tracked_connect
+GObject.Object.connect = _tracked_connect
 
 
 def disconnect_all(widget: Gtk.Widget) -> None:
     """Disconnect the handlers Ward connected in this widget tree.  For a dialog that has closed: a handler on a
     button that refers to the row the button is in (or to the dialog's owner) keeps both alive through GTK, and only
     disconnecting it breaks that."""
-    for hid in widget.__dict__.pop("_ward_handlers", ()):
-        if GObject.signal_handler_is_connected(widget, hid):
-            widget.disconnect(hid)
+    # getattr, not __dict__: giving one of GTK's own widgets an attribute dictionary would make PyGObject keep it
+    # (and the window it is in) alive
+    ids = getattr(widget, "_ward_handlers", None)
+    if ids:
+        for hid in ids:
+            if GObject.signal_handler_is_connected(widget, hid):
+                widget.disconnect(hid)
+        del widget._ward_handlers
     for c in _children(widget):
         disconnect_all(c)
 
@@ -118,3 +148,55 @@ def forget_when_closed(owner: object, dialog: Gtk.Widget) -> None:
         GLib.timeout_add_seconds(FORGET_AFTER, later)
         return False
     dialog.connect(_closed_signal(dialog), closed)
+
+
+# ------------------------------------------------------------------ letting a whole window go
+ACTION_GROUPS = ("msg", "chat", "member", "row")      # the action groups Ward inserts on its widgets
+
+
+def dismantle(root: Gtk.Widget) -> None:
+    """Before a window Ward built is dropped: disconnect Ward's handlers in it, detach Ward's action groups (their
+    actions' handlers refer to the widgets that hold them) and clear Ward's own objects' references, so nothing
+    in it keeps the rest alive through GTK."""
+    disconnect_all(root)
+    stack = [root]
+    while stack:
+        w = stack.pop()
+        if type(w).__module__.startswith("ward."):
+            for prefix in ACTION_GROUPS:
+                w.insert_action_group(prefix, None)
+            vars(w).clear()
+        stack.extend(_children(w))
+
+
+def when_unrooted(widget: Gtk.Widget, callback) -> None:
+    """callback() once the widget leaves its window (the window destroyed, or the widget removed), before GTK
+    disposes it: for cleanup GTK will not do itself.  (PyGObject cannot override dispose.)"""
+    def changed(*_a) -> None:
+        if widget.get_root() is None:
+            callback()
+    widget.connect("notify::root", changed)
+
+
+def dismantle_later(root: Gtk.Widget) -> None:
+    """dismantle() once whatever the widget started (a sign-in, a save) has finished."""
+    GLib.timeout_add_seconds(FORGET_AFTER, lambda: dismantle(root) and False)
+
+
+# ------------------------------------------------------------------ the main window's handlers on the core
+_watched: list[tuple[object, int]] = []
+
+
+def watch(obj, signal: str, callback, *args) -> int:
+    """obj.connect() for the main window's widgets on long-lived objects (the core, settings, accounts): undone
+    together by unwatch_all() when the window is let go, so the window can be freed."""
+    hid = obj.connect(signal, callback, *args)
+    _watched.append((obj, hid))
+    return hid
+
+
+def unwatch_all() -> None:
+    while _watched:
+        obj, hid = _watched.pop()
+        if GObject.signal_handler_is_connected(obj, hid):
+            obj.disconnect(hid)
