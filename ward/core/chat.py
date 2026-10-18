@@ -615,6 +615,7 @@ class ChatService(GObject.Object):
             return None
         session = self.session_for(chat)
         acc = session.account
+        await self.core.chats.open_messages(chat)   # so the item we return is the one updates reach
         msg_id = util.random_id(18)
         body = text
         extra: dict = {}

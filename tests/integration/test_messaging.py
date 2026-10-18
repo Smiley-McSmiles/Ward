@@ -2,7 +2,7 @@
 
 import pytest
 
-from helpers import account, befriend, make_core, session, stop, wait_for
+from helpers import account, befriend, fresh, make_core, session, stop, wait_for
 from ward.core.models import STATUS_DELIVERED, STATUS_READ
 
 pytestmark = pytest.mark.integration
@@ -12,8 +12,10 @@ def test_contacts_and_messaging(trust_test_ca, tmp_path, run):
     prosody = trust_test_ca
 
     async def main():
-        alice = await make_core(tmp_path, prosody, "alice")
-        bob = await make_core(tmp_path, prosody, "bob")
+        ALICE = fresh(prosody, "alice")
+        BOB = fresh(prosody, "bob")
+        alice = await make_core(tmp_path, prosody, ALICE)
+        bob = await make_core(tmp_path, prosody, BOB)
         try:
             a, b = account(alice), account(bob)
             for core in (alice, bob):
@@ -87,15 +89,17 @@ def test_offline_messages_carbons_and_archive(trust_test_ca, tmp_path, run):
     prosody = trust_test_ca
 
     async def main():
+        CAROL = fresh(prosody, "carol")
+        DAVE = fresh(prosody, "dave")
         # carol and dave are fresh users; carol has two devices
-        carol = await make_core(tmp_path, prosody, "carol", "carol-laptop", resource="laptop")
-        dave = await make_core(tmp_path, prosody, "dave")
+        carol = await make_core(tmp_path, prosody, CAROL, "carol-laptop", resource="laptop")
+        dave = await make_core(tmp_path, prosody, DAVE)
         try:
             for core in (carol, dave):
                 core.settings.set("encryption.default", "off")
             await befriend(carol, dave)
             c, d = account(carol), account(dave)
-            phone = await make_core(tmp_path, prosody, "carol", "carol-phone", resource="phone")
+            phone = await make_core(tmp_path, prosody, CAROL, "carol-phone", resource="phone")
             phone.settings.set("encryption.default", "off")
             pc = account(phone)
 
@@ -123,11 +127,11 @@ def test_offline_messages_carbons_and_archive(trust_test_ca, tmp_path, run):
             assert [r["body"] for r in rows] == ["ping", "pong", "one", "two"]
 
             # a fresh device loads history from the archive
-            fresh = await make_core(tmp_path, prosody, "dave", "dave-new", resource="new")
-            rows = await fresh.db.fetchall("SELECT body, direction FROM messages ORDER BY timestamp, id")
+            newdev = await make_core(tmp_path, prosody, DAVE, "dave-new", resource="new")
+            rows = await newdev.db.fetchall("SELECT body, direction FROM messages ORDER BY timestamp, id")
             assert [r["body"] for r in rows] == ["ping", "pong", "one", "two"]
             assert [r["direction"] for r in rows] == [1, 0, 0, 0]
-            await stop(fresh)
+            await stop(newdev)
         finally:
             await stop(carol, dave, phone)
 

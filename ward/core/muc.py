@@ -730,19 +730,23 @@ class MucService(GObject.Object):
         chat.options["nick"] = nick
         await self.core.chats.save(chat, "options")
 
+    def can_moderate(self, chat: ChatItem) -> bool:
+        """The room supports XEP-0425 and we are a moderator."""
+        room = self.room_of(chat)
+        if room is None or chat.our_role != "moderator":
+            return False
+        return bool(room.features & {"urn:xmpp:message-moderate:1", "urn:xmpp:message-moderate:0"})
+
     async def moderate(self, chat: ChatItem, msg: MessageItem, reason: str = "") -> None:
         """Delete someone's message for everyone (XEP-0425); needs moderator rights."""
         if not msg.stanza_id:
             raise MucError("bad-request", _("This message cannot be moderated"))
         session = self.core.messaging.session_for(chat)
         current, legacy = stanzas.moderation_request(msg.stanza_id, reason)
-        try:
-            await session.iq("set", chat.jid, current)
-        except Exception as e:
-            if getattr(e, "condition", "") in ("feature-not-implemented", "bad-request", "service-unavailable"):
-                await session.iq("set", chat.jid, legacy)
-            else:
-                raise
+        room = self.room_of(chat)
+        use_legacy = room is not None and "urn:xmpp:message-moderate:1" not in room.features and \
+            "urn:xmpp:message-moderate:0" in room.features
+        await session.iq("set", chat.jid, legacy if use_legacy else current)
         await self.core.messaging.retract_row(chat, msg.id, 3, {"moderated_by": chat.our_nick,
                                                                "moderation_reason": reason})
 

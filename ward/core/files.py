@@ -173,6 +173,7 @@ class FileService(GObject.Object):
     async def send_file(self, chat: ChatItem, path: str, caption: str = "") -> MessageItem:
         session = self.core.messaging.session_for(chat)
         acc = session.account
+        await self.core.chats.open_messages(chat)
         name = safe_name(os.path.basename(path))
         mime = self.guess_mime(name)
         strip = self.core.settings["privacy.strip_metadata"]

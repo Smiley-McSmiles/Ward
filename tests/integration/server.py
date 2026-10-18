@@ -102,8 +102,8 @@ Component "{muc}" "muc"
 
 Component "{upload}" "http_file_share"
     http_file_share_size_limit = 16*1024*1024
-    http_host = "{upload}"
-    http_external_url = "https://{upload}:{https}/"
+    http_host = "{domain}"
+    http_external_url = "https://{domain}:{https}/"
 """
 
 

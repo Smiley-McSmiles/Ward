@@ -92,7 +92,14 @@ class E2E:
                 raise EncryptionBlocked(_("OpenPGP is not available"))
             return await self.core.pgp.encrypt(session, chat, el), "pgp"
         omemo = self.core.omemo
-        if omemo is None or not omemo.available or not omemo.ready(session):
+        usable = omemo is not None and omemo.available
+        if usable and not omemo.ready(session):
+            try:
+                await omemo.manager(session)       # still starting up after login: wait for it
+            except Exception as e:
+                log.warning("OMEMO is not ready: %s", e)
+                usable = False
+        if not usable:
             if policy == "always":
                 raise EncryptionBlocked(_("Encryption (OMEMO) is not available, so the message was not sent. "
                                           "Install the OMEMO libraries or turn encryption off for this chat."))

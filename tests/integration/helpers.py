@@ -22,6 +22,21 @@ async def wait_for(cond, timeout: float = 15, what: str = "condition"):
         await asyncio.sleep(0.05)
 
 
+_used: set[str] = set()
+
+
+def fresh(prosody, base: str) -> str:
+    """A new account on the test server, so tests never see each other's contacts or archives."""
+    import uuid
+
+    while True:
+        user = "%s-%s" % (base, uuid.uuid4().hex[:6])
+        if user not in _used:
+            _used.add(user)
+            prosody.register(user)
+            return user
+
+
 async def make_core(tmp_path, prosody, user: str, name: str | None = None, direct: bool = False,
                     resource: str | None = None, **options) -> Core:
     d = tmp_path / (name or user)
