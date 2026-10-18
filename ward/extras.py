@@ -10,11 +10,15 @@ launcher), then the user's folder (~/.local/share/ward/python)."""
 
 from __future__ import annotations
 
+import logging
 import os
+import shutil
 import subprocess
 import sys
 
 from . import paths
+
+log = logging.getLogger("ward.extras")
 
 OMEMO = ["omemo>=1.0", "twomemo[xml]>=1.0", "x3dh>=1.0", "doubleratchet>=1.0", "xeddsa>=1.0"]
 # AGPL-3.0: only installed when the user asks for compatibility with today's apps (Conversations, Monal, Dino...)
@@ -56,10 +60,12 @@ class InstallError(Exception):
     pass
 
 
-def install(packages: list[str], target: str | None = None, on_line=None) -> None:
+def install(packages: list[str], target: str | None = None, on_line=None, clean: bool = False) -> None:
     """pip install into the private folder (blocking: run it in a worker thread).  on_line(text) gets pip's
-    output as it comes."""
+    output as it comes.  clean: start from an empty folder, so nothing left from an earlier attempt mixes in."""
     target = target or user_dir()
+    if clean and os.path.isdir(target):
+        shutil.rmtree(target)
     os.makedirs(target, exist_ok=True)
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--target", target, "--disable-pip-version-check",
            "--no-warn-script-location", "--no-input", *packages]
@@ -86,9 +92,13 @@ def check(packages: list[str]) -> None:
     mods = [p.split("[")[0].split(">")[0].split("=")[0].replace("-", "_") for p in packages]
     mods += ["%s.etree" % m for m in mods if m in ("twomemo", "oldmemo")]
     code = "import ward.extras as e; e.activate(); " + "; ".join("import %s" % m for m in mods)
+    if "omemo" in mods:     # what Ward itself loads, so a conflict with another library shows up here too
+        code += "; import ward.core.omemo.service"
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(
         [os.path.dirname(os.path.dirname(os.path.abspath(__file__))), os.environ.get("PYTHONPATH", "")]))
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60)
     if r.returncode != 0:
-        last = (r.stderr.strip().splitlines() or ["unknown error"])[-1]
+        lines = r.stderr.strip().splitlines() or ["unknown error"]
+        log.warning("the installed libraries do not load:\n%s", r.stderr)
+        last = lines[-1]
         raise InstallError("Installed, but it does not load: %s" % last)

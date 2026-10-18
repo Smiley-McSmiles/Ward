@@ -920,7 +920,7 @@ class ExtrasDialog(BaseDialog):
     """Downloads the OMEMO libraries with pip into Ward's own folder, then offers a restart."""
 
     def __init__(self, window):
-        from .. import deps
+        from .. import deps, extras
 
         super().__init__(window, _("Encryption support"), _("Install"), width=520, height=560)
         g = self.group(description=_("Ward encrypts messages with OMEMO. Your system has no packages for its "
@@ -939,6 +939,10 @@ class ExtrasDialog(BaseDialog):
         out.add(sc)
         out.set_visible(False)
         self.out_group = out
+        self.clean = err = getattr(window.core, "omemo_error", "")
+        if err and extras.dirs():
+            g.set_description(_("The encryption libraries are installed but do not load:") + "\n" + err + "\n\n" +
+                              _("Installing again replaces them with a fresh copy."))
         if not deps.have("pip"):
             g.set_description(g.get_description() + "\n\n" + _("pip is missing: %s") % (
                 deps.install_hint("pip") or "python3 -m ensurepip --user"))
@@ -962,7 +966,7 @@ class ExtrasDialog(BaseDialog):
         self.out_group.set_visible(True)
 
         async def go():
-            await aio.run_in_thread(extras.install, packages, None, self._line)
+            await aio.run_in_thread(extras.install, packages, None, self._line, bool(self.clean))
 
         def done(_r):
             self.action_button.set_label(_("Restart Ward"))

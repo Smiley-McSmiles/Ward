@@ -90,13 +90,18 @@ class Core(GObject.Object):
         self.admin = AdminService(self)
         self.notifier = Notifier(self)
         self.omemo = None
+        self.omemo_error = ""
         self.pgp = None
         try:
             from .omemo.service import OmemoService
 
             self.omemo = OmemoService(self)
         except Exception as e:  # missing libraries: encryption shows as unavailable, everything else works
-            log.info("OMEMO unavailable: %s", e)
+            from .. import deps
+
+            self.omemo_error = "; ".join("%s: %s" % kv for kv in deps.IMPORT_ERRORS.items()) or \
+                "%s: %s" % (type(e).__name__, e)
+            log.warning("OMEMO unavailable: %s", self.omemo_error)
         try:
             from .pgp.service import PgpService
 

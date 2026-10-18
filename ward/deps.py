@@ -300,6 +300,8 @@ def report() -> str:
         lines.append("  [%s] %s%s" % (mark, _(f.title), detail))
         if not f.available and f.hint:
             lines.append("          install: %s" % f.hint)
+    for mod, err in IMPORT_ERRORS.items():
+        lines.append("  %s does not load: %s" % (mod, err))
     return "\n".join(lines)
 
 
