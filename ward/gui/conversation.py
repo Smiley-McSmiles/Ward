@@ -188,10 +188,15 @@ class ConversationView(Gtk.Box):
         self.stack.add_named(overlay, "messages")
         self.stack.add_named(self.empty, "empty")
         self.stack.add_named(results_sc, "results")
+        # the message area slides in from the bottom when a chat is opened (appearance.chat_animations)
+        self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE,
+                                   transition_duration=220, overflow=Gtk.Overflow.HIDDEN)
+        self.reveal.set_child(self.stack)
+        self.reveal.set_reveal_child(True)
 
         self.split = Adw.OverlaySplitView(sidebar_position=Gtk.PackType.END, show_sidebar=False,
                                           max_sidebar_width=300, min_sidebar_width=220)
-        self.split.set_content(self.stack)
+        self.split.set_content(self.reveal)
         self.members = MembersPanel(self)
         self.split.set_sidebar(self.members)
         self.split.connect("notify::show-sidebar", lambda *_: self.members_button.set_active(
@@ -274,6 +279,7 @@ class ConversationView(Gtk.Box):
         self.composer.set_chat(chat)
         self.search_button.set_active(False)
         self.stack.set_visible_child_name("messages")
+        self._animate_in()
         widgets.run(self, self._open(chat), error=_("Could not load messages"))
 
     async def _open(self, chat: ChatItem) -> None:
@@ -1026,9 +1032,32 @@ class ConversationView(Gtk.Box):
             self.list.remove_css_class(c)
         self.list.add_css_class(self.settings["appearance.layout"])
 
+    def _animate_in(self) -> None:
+        """Slide the chat up into the message area, unless the user turned animations off (here or in GTK)."""
+        enabled = bool(self.settings["appearance.chat_animations"])
+        gtk_settings = Gtk.Settings.get_default()
+        if gtk_settings is not None and not gtk_settings.get_property("gtk-enable-animations"):
+            enabled = False
+        if not enabled:
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+            self.reveal.set_reveal_child(True)
+            return
+        # collapse without animating that, then reveal in the next frame, so the slide starts at the bottom even
+        # when another chat was already on screen
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+        self.reveal.set_reveal_child(False)
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        GLib.idle_add(self._reveal_chat)
+
+    def _reveal_chat(self) -> bool:
+        self.reveal.set_reveal_child(True)
+        return False
+
     def _on_setting(self, _s, key: str) -> None:
         if key == "appearance.layout":
             self._apply_layout()
+        if key == "appearance.chat_animations":
+            return
         if key.startswith("appearance.") or key in ("chats.collapse_after", "chats.markdown_others",
                                                     "chats.quick_reactions"):
             for row in list(self.rows.values()):

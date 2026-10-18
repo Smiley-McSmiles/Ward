@@ -152,7 +152,13 @@ class MessageRow(Gtk.Box):
             col.set_hexpand(False)
             col.set_halign(Gtk.Align.END if m.outgoing else Gtk.Align.START)
             self.row.set_halign(Gtk.Align.FILL)
-        self.row.append(col)
+            # A Gtk.Box packs its children along the main axis and ignores their halign there: give the bubble an
+            # expanding box that fills the row, so the box can align it left or right.
+            wrap = Gtk.Box(hexpand=True, halign=Gtk.Align.END if m.outgoing else Gtk.Align.START)
+            wrap.append(col)
+            self.row.append(wrap)
+        else:
+            self.row.append(col)
         bubbles = layout == "bubbles"
         if not cont and (not bubbles or (self.view.chat.type == "groupchat" and not m.outgoing)):
             col.append(self._header(m, with_meta=not bubbles))
