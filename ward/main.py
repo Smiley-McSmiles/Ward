@@ -29,7 +29,7 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-RENDERERS = {"opengl": "ngl", "software": "cairo"}
+RENDERERS = {"opengl": "gl", "software": "cairo"}
 
 
 def _choose_renderer() -> None:
@@ -53,14 +53,23 @@ def _choose_renderer() -> None:
         _software_only(renderer)
 
 
-def _software_only(renderer: str) -> None:
-    """With the software renderer, keep GDK from setting up OpenGL and Vulkan anyway: the graphics driver it loads
-    for them costs 100 MB or more even when nothing is drawn with it."""
-    if renderer != "cairo":
+def _disable_gdk(*flags: str) -> None:
+    """Add values to GDK_DISABLE (a comma-separated list).  "all" turns the list into exceptions, so leave that
+    alone: the user meant it."""
+    old = [v for v in os.environ.get("GDK_DISABLE", "").split(",") if v]
+    if "all" in old:
         return
-    for var, flags in (("GDK_DISABLE", "gl,vulkan"), ("GDK_DEBUG", "gl-disable,vulkan-disable")):
-        old = os.environ.get(var, "")
-        os.environ[var] = "%s,%s" % (old, flags) if old else flags
+    os.environ["GDK_DISABLE"] = ",".join(old + [f for f in flags if f not in old])
+
+
+def _software_only(renderer: str) -> None:
+    """Keep GDK from setting up graphics backends the chosen renderer does not use: loading the graphics driver
+    for them costs 100 MB or more, and time at startup, even when nothing is drawn with it."""
+    if renderer == "cairo":
+        _disable_gdk("gl", "vulkan")
+    elif renderer in ("gl", "ngl"):
+        # OpenGL: GDK would still try Vulkan first, and pick it when the driver offers it
+        _disable_gdk("vulkan")
 
 
 def main(argv: list[str] | None = None) -> int:

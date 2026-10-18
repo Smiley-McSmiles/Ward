@@ -72,6 +72,9 @@ class WardApplication(Adw.Application):
     # ================================================================== startup
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
+        from ..core.omemo import preload as preload_omemo
+
+        preload_omemo()     # about 170 ms of library imports, in the background while the window is built
         if GLib.get_application_name() != APP_NAME:
             GLib.set_application_name(APP_NAME)
         settings = Settings()

@@ -68,6 +68,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.current_chat: ChatItem | None = None
         self.narrow = False
         self._asked_password: set[int] = set()
+        self._omemo_watched = False
 
         self.set_default_size(self.settings["window.width"], self.settings["window.height"])
         if self.settings["window.maximized"]:
@@ -121,14 +122,23 @@ class MainWindow(Adw.ApplicationWindow):
                        lambda _c, s: lifetime.watch(s.account, "notify::state", self._on_account_state))
         for s in self.core.sessions.values():
             lifetime.watch(s.account, "notify::state", self._on_account_state)
-        if self.core.omemo is not None:
-            lifetime.watch(self.core.omemo, "new-devices", self._on_new_devices)
+        lifetime.watch(self.core, "omemo-ready", lambda _c: self._watch_omemo())
+        self._watch_omemo()
         if self.core.started:
             self.ready()
+
+    def _watch_omemo(self) -> None:
+        """Connect to the encryption service whenever it is there: at startup it is created while the window is
+        built (Core.load_omemo), so it may come after us."""
+        if self._omemo_watched or self.core.omemo is None:
+            return
+        self._omemo_watched = True
+        lifetime.watch(self.core.omemo, "new-devices", self._on_new_devices)
 
     # ================================================================== startup
     def ready(self) -> None:
         """The core has loaded the database."""
+        self._watch_omemo()
         self._accounts_changed()
         last = self.settings["ui.last_chat"]
         if last and self.core.accounts.list():

@@ -198,7 +198,9 @@ def _imports(*names: str) -> bool:
 
 @cache
 def omemo_available() -> bool:
-    return _imports("omemo", "twomemo", "xeddsa", "x3dh", "doubleratchet", "twomemo.etree")
+    # twomemo.etree is imported only when an account's OMEMO manager starts (it compiles XML schemas); what it needs
+    # is xmlschema, which is checked here.
+    return _imports("omemo", "twomemo", "xeddsa", "x3dh", "doubleratchet") and _module("xmlschema")
 
 
 @cache
@@ -229,29 +231,38 @@ def have(name: str) -> bool:
     return _module(name)
 
 
-def features() -> list[Feature]:
+def _required_features(details: bool = True) -> list[Feature]:
     gtk_ok, gtk_v = _typelib("Gtk", "4.0")
     adw_ok, adw_v = _typelib("Adw", "1")
     slix = _module("slixmpp")
     slix_v = ""
-    if slix:
+    if slix and details:
         try:
             slix_v = importlib.import_module("slixmpp").__version__
         except Exception:
             slix_v = "?"
-    from .core.pgp import gnupg
-
-    gpg = gnupg.find_gpg()
-    out = [
-        Feature("python", N_("Python 3.11 or newer"), sys.version_info >= (3, 11), platform.python_version(),
-                ("python",), True),
-        Feature("gi", N_("PyGObject"), _module("gi"), _gi_version(), ("gi",), True),
+    return [
+        Feature("python", N_("Python 3.11 or newer"), sys.version_info >= (3, 11),
+                platform.python_version() if details else "", ("python",), True),
+        Feature("gi", N_("PyGObject"), _module("gi"), _gi_version() if details else "", ("gi",), True),
         Feature("gtk", N_("GTK 4.12 or newer"), gtk_ok and gtk_version() >= (4, 12), gtk_v, ("gtk",), True),
         Feature("adw", N_("libadwaita 1.4 or newer"), adw_ok and adw_version() >= (1, 4), adw_v, ("adw",), True),
         Feature("slixmpp", N_("slixmpp 1.8 or newer (XMPP)"), slix, slix_v, ("slixmpp",), True),
         Feature("markdown", N_("markdown-it-py (Markdown)"), _module("markdown_it"), "", ("markdown",), True),
         Feature("crypto", N_("cryptography (encrypted files)"), _module("cryptography"), "", ("crypto",), True),
-        Feature("omemo", N_("OMEMO 2 encryption (python-omemo, twomemo)"), omemo_available(), "", ("omemo",)),
+    ]
+
+
+def features() -> list[Feature]:
+    """Everything Ward can use, with versions, for `ward --check`.  Importing the optional libraries takes a while,
+    so nothing on the startup path asks for all of them (see missing_required)."""
+    from .core.pgp import gnupg
+
+    gpg = gnupg.find_gpg()
+    return [
+        *_required_features(details=True),
+        Feature("omemo", N_("OMEMO 2 encryption (python-omemo, twomemo)"),
+                omemo_available() and _imports("twomemo.etree"), "", ("omemo",)),
         Feature("oldmemo", N_("Legacy OMEMO 0.3 for today's apps (oldmemo, AGPL-3.0)"),
                 legacy_omemo_available(), "", ("omemo",)),
         Feature("gpg", N_("OpenPGP (GnuPG)"), gpg is not None, gpg or "", ("gpg",)),
@@ -264,7 +275,6 @@ def features() -> list[Feature]:
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
     ]
-    return out
 
 
 def _gi_version() -> str:
@@ -277,7 +287,9 @@ def _gi_version() -> str:
 
 
 def missing_required() -> list[Feature]:
-    return [f for f in features() if f.required and not f.available]
+    """What Ward cannot start without.  Only those are probed: importing OMEMO, slixmpp and the rest took longer
+    than everything else at startup together."""
+    return [f for f in _required_features(details=False) if not f.available]
 
 
 def report() -> str:
