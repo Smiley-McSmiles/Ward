@@ -18,6 +18,7 @@ import contextvars
 import logging
 import os
 import time
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from gi.repository import GObject
@@ -51,7 +52,7 @@ try:
     import oldmemo.etree
     HAVE_OLDMEMO = True
 except ImportError:  # optional: OMEMO 2 only
-    oldmemo = None
+    oldmemo = None  # type: ignore[assignment]
     HAVE_OLDMEMO = False
 
 NS2 = twomemo.twomemo.NAMESPACE
@@ -234,7 +235,7 @@ class OmemoService(GObject.Object):
         storage = WardStorage(self.core.db, acc.id)
         # the internal option _omemo_backends (legacy | omemo2) lets the test-suite play an older client
         only = acc.options.get("_omemo_backends") or os.environ.get("WARD_OMEMO_BACKENDS", "")
-        backends = [] if only == "legacy" else [twomemo.Twomemo(storage)]
+        backends: list[Any] = [] if only == "legacy" else [twomemo.Twomemo(storage)]
         if HAVE_OLDMEMO and only != "omemo2":
             backends.append(oldmemo.Oldmemo(storage))
         cls = _manager_class(self, session)
@@ -607,14 +608,14 @@ class OmemoService(GObject.Object):
                 out.append(o)
         if NS1 in namespaces and not self.core.settings["encryption.limit_legacy_extras"]:
             # legacy OMEMO only carries the body: everything else travels next to it, in the clear
-            for e in inside:
-                if e.tag not in ("{%s}body" % stanzas.NS_CLIENT,):
-                    out.append(_copy(e))
+            for child in inside:
+                if child.tag not in ("{%s}body" % stanzas.NS_CLIENT,):
+                    out.append(_copy(child))
         elif NS1 in namespaces:
-            for e in inside:
-                if e.tag in ("{%s}replace" % stanzas.NS_CORRECT, "{%s}fallback" % stanzas.NS_FALLBACK,
-                             "{%s}markable" % stanzas.NS_MARKERS):
-                    out.append(_copy(e))
+            for child in inside:
+                if child.tag in ("{%s}replace" % stanzas.NS_CORRECT, "{%s}fallback" % stanzas.NS_FALLBACK,
+                                 "{%s}markable" % stanzas.NS_MARKERS):
+                    out.append(_copy(child))
         stanzas.add_eme(out, NS2 if NS2 in namespaces else NS1, "OMEMO")
         stanzas.set_body(out, FALLBACK)
         if out.find("{%s}store" % stanzas.NS_HINTS) is None:
@@ -660,6 +661,8 @@ class OmemoService(GObject.Object):
         try:
             if pm.omemo2 is not None:
                 message = twomemo.etree.parse_message(pm.omemo2, sender)
+            elif pm.omemo is None:
+                return
             else:
                 if not HAVE_OLDMEMO:
                     inc.decrypt_error = _("This message uses legacy OMEMO, which is not installed here")

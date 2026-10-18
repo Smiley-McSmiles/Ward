@@ -46,7 +46,7 @@ class Transfer:
     total: int = 0
     done: int = 0
     cancel: threading.Event = field(default_factory=threading.Event)
-    on_progress: Callable[[int, int], None] | None = None
+    on_progress: Callable[[int, int], object] | None = None
 
     def tick(self, n: int) -> None:
         self.done += n
@@ -137,7 +137,8 @@ def request(method: str, url: str, headers: dict[str, str] | None = None, body: 
                 transfer.done = 0
             data = b""
             read = 0
-            fh = open(out_file + ".part", "wb") if out_file is not None and resp.status < 300 else None  # noqa: SIM115
+            part = (out_file or "") + ".part"
+            out_fh = open(part, "wb") if out_file is not None and resp.status < 300 else None  # noqa: SIM115
             try:
                 while True:
                     chunk = resp.read(CHUNK)
@@ -145,26 +146,26 @@ def request(method: str, url: str, headers: dict[str, str] | None = None, body: 
                         break
                     read += len(chunk)
                     if max_bytes is not None and read > max_bytes:
-                        if fh is None:
+                        if out_fh is None:
                             data += chunk[: max(0, max_bytes - (read - len(chunk)))]
                             break
                         raise HttpError("the file is larger than allowed", resp.status)
-                    if fh is not None:
-                        fh.write(chunk)
+                    if out_fh is not None:
+                        out_fh.write(chunk)
                         if transfer is not None:
                             transfer.tick(len(chunk))
                     else:
                         data += chunk
             except BaseException:
-                if fh is not None:
-                    fh.close()
-                    os.unlink(out_file + ".part")
-                    fh = None
+                if out_fh is not None:
+                    out_fh.close()
+                    os.unlink(part)
+                    out_fh = None
                 raise
             finally:
-                if fh is not None:
-                    fh.close()
-                    os.replace(out_file + ".part", out_file)
+                if out_fh is not None and out_file is not None:
+                    out_fh.close()
+                    os.replace(part, out_file)
             return Response(resp.status, rh, data, current)
         finally:
             conn.close()

@@ -91,6 +91,11 @@ disable_error_code = ["import-untyped"]
 module = ["gi.*", "slixmpp.*", "omemo.*", "twomemo.*", "oldmemo.*", "xeddsa.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# the GLib event loop drives asyncio's own (private, untyped) scheduling internals on purpose
+module = ["ward.aio"]
+disable_error_code = ["attr-defined", "has-type", "assignment"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

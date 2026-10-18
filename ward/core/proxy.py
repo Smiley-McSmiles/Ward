@@ -154,8 +154,8 @@ async def open_socket(proxy: Proxy, host: str, port: int, timeout: float = 30) -
                 buf += chunk
                 if len(buf) > 16384:
                     raise ProxyError("bad answer from the HTTP proxy")
-            status = buf.split(b"\r\n", 1)[0].split(b" ")
-            if len(status) < 2 or status[1] != b"200":
+            status_line = buf.split(b"\r\n", 1)[0].split(b" ")
+            if len(status_line) < 2 or status_line[1] != b"200":
                 raise ProxyError("HTTP proxy: %s" % buf.split(b"\r\n", 1)[0].decode("latin-1"))
         return sock
     except BaseException:

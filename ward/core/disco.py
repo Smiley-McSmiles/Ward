@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
 from . import forms
+from .forms import Form
 
 log = logging.getLogger("ward.disco")
 
@@ -31,12 +32,12 @@ class Info:
     node: str = ""
     identities: list[tuple[str, str, str]] = field(default_factory=list)   # (category, type, name)
     features: set[str] = field(default_factory=set)
-    forms: list[forms.Form] = field(default_factory=list)
+    forms: list[Form] = field(default_factory=list)
 
     def has_identity(self, category: str, type_: str | None = None) -> bool:
         return any(c == category and (type_ is None or t == type_) for c, t, _n in self.identities)
 
-    def form(self, form_type: str) -> forms.Form | None:
+    def form(self, form_type: str) -> Form | None:
         for f in self.forms:
             if f.form_type == form_type:
                 return f

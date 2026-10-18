@@ -335,14 +335,14 @@ def coerce(spec: Spec, value: Any) -> Any:
         return bool(value)
     if t == "int":
         try:
-            v = int(value)
+            n = int(value)
         except (TypeError, ValueError):
             raise ValueError("expected a whole number, got %r" % (value,)) from None
-        if spec.min is not None and v < spec.min:
+        if spec.min is not None and n < spec.min:
             raise ValueError("must be at least %s" % spec.min)
-        if spec.max is not None and v > spec.max:
+        if spec.max is not None and n > spec.max:
             raise ValueError("must be at most %s" % spec.max)
-        return v
+        return n
     if t == "choice":
         for c, _label in spec.choices:
             if c == value or (isinstance(c, int) and not isinstance(value, bool) and str(c) == str(value)):

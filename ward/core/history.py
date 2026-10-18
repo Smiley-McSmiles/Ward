@@ -44,7 +44,7 @@ class HistoryService:
     def __init__(self, core):
         self.core = core
         self.queries: dict[str, Query] = {}
-        self._catching_up: set[int] = set()
+        self._catching_up: set[tuple[int, str]] = set()
 
     def query(self, queryid: str) -> Query | None:
         return self.queries.get(queryid)

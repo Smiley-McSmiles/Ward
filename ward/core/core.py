@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from gi.repository import Gio, GLib, GObject
 
@@ -101,7 +104,7 @@ class Core(GObject.Object):
         except Exception as e:
             log.info("OpenPGP unavailable: %s", e)
         self.accounts.connect("removed", lambda _a, acc: aio.spawn(self._account_removed(acc)))
-        self._monitor = None
+        self._monitor: Any = None
 
     @property
     def contacts(self):
@@ -154,7 +157,12 @@ class Core(GObject.Object):
     def _on_sleep(self, conn, sender, path, iface, signal, params) -> None:
         going_to_sleep = params.unpack()[0]
         if not going_to_sleep:
-            GLib.timeout_add_seconds(2, lambda: [s.retry_now() for s in self.sessions.values()] and False)
+            GLib.timeout_add_seconds(2, self._retry_all)
+
+    def _retry_all(self) -> bool:
+        for s in self.sessions.values():
+            s.retry_now()
+        return False
 
     # ================================================================== sessions
     def session_for(self, acc: AccountItem) -> AccountSession:
@@ -206,22 +214,22 @@ class Core(GObject.Object):
         session.enable_keepalive()
         if not self.window_visible:
             session.set_inactive(True)
-        later = [self.messaging.on_online, self.admin.on_online]
+        later: list[tuple[str, Callable[[], Awaitable[None]]]] = [
+            ("messages", lambda: self.messaging.on_online(session, resumed)),
+            ("admin", lambda: self.admin.on_online(session, resumed))]
         if not resumed:
-            later.append(self.roster.fetch_blocklist)
-            later.append(self.roster.fetch_own_profile)
-        for svc in (self.omemo, self.pgp):
+            later += [("blocklist", lambda: self.roster.fetch_blocklist(session)),
+                      ("profile", lambda: self.roster.fetch_own_profile(session))]
+        for name, svc in (("omemo", self.omemo), ("openpgp", self.pgp)):
             if svc is not None:
-                later.append(svc.on_online)
-        later += [self.history.on_online, self.muc.on_online]
-        for step in later:
+                later.append((name, functools.partial(svc.on_online, session, resumed)))
+        later += [("history", lambda: self.history.on_online(session, resumed)),
+                  ("groups", lambda: self.muc.on_online(session, resumed))]
+        for name, run in later:
             try:
-                if step in (self.roster.fetch_blocklist, self.roster.fetch_own_profile):
-                    await step(session)
-                else:
-                    await step(session, resumed)
+                await run()
             except Exception:
-                log.exception("login step %s failed", getattr(step, "__qualname__", step))
+                log.exception("login step %s failed", name)
         acc.step = ""
         for chat in self.chats.for_account(acc.id):
             self.e2e.refresh(chat)

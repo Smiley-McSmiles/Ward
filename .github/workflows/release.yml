@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/check_version.py "${GITHUB_REF_NAME}"
+      - run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: ./package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: dist/
+
+  flatpak:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: ward-${{ github.ref_name }}.flatpak
+          manifest-path: packaging/flatpak/io.github.smiley_mcsmiles.Ward.json
+          upload-artifact: true
+
+  release:
+    needs: [packages, flatpak]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Release notes and files
+        run: |
+          python3 tools/release_notes.py "${GITHUB_REF_NAME}" > notes.md
+          mkdir upload
+          find artifacts -maxdepth 2 -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.rpm' \
+            -o -name '*.pkg.tar.xz' -o -name '*.flatpak' -o -name SHA256SUMS \) -exec cp {} upload/ \;
+          tar -C artifacts/packages -czf upload/recipes.tar.gz recipes
+          (cd upload && sha256sum -- *.tar.gz *.deb *.rpm *.pkg.tar.xz *.flatpak 2>/dev/null > SHA256SUMS || true)
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: upload/*

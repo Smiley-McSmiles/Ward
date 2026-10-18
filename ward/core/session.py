@@ -21,6 +21,7 @@ import random
 import ssl
 import time
 from dataclasses import dataclass, field
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from gi.repository import GObject
@@ -166,7 +167,7 @@ class AccountSession(GObject.Object):
         super().__init__()
         self.account = account
         self.settings = settings
-        self.xmpp = None
+        self.xmpp: Any = None            # a slixmpp ClientXMPP once started
         self.password: str | None = None
         self.wanted = False
         self.bound_jid = ""
@@ -235,7 +236,7 @@ class AccountSession(GObject.Object):
         # through ours instead.
         x.reconnect = self._slixmpp_reconnect  # type: ignore[method-assign]
         if hasattr(x, "enable_direct_tls"):
-            x.enable_plaintext = False
+            setattr(x, "enable_plaintext", False)  # noqa: B010 (slixmpp 1.9+ only; not in its type hints)
 
         for plugin in ("xep_0030", "xep_0004", "xep_0059", "xep_0060", "xep_0163", "xep_0128", "xep_0115",
                        "xep_0199", "xep_0352", "xep_0297"):
@@ -256,7 +257,7 @@ class AccountSession(GObject.Object):
         # Only the pushes we process: anything else must reach slixmpp's "feature-not-implemented" reply.
         for (ns, tag), cb in self._handlers.items():
             x.register_handler(Callback("ward-iq-%s" % ns, MatchXPath("{%s}iq/{%s}%s" % (NS_CLIENT, ns, tag)),
-                                        lambda stanza, cb=cb: self._on_iq(stanza, cb)))
+                                        self._iq_callback(cb)))
 
         x.add_event_handler("connected", lambda *_: self._step("securing" if not self._direct else "signing-in"))
         x.add_event_handler("tls_success", lambda *_: self._step("signing-in"))
@@ -285,14 +286,14 @@ class AccountSession(GObject.Object):
     def _security(self, values):
         transport = getattr(self.xmpp, "transport", None)
         ssl_obj = transport.get_extra_info("ssl_object") if transport is not None else None
-        out = {}
+        out: dict[str, Any] = {}
         for v in values:
             if v == "encrypted":
                 out[v] = ssl_obj is not None
             elif v == "tls_version":
                 out[v] = ssl_obj.version() if ssl_obj is not None else None
             elif v == "binding_proposed":
-                mechs = getattr(self.xmpp.plugin["feature_mechanisms"], "mech_list", set()) or set()
+                mechs: set[str] = getattr(self.xmpp.plugin["feature_mechanisms"], "mech_list", set()) or set()
                 out[v] = any(m.endswith("-PLUS") for m in mechs)
             else:  # encrypted_plain, unencrypted_scram...: our plugin configuration
                 out[v] = bool(self.xmpp.plugin["feature_mechanisms"].config.get(v, False))
@@ -427,7 +428,7 @@ class AccountSession(GObject.Object):
         x.event("connecting")
         ctx = x.ssl_context if cand.direct_tls else None
         sock = await proxymod.open_socket(prox, cand.host, cand.port) if prox else None
-        kwargs = {"sock": sock} if sock else {"host": cand.host, "port": cand.port}
+        kwargs: dict[str, Any] = {"sock": sock} if sock else {"host": cand.host, "port": cand.port}
         if ctx is not None:
             kwargs.update(ssl=ctx, server_hostname=self.domain)
         family = self.setting("advanced.ip_preference", "auto")
@@ -584,6 +585,9 @@ class AccountSession(GObject.Object):
 
     def _on_presence(self, stanza) -> None:
         self.emit("presence", stanza.xml)
+
+    def _iq_callback(self, cb):
+        return lambda stanza: self._on_iq(stanza, cb)
 
     def _on_iq(self, stanza, cb) -> None:
         if stanza["type"] != "set":

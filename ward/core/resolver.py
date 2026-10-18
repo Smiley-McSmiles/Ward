@@ -88,8 +88,11 @@ async def candidates(domain: str, host: str = "", port: int = 0, tls: str = "aut
             out.append(Candidate(domain, 5222, False))
         if want_direct:
             out.append(Candidate(domain, 5223, True))
-    seen: set[Candidate] = set()
-    return [c for c in out if not (c in seen or seen.add(c))]
+    unique: list[Candidate] = []
+    for c in out:
+        if c not in unique:
+            unique.append(c)
+    return unique
 
 
 async def lookup_host(host: str) -> list[str]:

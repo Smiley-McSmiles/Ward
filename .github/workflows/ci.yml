@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"     # weekly: catch breakage from new distribution and library releases
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint, types and metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck desktop-file-utils appstream python3-pip
+          pip install --user --break-system-packages ruff mypy
+      - run: ruff check .
+      - run: mypy
+      - run: shellcheck -s sh install.sh tools/update-pot.sh && shellcheck package.sh
+      - run: desktop-file-validate data/io.github.smiley_mcsmiles.Ward.desktop
+      - run: appstreamcli validate --no-net data/io.github.smiley_mcsmiles.Ward.metainfo.xml
+      - run: python3 tools/check_version.py
+
+  tests:
+    name: Tests (slixmpp ${{ matrix.slixmpp }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        slixmpp: [distribution, latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies, Prosody and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y prosody xvfb gnupg python3-pip python3-pytest python3-gi gir1.2-gtk-4.0 \
+            gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1 python3-slixmpp python3-markdown-it \
+            python3-cryptography python3-pil python3-linkify-it python3-mdit-py-plugins dbus-x11
+          sudo systemctl stop prosody || true
+          pip install --user --break-system-packages omemo twomemo oldmemo x3dh doubleratchet xeddsa segno
+          if [ "${{ matrix.slixmpp }}" = latest ]; then pip install --user --break-system-packages --upgrade slixmpp; fi
+          python3 -c "import slixmpp; print('slixmpp', slixmpp.__version__)"
+      - name: Unit, integration and interface tests
+        run: dbus-run-session -- xvfb-run -a -s "-screen 0 1400x1000x24" python3 -m pytest tests -v
+      - name: Screenshots of the interface tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-screenshots-${{ matrix.slixmpp }}
+          path: tests/screenshots/
+          if-no-files-found: ignore
+
+  distributions:
+    # install.sh --install-deps on each family, then the unit tests with what the distribution ships
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: "debian:trixie", experimental: false, pytest: "apt-get install -y python3-pytest" }
+          - { image: "ubuntu:24.04", experimental: false, pytest: "apt-get install -y python3-pytest" }
+          - { image: "fedora:latest", experimental: false, pytest: "dnf install -y python3-pytest" }
+          - { image: "archlinux:latest", experimental: false, pytest: "pacman -S --noconfirm python-pytest" }
+          - { image: "alpine:latest", experimental: true, pytest: "apk add py3-pytest" }
+          - { image: "opensuse/tumbleweed", experimental: true, pytest: "zypper --non-interactive install python3-pytest" }
+          - { image: "ghcr.io/void-linux/void-glibc-full:latest", experimental: true, pytest: "xbps-install -Sy python3-pytest" }
+    steps:
+      - name: Base tools
+        run: |
+          if command -v apt-get; then apt-get update && apt-get install -y git; fi
+          if command -v dnf; then dnf install -y git findutils; fi
+          if command -v pacman; then pacman -Syu --noconfirm git; fi
+          if command -v apk; then apk add git; fi
+          if command -v zypper; then zypper --non-interactive install git findutils; fi
+          if command -v xbps-install; then xbps-install -Syu xbps && xbps-install -Sy git; fi
+      - uses: actions/checkout@v4
+      - name: install.sh --install-deps
+        run: sh ./install.sh --install-deps --prefix /usr/local
+      - run: ward --version && ward --check
+      - name: Unit tests
+        run: |
+          ${{ matrix.pytest }}
+          python3 -m pytest tests/unit -v
+
+  bsd:
+    name: ${{ matrix.os }}
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [freebsd, openbsd, netbsd]
+    steps:
+      - uses: actions/checkout@v4
+      - name: FreeBSD
+        if: matrix.os == 'freebsd'
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          run: |
+            sh ./install.sh --install-deps
+            ward --version && ward --check
+            pkg install -y py311-pytest || true
+            python3 -m pytest tests/unit -v
+      - name: OpenBSD
+        if: matrix.os == 'openbsd'
+        uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          run: |
+            sh ./install.sh --install-deps
+            ward --version && ward --check
+      - name: NetBSD
+        if: matrix.os == 'netbsd'
+        uses: vmactions/netbsd-vm@v1
+        with:
+          usesh: true
+          run: |
+            sh ./install.sh --install-deps
+            ward --version && ward --check
+
+  packages:
+    name: Packages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: ./package.sh
+      - name: Install the .deb and start it
+        run: |
+          sudo apt-get install -y ./dist/ward_*_all.deb
+          ward --version
+          ward --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: dist/
+
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: ward.flatpak
+          manifest-path: packaging/flatpak/io.github.smiley_mcsmiles.Ward.json
+          cache-key: flatpak-builder-${{ github.sha }}

@@ -1,10 +1,10 @@
-# Modern XMPP Client — Project Outline
+# Ward — Project Outline
 
-Last updated: October 17, 2026
+Last updated: October 18, 2026
 
 ## Vision and principles
 
-We build a complete Gajim replacement: an XMPP client for the Linux desktop, written in Python with GTK4 and libadwaita, encrypted with OMEMO by default, with full Markdown and deep settings. The working name below is "the app" until you pick one.
+We build a complete Gajim replacement: an XMPP client for the Linux and BSD desktop, written in Python with GTK4 and libadwaita, encrypted with OMEMO by default, with full Markdown and deep settings. It is called **Ward** (app ID `io.github.smiley_mcsmiles.Ward`); the outline below still says "the app" in places.
 
 **What "total replacement" means.** Anything a Gajim user does today, they can do here: multiple accounts, 1:1 and group chats, OMEMO with full key control, file transfer, history, search, service discovery, ad-hoc commands, server admin, XML console and calls. A Gajim user should be able to switch without losing anything they rely on.
 
@@ -20,8 +20,49 @@ We build a complete Gajim replacement: an XMPP client for the Linux desktop, wri
 **Non-goals for 1.0**
 
 - Not a Discord clone: no bots platform, no Nitro-style perks, no custom server software. We use stock Prosody and ejabberd.
-- No Windows or macOS builds at first. The core stays portable, so they are possible later.
+- No Windows or macOS builds at first. The core stays portable, so they are possible later. Linux and the BSDs
+  (FreeBSD, OpenBSD, NetBSD, DragonFly) are first-class: POSIX installer, no Linux-only APIs in the core.
 - No protocol bridges (Matrix, Signal). Users can still reach them through existing XMPP gateways such as Slidge, which work like normal contacts.
+
+## Status (0.1.0)
+
+Decisions taken: the name is **Ward**, the license is **MIT**, Ward runs natively on **GTK 4.12+ and libadwaita
+1.4+** (Ubuntu 24.04's 1.5 included, newer widgets used when present), and the BSDs are supported alongside every
+Linux family. OMEMO is integrated directly on python-omemo (no slixmpp-omemo, which is AGPL); legacy OMEMO's library
+(oldmemo, AGPL) stays optional. OpenPGP (XEP-0373/0374) is in from the start, sharing keys with GPGMan.
+
+**Done in 0.1.0** (M0 to most of M5, see Milestones):
+
+- Foundations: GLib-driven asyncio loop (`ward/aio.py`, works on PyGObject 3.42+), typed settings schema that also
+  generates Preferences, SQLite on its own thread with numbered migrations and backups, gettext.
+- Accounts: sign in with per-step progress, account creation with the server's form and CAPTCHA, invite links,
+  SRV for STARTTLS and direct TLS, certificate pinning, SOCKS5 / HTTP / Tor, stream management, CSI, keepalive,
+  reconnect with backoff and on network or resume, several accounts, password change and account deletion.
+- Messaging: carbons, MAM catch-up and scrollback with de-duplication, receipts, read markers synced (XEP-0490),
+  typing, edits with history, retractions, replies with fallback, reactions, mentions, /me, drafts, requests from
+  strangers, blocking and spam reports, retention, full-text search with filters.
+- Encryption: OMEMO 2 with SCE and legacy OMEMO together, BTBV and manual trust, device pages with fingerprints,
+  QR codes and verification links, new-device banners, per-message lock and trust, trust export/import, encrypted
+  groups, encrypted files (aesgcm). OpenPGP with GPGMan's keyring, key generation and `.asc` import.
+- Groups: private/public presets, joining, invites (direct and mediated), members panel, roles, affiliations,
+  moderation (XEP-0425), room settings form, member and ban lists, bookmarks with autojoin, public channel search,
+  room archives, self-ping.
+- Files: HTTP upload over HTTPS with encryption, metadata stripping and resizing, thumbnails, auto-download limits,
+  cache limits.
+- Interface: everything above in an adaptive libadwaita window, Markdown rendered to native widgets, three message
+  layouts, quick switcher, notifications with actions, background mode, tray icon, unread badge, xmpp: links,
+  admin pages with a generic command view, XML console, service discovery browser, an in-app installer for the
+  OMEMO libraries.
+- Packaging: install.sh for every Linux family and the BSDs, package.sh for tarball, .deb, .rpm, Arch, Void and
+  FreeBSD packages plus Alpine, Gentoo, FreeBSD/OpenBSD ports, NetBSD pkgsrc and Flatpak recipes.
+- Tests: 90+ unit, integration (real Prosody, two slixmpp versions) and interface tests (Xvfb), CI for lint, mypy,
+  distribution containers, BSD VMs, packages and Flatpak.
+
+**Still to do before 1.0:** trust center across all contacts and bulk trust actions, "move this device", global
+search window, chat export and full profile backup, Gajim import, folders, voice messages, link previews, swipe to
+reply, PEP browser, GNOME Shell search provider, presence presets and auto-away, vCard4 profile fields, blocked
+contacts page, accessibility pass with Orca, translations on Weblate, Hypothesis fuzzing, ejabberd in CI, and the
+interoperability checklist. Calls stay after 1.0.
 
 ## Tech stack and architecture
 
@@ -34,14 +75,15 @@ The GTK front end binds to the core's models; only the per-account sessions open
 | Layer | Choice | Why |
 | --- | --- | --- |
 | Language | Python 3.11+ | Same as Cascade; `TaskGroup`, `asyncio.timeout`, faster interpreter |
-| Toolkit | GTK 4.16+, libadwaita 1.6+ via PyGObject 3.50+ | PyGObject 3.50 runs asyncio on the GLib loop (`gi.events.GLibEventLoopPolicy`) |
-| XMPP | slixmpp | asyncio-native, one plugin per XEP, documented, has an OMEMO integration |
-| OMEMO | `omemo` + `twomemo` + `oldmemo` + `slixmpp-omemo` (Syndace) | OMEMO 2 for the future, legacy OMEMO 0.3 to talk to today's clients |
+| Toolkit | GTK 4.12+, libadwaita 1.4+ via PyGObject 3.42+ | Our own asyncio loop on GLib (`ward/aio.py`) works on every supported PyGObject; newer libadwaita widgets are used when present |
+| XMPP | slixmpp 1.8+ | asyncio-native, one plugin per XEP, documented; tested against 1.8 and the latest release |
+| OMEMO | `omemo` + `twomemo` + optional `oldmemo` (Syndace) | OMEMO 2 for the future, legacy OMEMO 0.3 to talk to today's clients; our own thin integration instead of the AGPL slixmpp-omemo |
+| OpenPGP | the `gpg` program (GnuPG), shared with GPGMan | XEP-0373/0374 for Gajim's OpenPGP users; no Python binding needed |
 | Markdown | `markdown-it-py` + `mdit-py-plugins` + `linkify-it-py` | CommonMark-correct, gives a token tree we render into native widgets |
 | Code and editor | GtkSourceView 5 + libspelling | Highlighted code blocks; Markdown-aware composer with spell check |
 | Storage | SQLite (stdlib `sqlite3`) in WAL mode, FTS5 for search | No server, fast, one file per profile |
-| Secrets | libsecret (`gi.repository.Secret`) | Passwords live in GNOME Keyring or KWallet, never in our files |
-| HTTP | aiohttp | File upload and download (XEP-0363), link previews |
+| Secrets | libsecret (`gi.repository.Secret`) | Passwords live in GNOME Keyring or KWallet; a mode-0600 file or "ask every time" where there is no keyring |
+| HTTP | standard library `http.client` in the worker pool | File upload and download (XEP-0363), link previews; no extra dependency, goes through the account's proxy |
 | Images | Pillow + Gdk.Texture | Thumbnails, EXIF/GPS stripping before upload |
 | Crypto extras | `cryptography` | AES-256-GCM for encrypted files (XEP-0454); already pulled in by python-omemo |
 | Calls (later) | GStreamer `webrtcbin`, libnice | The same approach Gajim and Dino use |
@@ -58,61 +100,46 @@ The GTK front end binds to the core's models; only the per-account sessions open
 
 ## Repository layout
 
-The package is called `app/` below and gets renamed once you choose a name. The split follows the architecture: `core/` never imports Gtk, `gui/` never speaks XMPP directly.
+The split follows the architecture: `core/` never imports Gtk, `gui/` never speaks XMPP directly.
 
 ```
-app/
-  __main__.py            entry point: sets the GLib event loop policy, starts Application
-  paths.py               XDG data / config / cache dirs, Flatpak-aware
-  settings.py            app-wide settings: typed schema, JSON on disk, change signals
+ward/
+  __main__.py, main.py   command line: --background, --quit, --check, --debug, xmpp: URIs
+  aio.py                 asyncio event loop driven by the GLib main loop
+  paths.py settings.py schema.py i18n.py log.py util.py
+  deps.py                what is installed, install hints for 10 package managers
+  extras.py              downloads the OMEMO libraries into Ward's own folder when the system lacks them
   core/
-    session.py           AccountSession: connect, reconnect, stream management, CSI
-    accounts.py          account list, enable/disable, per-account options
-    roster.py            contacts, groups, subscriptions, presence, avatars
-    chat.py              1:1 conversation logic: send, correct, retract, react, reply
-    muc.py               group chats: join, occupants, roles, moderation, self-ping
-    history.py           MAM catch-up and paging, de-duplication by stanza-id
-    files.py             upload/download, encryption, thumbnails, quotas
-    omemo/
-      manager.py         slixmpp-omemo glue, encrypt/decrypt, device lists
-      storage.py         python-omemo Storage implemented on our SQLite
-      trust.py           trust policy engine (BTBV, manual, ATM later)
-    markup/
-      parse.py           markdown-it setup, our extensions (spoilers, mentions, emoji)
-      styling.py         XEP-0393 subset for messages from other clients
-    admin.py             ad-hoc commands, XEP-0133 helpers, invite creation
-    disco.py             service discovery, server features, caps cache
-    search.py            FTS5 queries
-    storage/
-      db.py              single DB thread, migrations runner
-      migrations/        numbered SQL files, 0001_init.sql ...
-    models.py            Gio.ListModel / GObject types the UI binds to
-  xmpp/
-    plugins/             XEPs slixmpp lacks, written as slixmpp plugins
+    core.py              Core: owns the database, the services and one AccountSession per account
+    session.py           AccountSession: resolve, connect (proxies, TLS, pinning), SASL, SM, CSI, reconnect
+    resolver.py proxy.py http.py secrets.py
+    accounts.py roster.py requests.py names.py pep.py disco.py
+    chats.py chat.py     chat list and messages: send, receive, correct, retract, react, reply, markers
+    history.py           MAM catch-up and scrollback, de-duplication
+    muc.py               groups: join, occupants, roles, moderation, settings, bookmarks, channel search
+    files.py images.py   upload/download, aesgcm encryption, thumbnails, metadata stripping
+    e2e.py               encryption policy: which method, and what the chat header says
+    omemo/               python-omemo integration: service, storage, SCE, trust and its export
+    pgp/                 OpenPGP: gnupg.py (the gpg program, GPGMan's settings), service.py (XEP-0373/0374)
+    stanzas.py forms.py uri.py colors.py search.py notify.py admin.py register.py
+    markup/              Markdown and XEP-0393 to our own render tree, emoji
+    storage/             SQLite thread and numbered migrations
+    models.py            GObject items and list models the interface binds to
   gui/
-    app.py               Adw.Application, actions, shortcuts, background mode
-    window.py            Adw.NavigationSplitView: sidebar + conversation
-    sidebar/             account switcher, chat list, filters, search entry
-    conversation/        header, message list, message row, composer
-    render/              Markdown tokens -> GTK widgets, code blocks, tables
-    dialogs/             add contact, join room, start chat, file preview
-    trust/               device list, fingerprint and QR verification
-    prefs/               one module per preferences page
-    admin/               server admin pages, generic ad-hoc form view
-    tools/               XML console, service discovery browser
-    style.css
-  data/                  icons, .desktop, metainfo.xml, D-Bus service file
-  po/                    translations (gettext)
+    app.py window.py     application, actions, notifications, badge, tray, links; the split-view window
+    sidebar.py chatrow.py conversation.py message_row.py render.py composer.py members.py
+    dialogs.py details.py trust.py welcome.py prefs.py forms_view.py admin.py tools.py
+    compat.py            libadwaita 1.4 to 1.7+ from one code base
+    style.css style.py icons/
+data/                    .desktop, AppStream metainfo, icons, man page, shell completions
+po/                      gettext template and translations
+packaging/               mkdeb.py, mkarch.py, BSD packing lists, msgfmt.py, Flatpak manifest
 tests/
-  unit/                  core logic, no network
-  integration/           against a real Prosody in a container
-  gui/                   headless smoke tests
-packaging/               deb, arch, flatpak manifest
-tools/                   dev scripts: run-prosody, screenshots, release
-install.sh  package.sh  README.md  ROADMAP.md
+  unit/                  no network
+  integration/           against a throwaway Prosody (server.py), including the window under Xvfb
+tools/                   run-prosody, screenshot.py, make_icons.py, flatpak_deps.py, update-pot.sh, release tools
+install.sh  package.sh  README.md  ROADMAP.md  CHANGELOG.md
 ```
-
-This outline becomes `ROADMAP.md` in the first pull request, so the plan lives next to the code.
 
 ## Accounts and connection
 
@@ -779,7 +806,7 @@ Every pull request runs lint, type checks, unit tests and real end-to-end tests 
 
 **Integration tests (real server)**
 
-- `tools/run-prosody` starts Prosody in a container with test users, group chat, file upload (`mod_http_file_share`), archive, invites and admin rights.
+- `tools/run-prosody` starts a throwaway Prosody (no root, no container needed) with test users, group chat, file upload (`mod_http_file_share`) over HTTPS, archive, invites and admin rights; the integration tests use the same server.
 - Tests run two or three real `AccountSession`s against it: OMEMO 2 and legacy messages both ways, encrypted group chat, encrypted file round trip, edits, deletes, reactions, history catch-up after being offline, admin commands and invites.
 - A weekly job repeats the suite against ejabberd.
 
@@ -799,12 +826,28 @@ Every pull request runs lint, type checks, unit tests and real end-to-end tests 
 
 ## Packaging and distribution
 
-Flatpak is the main channel, with a Flathub submission at 1.0. `install.sh`, `.deb` and Arch packages follow Cascade's existing tooling for people who prefer system packages.
+Ward runs on as many systems as possible: every major Linux family and the BSDs, from system packages, a portable
+installer or the Flatpak. Flathub follows at 1.0.
 
-- **Flatpak:** GNOME runtime (current stable), Python dependencies pinned with hashes via `flatpak-pip-generator`, minimal sandbox permissions. App ID in the form `io.github.smiley_mcsmiles.<Name>`.
-- **install.sh:** same style as Cascade: checks Python, GTK 4, libadwaita and GtkSourceView, installs to a prefix, `--install-deps` for the major distributions.
-- **.deb and Arch:** built by `packaging/` scripts like Cascade's. Python libraries a distribution doesn't ship (likely `omemo`, `twomemo`, `oldmemo`, `slixmpp-omemo`) are bundled in a private folder inside the package.
-- **Releases:** version numbers in `major.minor.patch`, a changelog, GitHub releases with a Flatpak bundle, and AppStream metadata with release notes and screenshots.
+| Channel | Systems | Built by |
+| --- | --- | --- |
+| Flatpak | any Linux | `packaging/flatpak/` manifest, Python dependencies pinned with hashes by `tools/flatpak_deps.py` |
+| `.deb` | Debian 13+, Ubuntu 24.04+, Mint, Pop!_OS | `package.sh` with `packaging/mkdeb.py` (builds on any distribution) |
+| `.rpm` | Fedora, RHEL, openSUSE | `package.sh` with rpmbuild, or `--container` |
+| `.pkg.tar.xz` + PKGBUILD | Arch, Manjaro, EndeavourOS | `package.sh` with `packaging/mkarch.py` (builds on any distribution) |
+| `.xbps` + template | Void | `package.sh` with xbps-create |
+| APKBUILD | Alpine, postmarketOS | recipe |
+| ebuild | Gentoo | recipe |
+| port / `.pkg` | FreeBSD, DragonFly | recipe with a generated pkg-plist; a `.pkg` when built on FreeBSD |
+| port | OpenBSD | recipe with a generated PLIST |
+| pkgsrc | NetBSD (and pkgsrc elsewhere) | recipe with a generated PLIST |
+| tarball + `install.sh` | anything with Python 3.11, GTK 4.12 and libadwaita 1.4 | POSIX sh; `--install-deps` for apt, dnf, zypper, pacman, xbps, apk, emerge, pkg, pkg_add and pkgin |
+
+- **Libraries no distribution ships** (the OMEMO stack): packages depend only on what distributions do ship; Ward
+  downloads the rest with pip into its own folder when the user first needs encryption (or `install.sh --vendor` does
+  it for all users). The Flatpak includes everything.
+- **Releases:** `major.minor.patch`, CHANGELOG.md, a tag runs the release workflow (every package, the Flatpak bundle
+  and SHA256SUMS), AppStream metadata with release notes and screenshots.
 
 ## Milestones
 
@@ -814,33 +857,33 @@ Seven milestones, each a series of small pull requests that leave the app workin
 
 The first gate comes after encryption (0.2), when we can use it for real chats; the second is 1.0, when nothing Gajim users rely on is missing except calls.
 
-**M0 — Foundations**
+**M0 — Foundations** (done)
 
 - Repository skeleton, `ROADMAP.md` (this outline), CI with lint, types and tests.
 - `tools/run-prosody` test server; settings module; database layer with migrations.
 - Empty app shell: window, sidebar, preferences dialog frame, about dialog.
 
-**M1 — Talk (0.1)**
+**M1 — Talk (0.1)** (done)
 
 - Sign in, reconnect, stream management; contact list and requests.
 - Plain 1:1 chat with carbons, history sync, receipts, typing, chat list, drafts, notifications, background running.
 
-**M2 — Encrypt (0.2)**
+**M2 — Encrypt (0.2)** (done except the trust center)
 
 - OMEMO 2 and legacy, encryption policy, trust models, device lists, new-device banners.
 - Fingerprint and QR verification, Trust center, per-message lock indicators.
 - Encrypted file upload and download (basic).
 
-**M3 — Rich messages (0.3)**
+**M3 — Rich messages (0.3)** (done except voice messages and link previews)
 
 - Markdown renderer and composer, Message Styling for other clients.
 - Replies, reactions, edits, deletes, mentions, emoji, media viewer, voice messages, link previews.
 
-**M4 — Groups (0.4)**
+**M4 — Groups (0.4)** (done except folders)
 
 - Group chats with private and public presets, encrypted groups, members panel, moderation, room settings, bookmarks, public channel search, folders.
 
-**M5 — Power (0.5 to 0.9)**
+**M5 — Power (0.5 to 0.9)** (search, admin pages, XML console, discovery and every preferences page done)
 
 - Full-text search, export, backup and restore, Gajim import.
 - Server admin pages, XML console, discovery and PEP browsers.
@@ -870,20 +913,21 @@ The biggest risks are in libraries we depend on, not in the GTK work; each has a
 | Legacy OMEMO leaks metadata (reactions, replies, typing) | Less privacy with older clients | Clear notice in the chat header; optional setting to hold back extras |
 | Calls are a large, separate project | Could delay 1.0 | Calls are explicitly after 1.0 |
 
-**Open questions for you**
+**Open questions**
 
-- [ ] App name and app ID.
-- [ ] License: MIT like Cascade, or GPL-3.0 like Gajim and Dino. We write all code fresh either way, so we never copy GPL code from Gajim.
-- [ ] Minimum distribution: require libadwaita 1.6 (Debian 13, Fedora 41 and newer, Ubuntu 25.04 and newer) and send older systems to the Flatpak, or support Ubuntu 24.04's libadwaita 1.5 natively?
-- [ ] Should the local database support an optional passphrase (SQLCipher), at the cost of an extra dependency and typing it at every start?
-- [ ] Officially support ejabberd as well as Prosody for admin features, or Prosody first?
+- [x] App name and app ID: **Ward**, `io.github.smiley_mcsmiles.Ward`.
+- [x] License: **MIT**, like Cascade. All code is written fresh; nothing is copied from Gajim. The optional legacy
+  OMEMO library (oldmemo) is AGPL-3.0, so Ward never bundles it except where the user asks for it (the Flatpak and
+  `install.sh --vendor` say so).
+- [x] Minimum distribution: **GTK 4.12 and libadwaita 1.4** natively (Ubuntu 24.04, Debian 13, Fedora 40, the BSDs'
+  current ports), using newer widgets (Adw.Dialog, AlertDialog, Spinner, ButtonRow, WrapBox) when they are there.
+- [ ] Should the local database support an optional passphrase (SQLCipher), at the cost of an extra dependency and
+  typing it at every start?
+- [ ] Officially support ejabberd as well as Prosody for admin features, or Prosody first? (Admin pages are generic
+  ad-hoc command forms, so ejabberd works; CI tests Prosody so far.)
 
-## What I need from you to start
+## What I need from you next
 
-Five things, then the first pull request (M0, Foundations) can go up the same day.
-
-- [ ] The name, so the package, app ID and icon can be set from the first commit.
-- [ ] A new GitHub repository under your account with the Claude GitHub app installed on it, then start a session from that repository (or add it to this one).
-- [ ] Your answers to the open questions above, at least the license and the minimum distribution.
-- [ ] For real-world testing later: an XMPP account on your own server, and ideally an admin account there for the server pages. I'll use the Prosody container for all automated tests.
-- [ ] Your go-ahead. Then I post M0 as one pull request: skeleton, CI, test server script, settings, database layer, and the empty app window.
+- [ ] Try it with your own server and an admin account (the Server pages and invites are tested against Prosody only).
+- [ ] Decide on the database passphrase question and on ejabberd in CI.
+- [ ] Create the first release tag (`v0.1.0`); the release workflow builds every package and the Flatpak bundle.

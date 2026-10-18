@@ -95,7 +95,9 @@ class Pep:
             if options and cond in ("conflict", "precondition-not-met", "not-acceptable"):
                 # the node exists with other settings: reconfigure it, then publish again
                 await Pep.configure(session, node, options)
-                ps.remove(ps.find("{%s}publish-options" % NS_PUBSUB))
+                opts_el = ps.find("{%s}publish-options" % NS_PUBSUB)
+                if opts_el is not None:
+                    ps.remove(opts_el)
                 await session.iq("set", None, ps)
             else:
                 raise

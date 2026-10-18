@@ -347,7 +347,7 @@ class RosterService(GObject.Object):
             if upd is not None and upd.text and upd.text.strip() != c.avatar_hash:
                 aio.spawn(self.fetch_vcard_avatar(session, c, upd.text.strip()))
         show, status = c.best_presence()
-        idles = [r.get("idle") for r in c.resources.values() if r.get("idle")]
+        idles = [float(r["idle"]) for r in c.resources.values() if r.get("idle")]
         c.update(show=show, status=status, idle_since=int(min(idles) * 1000) if idles else 0)
         self.core.on_contact_presence(session.account, c)
 
@@ -448,10 +448,10 @@ class RosterService(GObject.Object):
                 items = unblock.findall("{%s}item" % NS_BLOCKING)
                 targets = [self.contacts.get(session.account.id, i.get("jid", "")) for i in items] if items else \
                     [c for c in self.contacts.for_account(session.account.id) if c.blocked]
-                for c in targets:
-                    if c is not None:
-                        c.blocked = False
-                        await self.contacts.save(c)
+                for t in targets:
+                    if t is not None:
+                        t.blocked = False
+                        await self.contacts.save(t)
         aio.spawn(apply())
 
     # ================================================================== nick and avatars
@@ -480,8 +480,9 @@ class RosterService(GObject.Object):
         target = None if own else self.contacts.get(acc.id, jid)
         if not own and target is None:
             return
+        assert own or target is not None
         if not sha1:
-            if own:
+            if target is None:
                 acc.avatar = ""
             else:
                 target.update(avatar="", avatar_hash="")
@@ -499,7 +500,7 @@ class RosterService(GObject.Object):
             except Exception as e:
                 log.debug("avatar of %s: %s", jid, e)
         if os.path.exists(p):
-            if own:
+            if target is None:
                 acc.avatar = p
             else:
                 target.update(avatar=p, avatar_hash=sha1)

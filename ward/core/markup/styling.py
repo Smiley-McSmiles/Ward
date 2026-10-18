@@ -92,7 +92,7 @@ def _find_close(s: str, i: int) -> int | None:
 
 def spans(s: str, styles: frozenset[str] = frozenset()) -> Inlines:
     out: Inlines = []
-    buf = []
+    buf: list[str] = []
     i = 0
     while i < len(s):
         c = s[i]

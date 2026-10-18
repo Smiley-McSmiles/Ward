@@ -386,12 +386,14 @@ class MucService(GObject.Object):
             room.chat.member_count = room.occupants.get_n_items()
             return
         show = (el.findtext("{%s}show" % NS_CLIENT) or "available").strip() or "available"
-        o = room.by_nick.get(nick)
-        new = o is None
-        if new:
+        found = room.by_nick.get(nick)
+        new = found is None
+        if found is None:
             o = OccupantItem(nick=nick)
             room.by_nick[nick] = o
             room.occupants.append(o)
+        else:
+            o = found
         o.update(role=(mu.role if mu else "") or "participant", affiliation=(mu.affiliation if mu else "") or "none",
                  real_jid=util.bare(mu.jid) if mu and mu.jid else o.real_jid, show=show,
                  status=el.findtext("{%s}status" % NS_CLIENT) or "", is_self=is_self)
@@ -579,6 +581,8 @@ class MucService(GObject.Object):
                                               "reason": mu.invite_reason, "password": mu.password})
 
     async def on_direct_invite(self, session, pm: ParsedMessage) -> None:
+        if pm.direct_invite is None:
+            return
         room, password, reason = pm.direct_invite
         if not room:
             return
@@ -612,6 +616,7 @@ class MucService(GObject.Object):
         jid = address or "%s@%s" % (util.random_id(10).lower(), service)
         chat = await self.join(acc, jid, create=preset, bookmark=False)
         room = self.room_of(chat)
+        assert room is not None
         form = await self.get_config(session, jid)
         values = dict(PRESETS.get(preset, PRESETS["private"]))
         values["muc#roomconfig_roomname"] = name
@@ -818,7 +823,8 @@ class MucService(GObject.Object):
             jid = util.bare(it.get("id", ""))
             if conf is None or not jid:
                 continue
-            if conf.get("autojoin") in ("true", "1") and not (self.room(acc.id, jid) or Room(0, "", None)).joined:
+            known = self.room(acc.id, jid)
+            if conf.get("autojoin") in ("true", "1") and not (known is not None and known.joined):
                 aio.spawn(self._join_quietly(acc, jid, conf.findtext("{%s}nick" % NS_BOOKMARKS2),
                                              conf.findtext("{%s}password" % NS_BOOKMARKS2)))
         for jid in retracted:

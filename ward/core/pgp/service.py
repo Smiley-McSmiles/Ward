@@ -306,7 +306,7 @@ class PgpService(GObject.Object):
         sender = acc.jid if inc.outgoing else util.bare(pm.from_jid)
         expect_to = {util.bare(inc.peer)} if inc.outgoing else {acc.jid}
         try:
-            data = base64.b64decode((pm.openpgp.text or "").strip())
+            data = base64.b64decode(((pm.openpgp.text if pm.openpgp is not None else "") or "").strip())
             res = await aio.run_in_thread(self.engine().decrypt_verify, data)
         except (ValueError, gnupg.GpgError) as e:
             inc.decrypt_error = _("Could not decrypt this OpenPGP message (%s)") % e

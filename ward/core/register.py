@@ -12,6 +12,7 @@ import contextlib
 import logging
 import ssl
 from dataclasses import dataclass, field
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from .. import aio, util
@@ -53,9 +54,10 @@ class _Stream:
 
     def __init__(self, domain: str):
         self.domain = domain
-        self.reader: asyncio.StreamReader | None = None
-        self.writer: asyncio.StreamWriter | None = None
-        self.parser: ET.XMLPullParser | None = None
+        # set by open()
+        self.reader: Any = None
+        self.writer: Any = None
+        self.parser: Any = None
         self.depth = 0
         self.queue: asyncio.Queue[ET.Element] = asyncio.Queue()
         self.features: ET.Element | None = None

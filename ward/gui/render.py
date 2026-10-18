@@ -180,9 +180,7 @@ class Renderer:
         if view is None:
             view = Gtk.Label(label=text, xalign=0, selectable=True, css_classes=["message-code"])
             view.set_wrap(False)
-        sc = Gtk.ScrolledWindow(vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
-                                propagate_natural_width=True)
-        sc.set_child(view)
+        sc = _CodeScroller(view, text)
         frame.append(sc)
         return frame
 
@@ -203,6 +201,28 @@ class Renderer:
                                 propagate_natural_width=True)
         sc.set_child(grid)
         return sc
+
+
+class _CodeScroller(Gtk.ScrolledWindow):
+    """Scrolls a code block sideways, but asks for the width of its longest line: a text view only knows its own
+    natural width after a first layout, so bubbles would otherwise cut code off."""
+    __gtype_name__ = "WardCodeScroller"
+
+    def __init__(self, view: Gtk.Widget, text: str):
+        super().__init__(vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
+                         propagate_natural_width=True)
+        self.set_child(view)
+        longest = max(text.splitlines() or [""], key=len)
+        layout = view.create_pango_layout(longest)
+        font = Pango.FontDescription.from_string("monospace")
+        layout.set_font_description(font)
+        self.want = min(layout.get_pixel_size()[0] + 28, 900)
+
+    def do_measure(self, orientation, for_size):
+        mn, nat, mb, nb = Gtk.ScrolledWindow.do_measure(self, orientation, for_size)
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            nat = max(nat, self.want)
+        return mn, nat, mb, nb
 
 
 _lang_manager = None

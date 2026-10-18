@@ -15,6 +15,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from gi.repository import GObject
@@ -247,13 +248,14 @@ class ChatService(GObject.Object):
                 session.send(el)
 
     def _attachments(self, pm: ParsedMessage, body: str) -> list[dict]:
-        out = []
+        out: list[dict[str, Any]] = []
         seen = set()
         for f in pm.files:
             if not f.url or f.url in seen:
                 continue
             seen.add(f.url)
-            d = {"url": f.url, "name": f.name, "mime": f.mime, "size": f.size, "width": f.width, "height": f.height,
+            d: dict[str, Any] = {"url": f.url, "name": f.name, "mime": f.mime, "size": f.size, "width": f.width,
+                                 "height": f.height,
                  "duration": f.duration, "sha256": f.sha256}
             link = parse_aesgcm(f.url)
             if link is not None:

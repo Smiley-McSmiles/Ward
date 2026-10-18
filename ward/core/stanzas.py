@@ -207,7 +207,7 @@ class ParsedMessage:
 
     @property
     def is_me(self) -> bool:
-        return bool(self.body) and self.body.startswith("/me ")
+        return (self.body or "").startswith("/me ")
 
     def display_body(self, supported_fallbacks: tuple[str, ...] = (NS_REPLY, NS_RETRACT, NS_RETRACT_0,
                                                                    NS_REACTIONS, NS_OOB, NS_SFS)) -> str:
@@ -385,8 +385,8 @@ def parse(el: ET.Element) -> ParsedMessage:
             m.occupant_id = child.get("id", "")
         elif tag == q(NS_REFERENCE, "reference"):
             if child.get("type") == "mention":
-                b, e = _int(child.get("begin")), _int(child.get("end"))
-                m.mentions.append((child.get("uri", ""), b or 0, e or 0))
+                begin, end = _int(child.get("begin")), _int(child.get("end"))
+                m.mentions.append((child.get("uri", ""), begin or 0, end or 0))
         elif tag == q(NS_MUC_USER, "x"):
             m.muc_user = parse_muc_user(child)
         elif tag == q(NS_CONFERENCE, "x"):
@@ -604,7 +604,8 @@ def moderation_request(msg_stanza_id: str, reason: str = "") -> list[ET.Element]
 
 def split_content(el: ET.Element) -> tuple[list[ET.Element], list[ET.Element]]:
     """(content elements to encrypt with SCE, elements that must stay outside: hints, receipts, ids...)."""
-    inside, outside = [], []
+    inside: list[ET.Element] = []
+    outside: list[ET.Element] = []
     for child in list(el):
         (inside if child.tag in SCE_CONTENT else outside).append(child)
     return inside, outside
