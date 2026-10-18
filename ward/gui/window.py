@@ -110,7 +110,6 @@ class MainWindow(Adw.ApplicationWindow):
         bp.connect("unapply", lambda *_: self._set_narrow(False))
         self.add_breakpoint(bp)
 
-        self.set_help_overlay(_shortcuts_window())
         self._install_actions()
         self.connect("close-request", self._on_close)
         self.connect("notify::is-active", self._on_focus)
@@ -268,7 +267,13 @@ class MainWindow(Adw.ApplicationWindow):
         add("disco", self._disco)
         for i in range(1, 10):
             add("chat-%d" % i, lambda i=i: self.sidebar.select_index(i - 1), ["<Alt>%d" % i])
-        self.app.set_accels_for_action("win.show-help-overlay", ["<Ctrl>question", "F1"])
+        # built when asked for, not with the window (set_help_overlay would keep one around all the time)
+        add("show-help-overlay", self._show_shortcuts, ["<Ctrl>question", "F1"])
+
+    def _show_shortcuts(self) -> None:
+        w = _shortcuts_window()
+        w.set_transient_for(self)
+        w.present()
 
     def _back(self) -> bool:
         """Escape: close the in-chat search, or go back to the chat list on a narrow window."""

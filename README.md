@@ -109,7 +109,9 @@ While Ward runs in the background with its window closed, the window is let go a
 and the graphics driver held for it; opening Ward builds it again (Preferences > Advanced > Performance can keep it
 instead). Ward also asks GTK for its OpenGL renderer rather than Vulkan, which on many drivers uses several hundred MB
 more; Preferences > Advanced > Graphics renderer changes that, and `GSK_RENDERER` or `WARD_RENDERER` in the
-environment override it.
+environment override it. "Software" leaves the graphics driver out entirely, which roughly halves Ward's memory.
+
+`ward --memory-report`, run while Ward is running, shows where its memory goes (and Gajim's, when it runs too).
 
 ## Tray icon
 

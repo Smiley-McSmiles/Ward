@@ -234,7 +234,7 @@ SPECS: dict[str, Spec] = {
                            N_("OpenGL uses much less memory than Vulkan on many systems. Applies after a restart"),
                            page="advanced", group=N_("Performance"),
                            choices=(("opengl", N_("OpenGL")), ("auto", N_("GTK's choice (often Vulkan)")),
-                                    ("software", N_("Software (least memory, slower)")))),
+                                    ("software", N_("Software: no graphics driver, half the memory")))),
     "advanced.free_window": S("bool", True, N_("Free the window's memory in the background"),
                               N_("Closing the window releases it instead of hiding it; reopening takes a moment"),
                               page="advanced", group=N_("Performance")),

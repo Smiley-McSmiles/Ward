@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ward 1.0.0\n"
 "Report-Msgid-Bugs-To: https://github.com/smiley-mcsmiles/ward/issues\n"
-"POT-Creation-Date: 2026-10-18 08:33+0000\n"
+"POT-Creation-Date: 2026-10-18 15:11+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -708,24 +708,24 @@ msgstr ""
 msgid "Finish"
 msgstr ""
 
-#: ward/gui/app.py:131
+#: ward/gui/app.py:134
 msgid "Ward could not start"
 msgstr ""
 
-#: ward/gui/app.py:131 ward/gui/app.py:201 ward/gui/sidebar.py:68
+#: ward/gui/app.py:134 ward/gui/app.py:204 ward/gui/sidebar.py:68
 #: ward/gui/tray.py:249
 msgid "Quit"
 msgstr ""
 
-#: ward/gui/app.py:200
+#: ward/gui/app.py:203
 msgid "Quit Ward?"
 msgstr ""
 
-#: ward/gui/app.py:200
+#: ward/gui/app.py:203
 msgid "You won't get messages until you start it again."
 msgstr ""
 
-#: ward/gui/app.py:201 ward/gui/composer.py:625 ward/gui/composer.py:632
+#: ward/gui/app.py:204 ward/gui/composer.py:636 ward/gui/composer.py:643
 #: ward/gui/conversation.py:624 ward/gui/conversation.py:788
 #: ward/gui/conversation.py:797 ward/gui/conversation.py:849
 #: ward/gui/conversation.py:866 ward/gui/conversation.py:894
@@ -733,37 +733,37 @@ msgstr ""
 #: ward/gui/dialogs.py:37 ward/gui/dialogs.py:818 ward/gui/members.py:187
 #: ward/gui/message_row.py:364 ward/gui/prefs.py:536 ward/gui/prefs.py:580
 #: ward/gui/trust.py:254 ward/gui/trust.py:335 ward/gui/trust.py:353
-#: ward/gui/window.py:315
+#: ward/gui/window.py:320
 msgid "Cancel"
 msgstr ""
 
-#: ward/gui/app.py:266
+#: ward/gui/app.py:269
 #, python-format
 msgid "custom.css: %s"
 msgstr ""
 
-#: ward/gui/app.py:296
+#: ward/gui/app.py:299
 msgid "Receive messages in the background"
 msgstr ""
 
-#: ward/gui/app.py:395 ward/gui/sidebar.py:286 ward/gui/window.py:31
+#: ward/gui/app.py:398 ward/gui/sidebar.py:286 ward/gui/window.py:31
 msgid "Mark as read"
 msgstr ""
 
-#: ward/gui/app.py:543
+#: ward/gui/app.py:546
 msgid "Some fingerprints in the link did not match"
 msgstr ""
 
-#: ward/gui/app.py:545 ward/gui/trust.py:280
+#: ward/gui/app.py:548 ward/gui/trust.py:280
 #, python-format
 msgid "Verified %d devices"
 msgstr ""
 
-#: ward/gui/app.py:593
+#: ward/gui/app.py:596
 msgid "A private, modern XMPP client"
 msgstr ""
 
-#: ward/gui/app.py:598
+#: ward/gui/app.py:601
 msgid ""
 "Legacy OMEMO support (oldmemo) is licensed under the AGPL-3.0 and is "
 "optional."
@@ -832,91 +832,91 @@ msgstr ""
 msgid "Emoji"
 msgstr ""
 
-#: ward/gui/composer.py:163 ward/gui/composer.py:625 ward/gui/composer.py:632
+#: ward/gui/composer.py:163 ward/gui/composer.py:636 ward/gui/composer.py:643
 #: ward/gui/tools.py:69 ward/gui/window.py:36
 msgid "Send"
 msgstr ""
 
-#: ward/gui/composer.py:227 ward/gui/composer.py:457
+#: ward/gui/composer.py:238 ward/gui/composer.py:468
 msgid "Edit message"
 msgstr ""
 
-#: ward/gui/composer.py:229
+#: ward/gui/composer.py:240
 msgid "Encrypted message"
 msgstr ""
 
-#: ward/gui/composer.py:231
+#: ward/gui/composer.py:242
 #, python-format
 msgid "Message %s"
 msgstr ""
 
-#: ward/gui/composer.py:233 ward/gui/dialogs.py:382
+#: ward/gui/composer.py:244 ward/gui/dialogs.py:382
 msgid "Message"
 msgstr ""
 
-#: ward/gui/composer.py:445
+#: ward/gui/composer.py:456
 #, python-format
 msgid "Reply to %s"
 msgstr ""
 
-#: ward/gui/composer.py:497
+#: ward/gui/composer.py:508
 msgid "Could not edit"
 msgstr ""
 
-#: ward/gui/composer.py:507 ward/gui/conversation.py:731
+#: ward/gui/composer.py:518 ward/gui/conversation.py:731
 msgid "Could not send"
 msgstr ""
 
-#: ward/gui/composer.py:530
+#: ward/gui/composer.py:541
 #, python-format
 msgid "/%s only works in groups"
 msgstr ""
 
-#: ward/gui/composer.py:536
+#: ward/gui/composer.py:547
 msgid "Could not change the topic"
 msgstr ""
 
-#: ward/gui/composer.py:539 ward/gui/dialogs.py:370
+#: ward/gui/composer.py:550 ward/gui/dialogs.py:370
 #, python-format
 msgid "Invited %s"
 msgstr ""
 
-#: ward/gui/composer.py:542 ward/gui/members.py:194
+#: ward/gui/composer.py:553 ward/gui/members.py:194
 #, python-format
 msgid "Could not remove %s"
 msgstr ""
 
-#: ward/gui/composer.py:545 ward/gui/members.py:200
+#: ward/gui/composer.py:556 ward/gui/members.py:200
 #, python-format
 msgid "Could not ban %s"
 msgstr ""
 
-#: ward/gui/composer.py:550
+#: ward/gui/composer.py:561
 #, python-format
 msgid "Usage: /%s …"
 msgstr ""
 
-#: ward/gui/composer.py:555
+#: ward/gui/composer.py:566
 msgid "Send files"
 msgstr ""
 
-#: ward/gui/composer.py:572
+#: ward/gui/composer.py:583
 #, python-format
 msgid "Could not send %s"
 msgstr ""
 
-#: ward/gui/composer.py:615
+#: ward/gui/composer.py:626
 msgid "Only files can be sent, not folders"
 msgstr ""
 
-#: ward/gui/composer.py:623 ward/gui/composer.py:624
+#: ward/gui/composer.py:634 ward/gui/composer.py:635
 #, python-format
 msgid "Send this file?"
 msgid_plural "Send these %d files?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ward/gui/composer.py:632
+#: ward/gui/composer.py:643
 msgid "Send this image?"
 msgstr ""
 
@@ -1600,7 +1600,7 @@ msgstr ""
 msgid "New chat"
 msgstr ""
 
-#: ward/gui/dialogs.py:125 ward/gui/window.py:101 ward/gui/window.py:184
+#: ward/gui/dialogs.py:125 ward/gui/window.py:101 ward/gui/window.py:183
 msgid "Chat"
 msgstr ""
 
@@ -1844,7 +1844,7 @@ msgstr ""
 msgid "Copy image"
 msgstr ""
 
-#: ward/gui/dialogs.py:592 ward/gui/widgets.py:247
+#: ward/gui/dialogs.py:592 ward/gui/widgets.py:268
 msgid "Copied"
 msgstr ""
 
@@ -2308,7 +2308,7 @@ msgstr ""
 msgid "Accounts"
 msgstr ""
 
-#: ward/gui/prefs.py:234 ward/gui/window.py:160
+#: ward/gui/prefs.py:234 ward/gui/window.py:159
 msgid "Add account"
 msgstr ""
 
@@ -3170,24 +3170,24 @@ msgstr ""
 msgid "Create an account first; then the invite adds the contact"
 msgstr ""
 
-#: ward/gui/widgets.py:130
+#: ward/gui/widgets.py:151
 msgid "Today"
 msgstr ""
 
-#: ward/gui/widgets.py:132
+#: ward/gui/widgets.py:153
 msgid "Yesterday"
 msgstr ""
 
-#: ward/gui/widgets.py:162
+#: ward/gui/widgets.py:183
 msgid "just now"
 msgstr ""
 
-#: ward/gui/widgets.py:164
+#: ward/gui/widgets.py:185
 #, python-format
 msgid "%d minutes ago"
 msgstr ""
 
-#: ward/gui/widgets.py:166
+#: ward/gui/widgets.py:187
 #, python-format
 msgid "%d hours ago"
 msgstr ""
@@ -3340,32 +3340,32 @@ msgstr ""
 msgid "Pick a chat on the left, or start a new one"
 msgstr ""
 
-#: ward/gui/window.py:297
+#: ward/gui/window.py:302
 msgid "No account is enabled"
 msgstr ""
 
-#: ward/gui/window.py:313
+#: ward/gui/window.py:318
 msgid "Turn on developer tools?"
 msgstr ""
 
-#: ward/gui/window.py:314
+#: ward/gui/window.py:319
 msgid "The XML console shows the raw protocol, including message contents."
 msgstr ""
 
-#: ward/gui/window.py:315
+#: ward/gui/window.py:320
 msgid "Turn on"
 msgstr ""
 
-#: ward/gui/window.py:372
+#: ward/gui/window.py:377
 #, python-format
 msgid "%s: the password was not accepted"
 msgstr ""
 
-#: ward/gui/window.py:402
+#: ward/gui/window.py:407
 msgid "New device"
 msgstr ""
 
-#: ward/gui/window.py:402
+#: ward/gui/window.py:407
 #, python-format
 msgid "%s added a new device"
 msgstr ""
@@ -3998,7 +3998,7 @@ msgid "GTK's choice (often Vulkan)"
 msgstr ""
 
 #: ward/schema.py:237
-msgid "Software (least memory, slower)"
+msgid "Software: no graphics driver, half the memory"
 msgstr ""
 
 #: ward/schema.py:238

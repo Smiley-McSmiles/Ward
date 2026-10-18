@@ -108,6 +108,9 @@ class WardApplication(Adw.Application):
         self._write_session_env()
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, self._on_signal)
+        from .. import memreport
+
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, memreport.write)   # ward --memory-report
         if settings["general.tray"] != "never":
             self._setup_tray()
 
