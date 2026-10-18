@@ -337,7 +337,7 @@ class MessageRow(Gtk.Box):
             btn.connect("clicked", lambda *_: self.view.open_attachment(m, att))
             return btn
         if path and (att.is_audio or att.is_video):
-            return video.attachment(path, att.is_video)
+            return video.attachment(path, att.is_video, lambda: self.view.save_attachment(m, att))
         card = Gtk.Box(spacing=10, css_classes=["attachment-card"], halign=Gtk.Align.START)
         gicon = Gio.content_type_get_symbolic_icon(Gio.content_type_from_mime_type(att.mime or "") or "")
         card.append(Gtk.Image.new_from_gicon(gicon) if gicon else Gtk.Image.new_from_icon_name("text-x-generic"))
@@ -368,7 +368,7 @@ class MessageRow(Gtk.Box):
             card.append(op)
             sv = Gtk.Button(icon_name="document-save-symbolic", css_classes=["flat", "circular"],
                             tooltip_text=_("Save as…"))
-            sv.connect("clicked", lambda *_: self.view.save_attachment(att))
+            sv.connect("clicked", lambda *_: self.view.save_attachment(m, att))
             card.append(sv)
         elif att.url:
             dl = Gtk.Button(icon_name="folder-download-symbolic", css_classes=["flat", "circular"],

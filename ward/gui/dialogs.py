@@ -571,7 +571,7 @@ class ImageViewer:
         self.dialog = compat.Dialog(att.name or _("Image"), 900, 700)
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        for icon, tip, cb in (("document-save-symbolic", _("Save as…"), lambda: view.save_attachment(att)),
+        for icon, tip, cb in (("document-save-symbolic", _("Save as…"), lambda: view.save_attachment(None, att)),
                               ("document-open-symbolic", _("Open with another app"),
                                lambda: widgets.open_file(view, att.local_path)),
                               ("edit-copy-symbolic", _("Copy image"), self._copy)):

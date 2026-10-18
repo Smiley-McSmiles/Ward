@@ -10,8 +10,9 @@ from gi.repository import Gdk, Gtk
 from ..i18n import _
 
 
-def attachment(path: str, is_video: bool) -> Gtk.Widget:
-    """The player for an attachment: a video with a fullscreen button (and double click), or an audio bar."""
+def attachment(path: str, is_video: bool, save=None) -> Gtk.Widget:
+    """The player for an attachment: a video with save and fullscreen buttons over it, shown while the pointer is on
+    the video (fullscreen also on double click), or an audio bar."""
     vid = Gtk.Video.new_for_filename(path)
     vid.set_size_request(320 if is_video else 280, 220 if is_video else -1)
     if not is_video:
@@ -19,11 +20,28 @@ def attachment(path: str, is_video: bool) -> Gtk.Widget:
         return vid
     overlay = Gtk.Overlay(halign=Gtk.Align.START)
     overlay.set_child(vid)
+    buttons = Gtk.Box(spacing=6)
+    if save is not None:
+        dl = Gtk.Button(icon_name="document-save-symbolic", css_classes=["osd", "circular"], tooltip_text=_("Save as…"))
+        dl.connect("clicked", lambda *_: save())
+        buttons.append(dl)
     full = Gtk.Button(icon_name="view-fullscreen-symbolic", css_classes=["osd", "circular"],
-                      tooltip_text=_("Fullscreen"), halign=Gtk.Align.END, valign=Gtk.Align.START,
-                      margin_top=6, margin_end=6)
+                      tooltip_text=_("Fullscreen"))
     full.connect("clicked", lambda *_: fullscreen(vid))
-    overlay.add_overlay(full)
+    buttons.append(full)
+    bar = Gtk.Revealer(child=buttons, transition_type=Gtk.RevealerTransitionType.CROSSFADE, reveal_child=False,
+                       halign=Gtk.Align.END, valign=Gtk.Align.START, margin_top=6, margin_end=6)
+    overlay.add_overlay(bar)
+    overlay.buttons = bar      # for tests
+    hover = Gtk.EventControllerMotion()
+    hover.connect("enter", lambda *_: bar.set_reveal_child(True))
+    hover.connect("leave", lambda *_: bar.set_reveal_child(False))
+    overlay.add_controller(hover)
+    # and for the keyboard, while the focus is in the video
+    focus = Gtk.EventControllerFocus()
+    focus.connect("enter", lambda *_: bar.set_reveal_child(True))
+    focus.connect("leave", lambda *_: bar.set_reveal_child(False))
+    overlay.add_controller(focus)
     clicks = Gtk.GestureClick()
     clicks.connect("pressed", lambda _g, n, _x, _y: n == 2 and fullscreen(vid))
     vid.add_controller(clicks)

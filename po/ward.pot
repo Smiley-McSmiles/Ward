@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ward 1.0.0\n"
 "Report-Msgid-Bugs-To: https://github.com/smiley-mcsmiles/ward/issues\n"
-"POT-Creation-Date: 2026-10-18 16:12+0000\n"
+"POT-Creation-Date: 2026-10-18 16:21+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -263,7 +263,7 @@ msgstr ""
 msgid "Note to self"
 msgstr ""
 
-#: ward/core/names.py:25 ward/core/names.py:40 ward/gui/conversation.py:934
+#: ward/core/names.py:25 ward/core/names.py:40 ward/gui/conversation.py:960
 msgid "You"
 msgstr ""
 
@@ -726,9 +726,9 @@ msgid "You won't get messages until you start it again."
 msgstr ""
 
 #: ward/gui/app.py:204 ward/gui/composer.py:634 ward/gui/composer.py:641
-#: ward/gui/conversation.py:624 ward/gui/conversation.py:788
-#: ward/gui/conversation.py:797 ward/gui/conversation.py:849
-#: ward/gui/conversation.py:866 ward/gui/conversation.py:894
+#: ward/gui/conversation.py:634 ward/gui/conversation.py:814
+#: ward/gui/conversation.py:823 ward/gui/conversation.py:875
+#: ward/gui/conversation.py:892 ward/gui/conversation.py:920
 #: ward/gui/details.py:195 ward/gui/details.py:205 ward/gui/details.py:308
 #: ward/gui/dialogs.py:37 ward/gui/dialogs.py:818 ward/gui/members.py:187
 #: ward/gui/message_row.py:361 ward/gui/prefs.py:536 ward/gui/prefs.py:580
@@ -769,7 +769,7 @@ msgid ""
 "optional."
 msgstr ""
 
-#: ward/gui/chatrow.py:84 ward/gui/conversation.py:416
+#: ward/gui/chatrow.py:84 ward/gui/conversation.py:426
 #, python-format
 msgid "%s is typing…"
 msgstr ""
@@ -795,7 +795,7 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
-#: ward/gui/chatrow.py:173 ward/gui/conversation.py:427 ward/gui/details.py:70
+#: ward/gui/chatrow.py:173 ward/gui/conversation.py:437 ward/gui/details.py:70
 #, python-format
 msgid "Last seen %s"
 msgstr ""
@@ -820,7 +820,7 @@ msgstr ""
 msgid "Code"
 msgstr ""
 
-#: ward/gui/composer.py:121 ward/gui/conversation.py:747
+#: ward/gui/composer.py:121 ward/gui/conversation.py:764
 msgid "Quote"
 msgstr ""
 
@@ -863,7 +863,7 @@ msgstr ""
 msgid "Could not edit"
 msgstr ""
 
-#: ward/gui/composer.py:516 ward/gui/conversation.py:731
+#: ward/gui/composer.py:516 ward/gui/conversation.py:748
 msgid "Could not send"
 msgstr ""
 
@@ -920,7 +920,7 @@ msgstr[1] ""
 msgid "Send this image?"
 msgstr ""
 
-#: ward/gui/conversation.py:100 ward/gui/conversation.py:510
+#: ward/gui/conversation.py:100 ward/gui/conversation.py:520
 #: ward/gui/members.py:134
 msgid "Details"
 msgstr ""
@@ -960,96 +960,96 @@ msgstr ""
 msgid "Say hello!"
 msgstr ""
 
-#: ward/gui/conversation.py:261
+#: ward/gui/conversation.py:271
 msgid "Could not load messages"
 msgstr ""
 
-#: ward/gui/conversation.py:416
+#: ward/gui/conversation.py:426
 #, python-format
 msgid "%s are typing…"
 msgstr ""
 
-#: ward/gui/conversation.py:419
+#: ward/gui/conversation.py:429
 msgid "Not joined"
 msgstr ""
 
-#: ward/gui/conversation.py:423
+#: ward/gui/conversation.py:433
 #, python-format
 msgid "%d member"
 msgid_plural "%d members"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ward/gui/conversation.py:467
+#: ward/gui/conversation.py:477
 #, python-format
 msgid "%s is not in your contacts. Messages from strangers can be spam."
 msgstr ""
 
-#: ward/gui/conversation.py:469 ward/gui/conversation.py:894
+#: ward/gui/conversation.py:479 ward/gui/conversation.py:920
 #: ward/gui/details.py:195 ward/gui/dialogs.py:677 ward/schema.py:220
 msgid "Block"
 msgstr ""
 
-#: ward/gui/conversation.py:470 ward/gui/dialogs.py:687
+#: ward/gui/conversation.py:480 ward/gui/dialogs.py:687
 msgid "Accept"
 msgstr ""
 
-#: ward/gui/conversation.py:472 ward/gui/sidebar.py:466 ward/gui/sidebar.py:468
+#: ward/gui/conversation.py:482 ward/gui/sidebar.py:466 ward/gui/sidebar.py:468
 #: ward/gui/sidebar.py:559 ward/gui/tray.py:215 ward/gui/welcome.py:152
 #: ward/gui/welcome.py:173
 msgid "Connecting…"
 msgstr ""
 
-#: ward/gui/conversation.py:472 ward/gui/sidebar.py:462 ward/gui/sidebar.py:557
+#: ward/gui/conversation.py:482 ward/gui/sidebar.py:462 ward/gui/sidebar.py:557
 msgid "Not connected"
 msgstr ""
 
-#: ward/gui/conversation.py:473
+#: ward/gui/conversation.py:483
 msgid "Enter your password to connect."
 msgstr ""
 
-#: ward/gui/conversation.py:473
+#: ward/gui/conversation.py:483
 msgid "You are offline."
 msgstr ""
 
-#: ward/gui/conversation.py:475
+#: ward/gui/conversation.py:485
 msgid "Messages you write are sent when you are back online."
 msgstr ""
 
-#: ward/gui/conversation.py:477 ward/gui/dialogs.py:601 ward/gui/prefs.py:423
+#: ward/gui/conversation.py:487 ward/gui/dialogs.py:601 ward/gui/prefs.py:423
 msgid "Connect"
 msgstr ""
 
-#: ward/gui/conversation.py:480
+#: ward/gui/conversation.py:490
 msgid "You are not in this group right now"
 msgstr ""
 
-#: ward/gui/conversation.py:481 ward/gui/dialogs.py:219 ward/gui/dialogs.py:376
+#: ward/gui/conversation.py:491 ward/gui/dialogs.py:219 ward/gui/dialogs.py:376
 msgid "Join"
 msgstr ""
 
-#: ward/gui/conversation.py:484
+#: ward/gui/conversation.py:494
 msgid ""
 "Encryption support is not installed yet, so messages can't be sent encrypted."
 msgstr ""
 
-#: ward/gui/conversation.py:486 ward/gui/conversation.py:491
+#: ward/gui/conversation.py:496 ward/gui/conversation.py:501
 msgid "Send unencrypted"
 msgstr ""
 
-#: ward/gui/conversation.py:487 ward/gui/dialogs.py:926
+#: ward/gui/conversation.py:497 ward/gui/dialogs.py:926
 msgid "Install"
 msgstr ""
 
-#: ward/gui/conversation.py:489
+#: ward/gui/conversation.py:499
 msgid "Devices"
 msgstr ""
 
-#: ward/gui/conversation.py:493
+#: ward/gui/conversation.py:503
 msgid "Turn off encryption"
 msgstr ""
 
-#: ward/gui/conversation.py:497
+#: ward/gui/conversation.py:507
 #, python-format
 msgid ""
 "%(name)s has a new device. Check it if you want to be sure who reads your "
@@ -1060,266 +1060,287 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: ward/gui/conversation.py:500
+#: ward/gui/conversation.py:510
 msgid "Review"
 msgstr ""
 
-#: ward/gui/conversation.py:511 ward/gui/dialogs.py:407
+#: ward/gui/conversation.py:521 ward/gui/dialogs.py:407
 msgid "Search"
 msgstr ""
 
-#: ward/gui/conversation.py:513 ward/gui/members.py:28
+#: ward/gui/conversation.py:523 ward/gui/members.py:28
 msgid "Invite…"
 msgstr ""
 
-#: ward/gui/conversation.py:516 ward/gui/sidebar.py:284
+#: ward/gui/conversation.py:526 ward/gui/sidebar.py:284
 msgid "Unpin"
 msgstr ""
 
-#: ward/gui/conversation.py:516 ward/gui/sidebar.py:284
+#: ward/gui/conversation.py:526 ward/gui/sidebar.py:284
 msgid "Pin"
 msgstr ""
 
-#: ward/gui/conversation.py:518 ward/gui/sidebar.py:287
+#: ward/gui/conversation.py:528 ward/gui/sidebar.py:287
 msgid "Unmute"
 msgstr ""
 
-#: ward/gui/conversation.py:521
+#: ward/gui/conversation.py:531
 msgid "For an hour"
 msgstr ""
 
-#: ward/gui/conversation.py:522
+#: ward/gui/conversation.py:532
 msgid "For a day"
 msgstr ""
 
-#: ward/gui/conversation.py:523
+#: ward/gui/conversation.py:533
 msgid "Until I unmute"
 msgstr ""
 
-#: ward/gui/conversation.py:524 ward/gui/members.py:141 ward/gui/sidebar.py:287
+#: ward/gui/conversation.py:534 ward/gui/members.py:141 ward/gui/sidebar.py:287
 msgid "Mute"
 msgstr ""
 
-#: ward/gui/conversation.py:525 ward/gui/sidebar.py:288
+#: ward/gui/conversation.py:535 ward/gui/sidebar.py:288
 msgid "Unarchive"
 msgstr ""
 
-#: ward/gui/conversation.py:525 ward/gui/sidebar.py:288
+#: ward/gui/conversation.py:535 ward/gui/sidebar.py:288
 msgid "Archive"
 msgstr ""
 
-#: ward/gui/conversation.py:528 ward/gui/details.py:118
+#: ward/gui/conversation.py:538 ward/gui/details.py:118
 msgid "Clear history…"
 msgstr ""
 
-#: ward/gui/conversation.py:530 ward/gui/details.py:278 ward/gui/sidebar.py:289
+#: ward/gui/conversation.py:540 ward/gui/details.py:278 ward/gui/sidebar.py:289
 msgid "Leave group"
 msgstr ""
 
-#: ward/gui/conversation.py:532 ward/gui/sidebar.py:289
+#: ward/gui/conversation.py:542 ward/gui/sidebar.py:289
 msgid "Close chat"
 msgstr ""
 
-#: ward/gui/conversation.py:550
+#: ward/gui/conversation.py:560
 msgid "Only the people in this chat can read the messages, not the servers."
 msgstr ""
 
-#: ward/gui/conversation.py:552 ward/gui/prefs.py:50 ward/gui/prefs.py:58
+#: ward/gui/conversation.py:562 ward/gui/prefs.py:50 ward/gui/prefs.py:58
 #: ward/gui/prefs.py:63 ward/gui/prefs.py:66 ward/gui/prefs.py:109
 msgid "Default"
 msgstr ""
 
-#: ward/gui/conversation.py:555 ward/schema.py:108 ward/schema.py:146
+#: ward/gui/conversation.py:565 ward/schema.py:108 ward/schema.py:146
 #: ward/schema.py:189 ward/schema.py:247 ward/schema.py:303
 msgid "Off"
 msgstr ""
 
-#: ward/gui/conversation.py:566
+#: ward/gui/conversation.py:576
 msgid "Devices and keys…"
 msgstr ""
 
-#: ward/gui/conversation.py:622
+#: ward/gui/conversation.py:632
 msgid "Open this link?"
 msgstr ""
 
-#: ward/gui/conversation.py:622
+#: ward/gui/conversation.py:632
 #, python-format
 msgid ""
 "The link text says “%(text)s” but it opens\n"
 "%(uri)s"
 msgstr ""
 
-#: ward/gui/conversation.py:624 ward/gui/message_row.py:366
+#: ward/gui/conversation.py:634 ward/gui/conversation.py:776
+#: ward/gui/message_row.py:366
 msgid "Open"
 msgstr ""
 
-#: ward/gui/conversation.py:633
+#: ward/gui/conversation.py:643
 msgid "Edit history"
 msgstr ""
 
-#: ward/gui/conversation.py:640
+#: ward/gui/conversation.py:650
 msgid "Current"
 msgstr ""
 
-#: ward/gui/conversation.py:668
+#: ward/gui/conversation.py:678
 msgid "The original message is not available"
 msgstr ""
 
-#: ward/gui/conversation.py:696 ward/gui/conversation.py:725
+#: ward/gui/conversation.py:706 ward/gui/conversation.py:724
+#: ward/gui/conversation.py:742
 msgid "Download failed"
 msgstr ""
 
-#: ward/gui/conversation.py:719 ward/gui/details.py:150
+#: ward/gui/conversation.py:736 ward/gui/details.py:150
 msgid "Saved"
 msgstr ""
 
-#: ward/gui/conversation.py:728
+#: ward/gui/conversation.py:745
 msgid "Could not react"
 msgstr ""
 
-#: ward/gui/conversation.py:744 ward/gui/message_row.py:249
+#: ward/gui/conversation.py:761 ward/gui/message_row.py:249
 #: ward/gui/message_row.py:416
 msgid "Reply"
 msgstr ""
 
-#: ward/gui/conversation.py:746
+#: ward/gui/conversation.py:763
 msgid "Copy selection"
 msgstr ""
 
-#: ward/gui/conversation.py:746
+#: ward/gui/conversation.py:763
 msgid "Copy text"
 msgstr ""
 
-#: ward/gui/conversation.py:748
+#: ward/gui/conversation.py:765
 msgid "Forward…"
 msgstr ""
 
-#: ward/gui/conversation.py:750 ward/gui/trust.py:63
+#: ward/gui/conversation.py:767 ward/gui/trust.py:63
 msgid "Copy link"
 msgstr ""
 
-#: ward/gui/conversation.py:754
+#: ward/gui/conversation.py:772
+msgid "file"
+msgstr ""
+
+#: ward/gui/conversation.py:774
+#, python-format
+msgid "Save “%s” as…"
+msgstr ""
+
+#: ward/gui/conversation.py:774 ward/gui/dialogs.py:574
+#: ward/gui/message_row.py:370 ward/gui/video.py:25
+msgid "Save as…"
+msgstr ""
+
+#: ward/gui/conversation.py:776
+#, python-format
+msgid "Open “%s”"
+msgstr ""
+
+#: ward/gui/conversation.py:780
 msgid "Edit"
 msgstr ""
 
-#: ward/gui/conversation.py:755
+#: ward/gui/conversation.py:781
 msgid "Delete for me"
 msgstr ""
 
-#: ward/gui/conversation.py:757
+#: ward/gui/conversation.py:783
 msgid "Delete for everyone"
 msgstr ""
 
-#: ward/gui/conversation.py:759
+#: ward/gui/conversation.py:785
 msgid "Remove as moderator…"
 msgstr ""
 
-#: ward/gui/conversation.py:762 ward/gui/dialogs.py:517
+#: ward/gui/conversation.py:788 ward/gui/dialogs.py:517
 msgid "Message details"
 msgstr ""
 
-#: ward/gui/conversation.py:782
+#: ward/gui/conversation.py:808
 msgid "Could not delete"
 msgstr ""
 
-#: ward/gui/conversation.py:786
+#: ward/gui/conversation.py:812
 msgid "Delete for everyone?"
 msgstr ""
 
-#: ward/gui/conversation.py:787
+#: ward/gui/conversation.py:813
 msgid ""
 "The message is deleted on all devices. Apps that don't support deleting keep "
 "showing it."
 msgstr ""
 
-#: ward/gui/conversation.py:788 ward/gui/details.py:308 ward/gui/dialogs.py:861
+#: ward/gui/conversation.py:814 ward/gui/details.py:308 ward/gui/dialogs.py:861
 msgid "Delete"
 msgstr ""
 
-#: ward/gui/conversation.py:791 ward/gui/details.py:300 ward/gui/members.py:186
+#: ward/gui/conversation.py:817 ward/gui/details.py:300 ward/gui/members.py:186
 msgid "Reason (optional)"
 msgstr ""
 
-#: ward/gui/conversation.py:795
+#: ward/gui/conversation.py:821
 msgid "Could not remove"
 msgstr ""
 
-#: ward/gui/conversation.py:796
+#: ward/gui/conversation.py:822
 msgid "Remove this message?"
 msgstr ""
 
-#: ward/gui/conversation.py:796
+#: ward/gui/conversation.py:822
 msgid "It is removed for everyone in the group."
 msgstr ""
 
-#: ward/gui/conversation.py:797 ward/gui/details.py:205 ward/gui/details.py:383
+#: ward/gui/conversation.py:823 ward/gui/details.py:205 ward/gui/details.py:383
 #: ward/gui/dialogs.py:818 ward/gui/members.py:192 ward/gui/prefs.py:580
 #: ward/gui/trust.py:254
 msgid "Remove"
 msgstr ""
 
-#: ward/gui/conversation.py:806
+#: ward/gui/conversation.py:832
 msgid "Could not forward"
 msgstr ""
 
-#: ward/gui/conversation.py:807
+#: ward/gui/conversation.py:833
 #, python-format
 msgid "Forwarded to %s"
 msgstr ""
 
-#: ward/gui/conversation.py:808
+#: ward/gui/conversation.py:834
 msgid "Forward to…"
 msgstr ""
 
-#: ward/gui/conversation.py:848
+#: ward/gui/conversation.py:874
 msgid "Clear history?"
 msgstr ""
 
-#: ward/gui/conversation.py:848
+#: ward/gui/conversation.py:874
 msgid "Messages are deleted from this computer only."
 msgstr ""
 
-#: ward/gui/conversation.py:849 ward/gui/prefs.py:306 ward/gui/tools.py:36
+#: ward/gui/conversation.py:875 ward/gui/prefs.py:306 ward/gui/tools.py:36
 msgid "Clear"
 msgstr ""
 
-#: ward/gui/conversation.py:862
+#: ward/gui/conversation.py:888
 msgid "Could not leave"
 msgstr ""
 
-#: ward/gui/conversation.py:864
+#: ward/gui/conversation.py:890
 #, python-format
 msgid "Leave %s?"
 msgstr ""
 
-#: ward/gui/conversation.py:865
+#: ward/gui/conversation.py:891
 msgid ""
 "You stop getting its messages. You can join again later if the group allows "
 "it."
 msgstr ""
 
-#: ward/gui/conversation.py:866
+#: ward/gui/conversation.py:892
 msgid "Leave"
 msgstr ""
 
-#: ward/gui/conversation.py:877
+#: ward/gui/conversation.py:903
 msgid "Could not join"
 msgstr ""
 
-#: ward/gui/conversation.py:887
+#: ward/gui/conversation.py:913
 msgid "Report as spam"
 msgstr ""
 
-#: ward/gui/conversation.py:893 ward/gui/details.py:193
+#: ward/gui/conversation.py:919 ward/gui/details.py:193
 #, python-format
 msgid "Block %s?"
 msgstr ""
 
-#: ward/gui/conversation.py:893
+#: ward/gui/conversation.py:919
 msgid "You won't get messages or requests from them."
 msgstr ""
 
-#: ward/gui/conversation.py:930
+#: ward/gui/conversation.py:956
 msgid "Nothing found"
 msgstr ""
 
@@ -1830,10 +1851,6 @@ msgstr ""
 
 #: ward/gui/dialogs.py:571
 msgid "Image"
-msgstr ""
-
-#: ward/gui/dialogs.py:574 ward/gui/message_row.py:370
-msgid "Save as…"
 msgstr ""
 
 #: ward/gui/dialogs.py:575
@@ -3030,15 +3047,15 @@ msgstr ""
 msgid "Imported %d decisions"
 msgstr ""
 
-#: ward/gui/video.py:23
+#: ward/gui/video.py:29
 msgid "Fullscreen"
 msgstr ""
 
-#: ward/gui/video.py:38
+#: ward/gui/video.py:56
 msgid "Video"
 msgstr ""
 
-#: ward/gui/video.py:44
+#: ward/gui/video.py:62
 msgid "Leave fullscreen"
 msgstr ""
 

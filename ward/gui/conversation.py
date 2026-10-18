@@ -211,7 +211,17 @@ class ConversationView(Gtk.Box):
             a = Gio.SimpleAction.new(name, None)
             a.connect("activate", lambda _a, _p, cb=cb: self._menu_msg is not None and cb(self._menu_msg))
             group.add_action(a)
+        # attachments, by their index in the message
+        for name, cb in (("save-attachment", self.save_attachment), ("open-attachment", self.open_attachment)):
+            a = Gio.SimpleAction.new(name, GLib.VariantType("i"))
+            a.connect("activate", lambda _a, p, cb=cb: self._attachment_action(p.get_int32(), cb))
+            group.add_action(a)
         self.insert_action_group("msg", group)
+
+    def _attachment_action(self, i: int, cb) -> None:
+        m = self._menu_msg
+        if m is not None and 0 <= i < len(m.attachments):
+            cb(m, m.attachments[i])
         chat_group = Gio.SimpleActionGroup()
         for name, cb in (("details", self.show_details), ("search", lambda: self.search_button.set_active(True)),
                          ("pin", lambda: self._toggle_flag("pinned")),
@@ -702,9 +712,16 @@ class ConversationView(Gtk.Box):
         else:
             widgets.open_file(self, path)
 
-    def save_attachment(self, att: AttachmentItem) -> None:
+    def save_attachment(self, m: MessageItem | None, att: AttachmentItem) -> None:
+        """A copy wherever the user picks (downloaded first when it isn't yet)."""
         path = att.local_path
         if not path or not os.path.exists(path):
+            if m is None or self.chat is None:
+                return
+            async def go():
+                if await self.core.files.download(self.chat, m, att):
+                    self.save_attachment(m, att)
+            widgets.run(self, go(), error=_("Download failed"))
             return
         dialog = Gtk.FileDialog(initial_name=att.name or os.path.basename(path))
 
@@ -749,6 +766,15 @@ class ConversationView(Gtk.Box):
             if self.chat.type == "groupchat" and m.stanza_id:
                 sec.append(_("Copy link"), "msg.copy-link")
         menu.append_section(None, sec)
+        if m.attachments and not m.retracted:
+            sec = Gio.Menu()
+            for i, att in enumerate(m.attachments):
+                name = att.name or _("file")
+                many = len(m.attachments) > 1
+                sec.append(_("Save “%s” as…") % name if many else _("Save as…"),
+                           "msg.save-attachment(%d)" % i)
+                sec.append(_("Open “%s”") % name if many else _("Open"), "msg.open-attachment(%d)" % i)
+            menu.append_section(None, sec)
         sec = Gio.Menu()
         if m.outgoing and not m.retracted and m.kind in ("text", "me"):
             sec.append(_("Edit"), "msg.edit")
