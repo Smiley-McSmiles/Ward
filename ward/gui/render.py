@@ -199,8 +199,10 @@ class Renderer:
         for r, row in enumerate(t.rows, start=1):
             for c, cell in enumerate(row):
                 lbl = Gtk.Label(xalign=aligns.get(t.align[c] if c < len(t.align) else "", 0.0), selectable=True,
-                                wrap=True, max_width_chars=40)
+                                ellipsize=Pango.EllipsizeMode.END, max_width_chars=60)
+                # no wrapping: the table scrolls sideways, and wrapped cells made it measure as if squeezed
                 lbl.set_markup(markup(cell, dark=self.dark))
+                lbl.set_tooltip_text(lbl.get_text() if len(lbl.get_text()) > 60 else None)
                 grid.attach(lbl, c, r, 1, 1)
         sc = Gtk.ScrolledWindow(vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
                                 propagate_natural_width=True)
