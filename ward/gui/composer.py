@@ -3,6 +3,8 @@ edit banners, attachments (button, paste, drag and drop), typing notifications, 
 
 from __future__ import annotations
 
+import logging
+import mimetypes
 import os
 import re
 import tempfile
@@ -12,8 +14,10 @@ from gi.repository import Adw, Gdk, GLib, Gtk, Pango
 from .. import deps, paths
 from ..core.markup import emoji
 from ..core.models import ChatItem, MessageItem
-from ..i18n import _
+from ..i18n import _, ngettext
 from . import compat, widgets
+
+log = logging.getLogger("ward.gui")
 
 TYPING_PAUSE_MS = 5000
 MAX_HEIGHT = 200
@@ -568,6 +572,20 @@ class Composer(Gtk.Box):
     def _on_paste(self, view) -> None:
         clip = view.get_clipboard()
         formats = clip.get_formats()
+        if formats.contain_gtype(Gdk.FileList):
+            # files copied in a file manager: send them, rather than pasting their file:// addresses as text
+            view.stop_emission_by_name("paste-clipboard")
+
+            def got_files(c, res):
+                try:
+                    value = c.read_value_finish(res)
+                except GLib.Error as e:
+                    log.info("could not read the files on the clipboard: %s", e.message)
+                    return
+                files = value.get_files() if hasattr(value, "get_files") else []
+                self.confirm_files([f.get_path() for f in files if f.get_path()])
+            clip.read_value_async(Gdk.FileList, GLib.PRIORITY_DEFAULT, None, got_files)
+            return
         if formats.contain_gtype(Gdk.Texture) and not formats.contain_mime_type("text/plain"):
             view.stop_emission_by_name("paste-clipboard")
 
@@ -585,9 +603,28 @@ class Composer(Gtk.Box):
                 self._confirm_image(path)
             clip.read_texture_async(None, got)
 
-    def _confirm_image(self, path: str) -> None:
+    def confirm_files(self, file_paths: list[str]) -> None:
+        """Pasted files: ask first, so a paste into the wrong chat sends nothing."""
+        file_paths = [p for p in file_paths if os.path.isfile(p)]
+        if not file_paths:
+            if self.chat is not None:
+                compat.toast(self, _("Only files can be sent, not folders"))
+            return
+        if len(file_paths) == 1 and (mimetypes.guess_type(file_paths[0])[0] or "").startswith("image/"):
+            self._confirm_image(file_paths[0], temporary=False)
+            return
+        names = "\n".join(os.path.basename(p) for p in file_paths[:8])
+        if len(file_paths) > 8:
+            names += "\n…"
+        title = ngettext("Send this file?", "Send these %d files?", len(file_paths)) % len(file_paths) \
+            if len(file_paths) > 1 else _("Send this file?")
+        compat.alert(self, title, names, [("cancel", _("Cancel"), ""), ("send", _("Send"), "suggested")],
+                     lambda r: self.send_files(file_paths) if r == "send" else None, default="send")
+
+    def _confirm_image(self, path: str, temporary: bool = True) -> None:
         pic = Gtk.Picture.new_for_filename(path)
         pic.set_size_request(260, 200)
         pic.set_can_shrink(True)
         compat.alert(self, _("Send this image?"), "", [("cancel", _("Cancel"), ""), ("send", _("Send"), "suggested")],
-                     lambda r: self.send_files([path]) if r == "send" else os.unlink(path), default="send", extra=pic)
+                     lambda r: self.send_files([path]) if r == "send" else (os.unlink(path) if temporary else None),
+                     default="send", extra=pic)
