@@ -285,10 +285,13 @@ class MessageRow(Gtk.Box):
         limit = int(settings["chats.collapse_after"] or 0)
         if limit and body.count("\n") > limit and not getattr(self, "_expanded", False):
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            sc = Gtk.ScrolledWindow(vscrollbar_policy=Gtk.PolicyType.NEVER, hscrollbar_policy=Gtk.PolicyType.NEVER)
+            # EXTERNAL, not NEVER: with NEVER the scroller asks for its child's full height and the limit does
+            # nothing.  The width follows the content, so code is not squeezed while collapsed.
+            sc = Gtk.ScrolledWindow(vscrollbar_policy=Gtk.PolicyType.EXTERNAL,
+                                    hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                    propagate_natural_width=True, propagate_natural_height=True)
             sc.set_child(w)
             sc.set_max_content_height(limit * 22)
-            sc.set_propagate_natural_height(True)
             box.append(sc)
             more = Gtk.Button(label=_("Show more"), css_classes=["flat"], halign=Gtk.Align.START)
 
