@@ -137,7 +137,13 @@ jobs:
             ftp -o /tmp/xbase.tar.xz "https://ftp.netbsd.org/pub/NetBSD/NetBSD-$rel/$arch/binary/sets/xbase.tar.xz"
             tar -xJf /tmp/xbase.tar.xz -C /
           run: |
+            # The image's pcre2/glib2 can be older than the repository's; pkg_add will not upgrade a
+            # dependency on its own when it is already installed.
+            pkg_add -u pcre2 glib2 || true
             sh ./install.sh --install-deps
+            # pkgsrc has no slixmpp package; the required module comes from pip.
+            python3 -m pip install --break-system-packages slixmpp \
+              || python3 -m pip install slixmpp || true
             ward --version && ward --check
 
   packages:
