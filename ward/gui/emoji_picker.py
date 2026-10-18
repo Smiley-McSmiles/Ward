@@ -27,10 +27,27 @@ RECENT = -1
 MAX_RECENT = 30
 
 COLUMNS, ROWS, CELL = 8, 7, 40
-_table: list[tuple[str, str, str, int]] | None = None   # (emoji, name, " name keywords" in lower case, group)
+# the five Fitzpatrick modifiers; tone 0 is the default (yellow) emoji
+TONES = (0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF)
+HAND = (0x270B, 0)        # raised hand: shows the chosen tone on the tone button
+TONE_NAMES = (N_("Default skin tone"), N_("Light skin tone"), N_("Medium-light skin tone"), N_("Medium skin tone"),
+              N_("Medium-dark skin tone"), N_("Dark skin tone"))
+# (codepoints, name, " name keywords" in lower case, group); a 0 among the codepoints is where a skin tone goes
+_table: list[tuple[tuple[int, ...], str, str, int]] | None = None
+_by_base: dict[str, tuple[int, ...]] = {}
 
 
-def table() -> list[tuple[str, str, str, int]]:
+def text(codes: tuple[int, ...], tone: int = 0) -> str:
+    """The emoji, with skin tone 1-5 where it takes one (0: the default)."""
+    return "".join(chr(TONES[tone - 1]) if c == 0 and tone else chr(c) for c in codes if c or tone)
+
+
+def takes_tone(emoji: str) -> tuple[int, ...] | None:
+    """The codepoints of an emoji (with or without a tone) that comes in skin tones, None for any other."""
+    return _by_base.get("".join(ch for ch in emoji if ord(ch) not in TONES))
+
+
+def table() -> list[tuple[tuple[int, ...], str, str, int]]:
     """GTK's emoji table, read once; empty when this GTK has none we can read."""
     global _table
     if _table is None:
@@ -40,11 +57,13 @@ def table() -> list[tuple[str, str, str, int]]:
             v = GLib.Variant.new_from_bytes(GLib.VariantType("a(aussasasu)"), data, True)
             for i in range(v.n_children()):
                 codes, name, local, keywords, _short, group = v.get_child_value(i).unpack()
-                # 0 marks where a skin tone may go: without one, the default (yellow) emoji
-                text = "".join(chr(c) for c in codes if c)
-                if text and isinstance(name, str):
+                # where a skin tone goes, GTK's table has a 0 or the light tone: both become 0
+                codes = tuple(0 if c == TONES[0] else c for c in codes)
+                if any(codes) and isinstance(name, str):
                     words = " " + " ".join([name, local or "", *keywords]).lower().replace(":", " ")
-                    _table.append((text, local or name, words, int(group)))
+                    _table.append((codes, local or name, words, int(group)))
+                    if 0 in codes:
+                        _by_base[text(codes)] = codes
         except (GLib.Error, TypeError, ValueError):
             _table = []
     return _table
@@ -59,7 +78,8 @@ class EmojiGrid(Gtk.Widget):
     up to 30 rows of cells measured, and measuring an emoji is what costs (see above)."""
 
     __gtype_name__ = "WardEmojiGrid"
-    __gsignals__ = {"picked": (GObject.SignalFlags.RUN_LAST, None, (str,))}
+    __gsignals__ = {"picked": (GObject.SignalFlags.RUN_LAST, None, (str,)),
+                    "variants": (GObject.SignalFlags.RUN_LAST, None, (int,))}     # right click, long press, Menu
 
     def __init__(self):
         super().__init__(focusable=True, can_focus=True, has_tooltip=True, overflow=Gtk.Overflow.HIDDEN,
@@ -81,6 +101,12 @@ class EmojiGrid(Gtk.Widget):
         click = Gtk.GestureClick()
         click.connect("released", lambda _g, _n, x, y: self._pick(self._index_at(x, y)))
         self.add_controller(click)
+        other = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+        other.connect("pressed", lambda _g, _n, x, y: self._variants(self._index_at(x, y)))
+        self.add_controller(other)
+        hold = Gtk.GestureLongPress()
+        hold.connect("pressed", lambda _g, x, y: self._variants(self._index_at(x, y)))
+        self.add_controller(hold)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_key)
         self.add_controller(keys)
@@ -170,6 +196,9 @@ class EmojiGrid(Gtk.Widget):
         if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space) and self.cursor >= 0:
             self._pick(self.cursor)
             return True
+        if keyval in (Gdk.KEY_Menu, Gdk.KEY_F10) and self.cursor >= 0:
+            self._variants(self.cursor)
+            return True
         return False
 
     def _on_tooltip(self, _w, x, y, keyboard, tooltip) -> bool:
@@ -182,6 +211,17 @@ class EmojiGrid(Gtk.Widget):
     def _pick(self, i: int) -> None:
         if 0 <= i < len(self.items):
             self.emit("picked", self.items[i][0])
+
+    def _variants(self, i: int) -> None:
+        if 0 <= i < len(self.items):
+            self._move_to(i, scroll_to=False)
+            self.emit("variants", i)
+
+    def cell_rect(self, i: int) -> Gdk.Rectangle:
+        r = Gdk.Rectangle()
+        r.x, r.y = (i % COLUMNS) * CELL, int((i // COLUMNS) * CELL - self.adjustment.get_value())
+        r.width = r.height = CELL
+        return r
 
 
 class EmojiPicker(Gtk.Popover):
@@ -197,13 +237,26 @@ class EmojiPicker(Gtk.Popover):
         self.search = Gtk.SearchEntry(placeholder_text=_("Search emoji"))
         self.search.connect("search-changed", lambda *_: self._show_search())
         self.search.connect("activate", lambda *_: self.grid._pick(0))
-        box.append(self.search)
+        top = Gtk.Box(spacing=6)
+        self.search.set_hexpand(True)
+        top.append(self.search)
+        # the skin tone for every emoji that takes one; right click (or long press) on an emoji for just that one
+        self.tone_button = Gtk.MenuButton(css_classes=["flat"], tooltip_text=_("Skin tone"))
+        tones = Gtk.Box(spacing=2, margin_start=4, margin_end=4, margin_top=4, margin_bottom=4)
+        for tone in range(len(TONE_NAMES)):
+            b = Gtk.Button(label=text(HAND, tone), css_classes=["flat"], tooltip_text=_(TONE_NAMES[tone]))
+            b.connect("clicked", lambda _b, t=tone: self._set_tone(t))
+            tones.append(b)
+        self.tone_button.set_popover(Gtk.Popover(child=tones))
+        top.append(self.tone_button)
+        box.append(top)
         down = Gtk.EventControllerKey()
         down.connect("key-pressed", lambda _c, k, *_a: k == Gdk.KEY_Down and self._into_grid())
         self.search.add_controller(down)
 
         self.grid = EmojiGrid()
         self.grid.connect("picked", lambda _g, e: self._picked(e))
+        self.grid.connect("variants", lambda _g, i: self._show_variants(i))
         self.pane = Gtk.Box()
         self.pane.append(self.grid)
         self.pane.append(Gtk.Scrollbar(orientation=Gtk.Orientation.VERTICAL, adjustment=self.grid.adjustment))
@@ -227,12 +280,30 @@ class EmojiPicker(Gtk.Popover):
         box.append(tabs)
         self.set_child(box)
         self.connect("show", lambda *_: self._opened())
+        self._update_tone_button()
 
     # ------------------------------------------------------------------ contents
     def _recent(self) -> list[str]:
         if self.settings is not None:
             return list(self.settings["chats.recent_emoji"])
         return []
+
+    def _tone(self) -> int:
+        if self.settings is not None:
+            return max(0, min(len(TONES), int(self.settings["chats.emoji_skin_tone"])))
+        return getattr(self, "_own_tone", 0)
+
+    def _set_tone(self, tone: int) -> None:
+        if self.settings is not None:
+            self.settings.set("chats.emoji_skin_tone", tone)
+        else:
+            self._own_tone = tone
+        self.tone_button.popdown()
+        self._update_tone_button()
+        self._show_search()        # the same view again, in the new tone
+
+    def _update_tone_button(self) -> None:
+        self.tone_button.set_label(text(HAND, self._tone()))
 
     def _set(self, items: list[tuple[str, str]]) -> None:
         self.grid.set_items(items)
@@ -244,10 +315,11 @@ class EmojiPicker(Gtk.Popover):
             self.search.set_text("")        # shows the group through _show_search
             return
         if group == RECENT:
-            names = {e: n for e, n, _w, _g in table()}
-            self._set([(e, names.get(e, "")) for e in self._recent()])
+            names = {text(c): n for c, n, _w, _g in table()}
+            self._set([(e, names.get(e, "") or names.get(text(takes_tone(e) or ()), "")) for e in self._recent()])
         else:
-            self._set([(e, n) for e, n, _w, g in table() if g == group])
+            tone = self._tone()
+            self._set([(text(c, tone), n) for c, n, _w, g in table() if g == group])
 
     def _show_search(self) -> None:
         words = [" " + x for x in self.search.get_text().lower().split()]    # each matching the start of a word
@@ -255,7 +327,8 @@ class EmojiPicker(Gtk.Popover):
             active = next((g for g, b in self.tabs.items() if b.get_active()), GROUPS[0][0])
             self._show_group(active)
             return
-        self._set([(e, n) for e, n, w, _g in table() if all(x in w for x in words)])
+        tone = self._tone()
+        self._set([(text(c, tone), n) for c, n, w, _g in table() if all(x in w for x in words)])
 
     def _opened(self) -> None:
         self.search.set_text("")
@@ -271,6 +344,26 @@ class EmojiPicker(Gtk.Popover):
             self.grid.grab_focus()
             self.grid._move_to(0)
         return True
+
+    def _show_variants(self, i: int) -> None:
+        """The emoji in every skin tone, for this one pick."""
+        emoji = self.grid.items[i][0]
+        codes = takes_tone(emoji)
+        if codes is None:
+            return
+        pop = Gtk.Popover(position=Gtk.PositionType.TOP)
+        pop.set_parent(self.grid)
+        pop.set_pointing_to(self.grid.cell_rect(i))
+        row = Gtk.Box(spacing=2)
+        for tone in range(len(TONE_NAMES)):
+            b = Gtk.Button(label=text(codes, tone), css_classes=["flat", "emoji-variant"],
+                           tooltip_text=_(TONE_NAMES[tone]))
+            b.connect("clicked", lambda _b, e=text(codes, tone): (pop.popdown(), self._picked(e)))
+            row.append(b)
+        pop.set_child(row)
+        # popovers parented by hand must be unparented by hand
+        pop.connect("closed", lambda p: GLib.idle_add(lambda: p.get_parent() is not None and p.unparent()))
+        pop.popup()
 
     # ------------------------------------------------------------------ picking
     def _picked(self, emoji: str) -> None:

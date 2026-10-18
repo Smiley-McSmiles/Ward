@@ -191,7 +191,19 @@ def test_message_rows_are_light(app, prosody, run, tmp_path):  # noqa: F811
             await wait_for(lambda: [e for e, _n in chooser.grid.items] == ["🎉"], 5, "search")
             chooser.search.emit("activate")
             assert reacted == ["🎉"]
-            assert app.core.settings["chats.recent_emoji"][0] == "🎉"
+            # skin tones: the chosen tone for every emoji that takes one, every tone of one emoji on right click
+            row.react_button.popup()
+            chooser = row.react_button.get_popover()
+            chooser._set_tone(4)
+            assert app.core.settings["chats.emoji_skin_tone"] == 4
+            chooser.search.set_text("waving hand")
+            await wait_for(lambda: [e for e, _n in chooser.grid.items] == ["👋🏾"], 5, "toned search")
+            assert emoji_picker.takes_tone("👋🏾") and emoji_picker.takes_tone("🎉") is None
+            chooser.grid._variants(0)
+            chooser.search.emit("activate")
+            assert reacted[-1] == "👋🏾"
+            app.core.settings.set("chats.emoji_skin_tone", 0)
+            assert app.core.settings["chats.recent_emoji"][:2] == ["👋🏾", "🎉"]
             await wait_for(lambda: row.react_button.get_popover() is None, 5, "picker freed")
         finally:
             await stop(peer)
