@@ -60,9 +60,13 @@ and libadwaita 1.4+**. Download from the [releases page](https://github.com/smil
 | NetBSD | the pkgsrc package in the recipes (`chat/ward`), or `sudo sh install.sh --install-deps --vendor` |
 | Anything else | the tarball: `sudo ./install.sh` (or `./install.sh --prefix ~/.local` without root) |
 
-`install.sh` is plain POSIX sh. Useful options:
+`install.sh` is plain POSIX sh. Run in a terminal, it first lists what this machine is missing and asks whether to
+install it: packages with the system's package manager (through sudo or doas when not run as root), then the OMEMO
+libraries, legacy OMEMO included, with pip into Ward's own folder. Useful options:
 
 ```sh
+sudo ./install.sh --yes            # install missing dependencies without asking (--no-legacy-omemo leaves oldmemo out)
+./install.sh --no-deps             # don't check or offer to install anything
 sudo ./install.sh --install-deps   # dependencies with apt, dnf, zypper, pacman, xbps, apk, emerge, pkg, pkg_add or pkgin
 ./install.sh --check               # what is missing on this machine, and the command to install it
 ./install.sh --vendor              # also fetch Python libraries your system has no packages for
