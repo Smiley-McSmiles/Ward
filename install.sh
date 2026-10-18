@@ -141,7 +141,7 @@ packages() {
         emerge) REQ="dev-lang/python dev-python/pygobject gui-libs/gtk gui-libs/libadwaita dev-python/slixmpp dev-python/markdown-it-py dev-python/cryptography"
                 OPT="x11-libs/gtksourceview:5 app-crypt/libsecret dev-python/pillow dev-python/linkify-it-py dev-python/pip app-crypt/gnupg" ;;
         pkg) P=$(pyver)
-             REQ="python3 $P-gobject3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
+             REQ="python3 $P-pygobject $P-sqlite3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
              OPT="gtksourceview5 libspelling libsecret $P-pillow $P-linkify-it-py $P-pip gnupg desktop-file-utils" ;;
         pkg_add) if [ "$OS" = NetBSD ]; then
                      P=$(pyver); V=${P#py}
