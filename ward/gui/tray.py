@@ -20,12 +20,15 @@ SNI_XML = """<node><interface name="org.kde.StatusNotifierItem">
 <property name="IconName" type="s" access="read"/><property name="AttentionIconName" type="s" access="read"/>
 <property name="IconThemePath" type="s" access="read"/><property name="ItemIsMenu" type="b" access="read"/>
 <property name="Menu" type="o" access="read"/><property name="ToolTip" type="(sa(iiay)ss)" access="read"/>
+<property name="IconPixmap" type="a(iiay)" access="read"/>
+<property name="AttentionIconPixmap" type="a(iiay)" access="read"/>
+<property name="OverlayIconName" type="s" access="read"/><property name="WindowId" type="i" access="read"/>
 <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 <method name="ContextMenu"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 <method name="Scroll"><arg type="i" direction="in"/><arg type="s" direction="in"/></method>
 <signal name="NewIcon"/><signal name="NewStatus"><arg type="s"/></signal><signal name="NewToolTip"/>
-<signal name="NewTitle"/></interface></node>"""
+<signal name="NewTitle"/><signal name="NewAttentionIcon"/></interface></node>"""
 
 MENU_XML = """<node><interface name="com.canonical.dbusmenu">
 <property name="Version" type="u" access="read"/><property name="TextDirection" type="s" access="read"/>
@@ -48,6 +51,13 @@ MENU_XML = """<node><interface name="com.canonical.dbusmenu">
 
 ITEMS = ((1, "show"), (4, "preferences"), (2, "separator"), (3, "quit"))
 LABELS = {"show": "Show Ward", "preferences": "Preferences", "quit": "Quit"}
+
+
+def register(bus, path: str, info, method_call, get_property) -> int:
+    """Export an object with Python callbacks.  The closure-taking variant is called register_object in most
+    PyGObject versions (rename-to), register_object_with_closures in some."""
+    fn = getattr(bus, "register_object_with_closures", None) or bus.register_object
+    return fn(path, info, method_call, get_property, None)
 
 
 def watcher_running(bus) -> bool:
@@ -78,6 +88,9 @@ class Tray:
             raise RuntimeError("no tray host on this desktop")
         self.app = app
         self.unread = 0
+        self.state = "offline"         # online | connecting | offline
+        self._pixmaps: dict[str, list] = {}
+        self._registered = False
         from .. import paths
 
         icons = os.path.join(paths.share_dir(), "icons") if paths.share_dir() else ""
@@ -86,37 +99,104 @@ class Tray:
         self._ids = []
         sni = Gio.DBusNodeInfo.new_for_xml(SNI_XML).interfaces[0]
         menu = Gio.DBusNodeInfo.new_for_xml(MENU_XML).interfaces[0]
-        self._ids.append(self.bus.register_object_with_closures("/StatusNotifierItem", sni, self._sni_call,
-                                                                self._sni_prop, None))
-        self._ids.append(self.bus.register_object_with_closures("/MenuBar", menu, self._menu_call, self._menu_prop,
-                                                                None))
-        self._owner = Gio.bus_own_name_on_connection(self.bus, self.name, Gio.BusNameOwnerFlags.NONE, None, None)
-        self._watch = Gio.bus_watch_name_on_connection(self.bus, "org.kde.StatusNotifierWatcher",
-                                                       Gio.BusNameWatcherFlags.NONE, self._watcher_up, None)
+        self._ids.append(register(self.bus, "/StatusNotifierItem", sni, self._sni_call, self._sni_prop))
+        self._ids.append(register(self.bus, "/MenuBar", menu, self._menu_call, self._menu_prop))
         self.revision = 1
+        self._watch = 0
+        # register with the watcher only once we own our name: the GNOME AppIndicator extension looks the item up
+        # right away and forgets it if the name has no owner yet
+        self._owner = Gio.bus_own_name_on_connection(self.bus, self.name, Gio.BusNameOwnerFlags.NONE,
+                                                     self._name_acquired, None)
+
+    def _name_acquired(self, *_a) -> None:
+        if not self._watch:
+            self._watch = Gio.bus_watch_name_on_connection(self.bus, "org.kde.StatusNotifierWatcher",
+                                                           Gio.BusNameWatcherFlags.NONE, self._watcher_up,
+                                                           self._watcher_gone)
+
+    def _watcher_gone(self, *_a) -> None:
+        self._registered = False
 
     def _watcher_up(self, *_a) -> None:
+        def done(bus, res):
+            try:
+                bus.call_finish(res)
+                self._registered = True
+            except GLib.Error as e:
+                log.info("tray host refused the icon: %s", e.message)
         self.bus.call("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher",
                       "RegisterStatusNotifierItem", GLib.Variant("(s)", (self.name,)), None, Gio.DBusCallFlags.NONE,
-                      -1, None, None)
+                      -1, None, done)
+
+    # ------------------------------------------------------------------ icons
+    def _icon_name(self, attention: bool = False) -> str:
+        if self.state == "offline":
+            return APP_ID + "-offline"
+        if self.state == "connecting":
+            return APP_ID + "-connecting"
+        return APP_ID + "-unread" if attention or self.unread else APP_ID
+
+    def _pixmap(self, name: str) -> list:
+        """The icon as ARGB32 pixels too: hosts that can't find our icon theme (GNOME's extension, Flatpak,
+        /usr/local installs) draw these instead."""
+        if name in self._pixmaps:
+            return self._pixmaps[name]
+        out = []
+        from .. import paths
+
+        candidates = [os.path.join(d, "hicolor", "scalable", "apps", name + ".svg")
+                      for d in (self.icon_path, os.path.join(paths.share_dir(), "icons"),
+                                os.path.join(os.path.dirname(paths.package_dir()), "data", "icons"))
+                      if d]
+        src = next((c for c in candidates if os.path.isfile(c)), None)
+        if src is not None:
+            try:
+                import gi
+
+                gi.require_version("GdkPixbuf", "2.0")
+                from gi.repository import GdkPixbuf
+
+                for size in (22, 32, 48, 64):
+                    pb = GdkPixbuf.Pixbuf.new_from_file_at_size(src, size, size)
+                    if not pb.get_has_alpha():
+                        pb = pb.add_alpha(False, 0, 0, 0)
+                    w, h, stride = pb.get_width(), pb.get_height(), pb.get_rowstride()
+                    raw = pb.get_pixels()
+                    rgba = b"".join(raw[y * stride: y * stride + w * 4] for y in range(h))
+                    argb = bytearray(len(rgba))     # network byte order ARGB
+                    argb[0::4], argb[1::4], argb[2::4], argb[3::4] = rgba[3::4], rgba[0::4], rgba[1::4], rgba[2::4]
+                    out.append((w, h, bytes(argb)))
+            except Exception as e:
+                log.debug("tray pixmap: %s", e)
+        self._pixmaps[name] = out
+        return out
+
+    def set_state(self, state: str) -> None:
+        if state != self.state:
+            self.state = state
+            self._changed()
+
+    def _changed(self) -> None:
+        for sig, args in (("NewStatus", GLib.Variant("(s)", (self._status(),))), ("NewToolTip", None),
+                          ("NewIcon", None), ("NewAttentionIcon", None)):
+            try:
+                self.bus.emit_signal(None, "/StatusNotifierItem", "org.kde.StatusNotifierItem", sig, args)
+            except GLib.Error:
+                pass
 
     def close(self) -> None:
         for i in self._ids:
             self.bus.unregister_object(i)
         self._ids = []
-        Gio.bus_unwatch_name(self._watch)
+        if self._watch:
+            Gio.bus_unwatch_name(self._watch)
         Gio.bus_unown_name(self._owner)
 
     def set_unread(self, n: int) -> None:
         if n == self.unread:
             return
         self.unread = n
-        for sig, args in (("NewStatus", GLib.Variant("(s)", (self._status(),))), ("NewToolTip", None),
-                          ("NewIcon", None)):
-            try:
-                self.bus.emit_signal(None, "/StatusNotifierItem", "org.kde.StatusNotifierItem", sig, args)
-            except GLib.Error:
-                pass
+        self._changed()
 
     def _status(self) -> str:
         return "NeedsAttention" if self.unread else "Active"
@@ -130,14 +210,19 @@ class Tray:
 
     # ------------------------------------------------------------------ StatusNotifierItem
     def _sni_prop(self, _conn, _sender, _path, _iface, name):
-        tip = _("%d unread") % self.unread if self.unread else ""
+        state = {"online": _("Connected"), "connecting": _("Connecting…"), "offline": _("Offline")}[self.state]
+        tip = state + (" · " + _("%d unread") % self.unread if self.unread else "")
+        icon = self._icon_name()
         values = {
             "Category": GLib.Variant("s", "Communications"), "Id": GLib.Variant("s", APP_ID),
             "Title": GLib.Variant("s", APP_NAME), "Status": GLib.Variant("s", self._status()),
-            "IconName": GLib.Variant("s", APP_ID), "AttentionIconName": GLib.Variant("s", APP_ID),
+            "IconName": GLib.Variant("s", icon), "AttentionIconName": GLib.Variant("s", self._icon_name(True)),
+            "IconPixmap": GLib.Variant("a(iiay)", self._pixmap(icon)),
+            "AttentionIconPixmap": GLib.Variant("a(iiay)", self._pixmap(self._icon_name(True))),
+            "OverlayIconName": GLib.Variant("s", ""), "WindowId": GLib.Variant("i", 0),
             "IconThemePath": GLib.Variant("s", self.icon_path), "ItemIsMenu": GLib.Variant("b", False),
             "Menu": GLib.Variant("o", "/MenuBar"),
-            "ToolTip": GLib.Variant("(sa(iiay)ss)", (APP_ID, [], APP_NAME, tip)),
+            "ToolTip": GLib.Variant("(sa(iiay)ss)", (icon, [], APP_NAME, tip)),
         }
         return values.get(name)
 

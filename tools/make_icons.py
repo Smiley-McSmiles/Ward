@@ -56,13 +56,13 @@ SYMBOLIC = {
     "edited": '<path d="M11.5 1.5 14.5 4.5 5 14H2v-3zM10 4.6 11.4 6 12.4 5 11 3.6z"/>',
 }
 
-APP = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+APP_T = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
     <linearGradient id="sh" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8e7e4"/>
     </linearGradient>
     <linearGradient id="bu" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4a90e2"/><stop offset="1" stop-color="#1a5fb4"/>
+      <stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/>
     </linearGradient>
   </defs>
   <!-- the shield fills the icon; a soft edge and shadow keep it visible on light backgrounds -->
@@ -73,9 +73,17 @@ APP = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBo
   <path d="M34 40h60a9 9 0 0 1 9 9v30a9 9 0 0 1-9 9H66l-19 14V88h-13a9 9 0 0 1-9-9V49a9 9 0 0 1 9-9z"
         fill="url(#bu)"/>
   <circle cx="46" cy="64" r="6.5" fill="#fff"/><circle cx="64" cy="64" r="6.5" fill="#fff"/>
-  <circle cx="82" cy="64" r="6.5" fill="#fff"/>
+  <circle cx="82" cy="64" r="6.5" fill="#fff"/>{badge}
 </svg>
 """
+APP = APP_T.format(top="#4a90e2", bottom="#1a5fb4", badge="")
+# tray states: connected (the app icon), connecting (amber), offline (grey), unread (red dot)
+TRAY = {
+    "connecting": APP_T.format(top="#f8c94a", bottom="#e5a50a", badge=""),
+    "offline": APP_T.format(top="#c0bfbc", bottom="#77767b", badge=""),
+    "unread": APP_T.format(top="#4a90e2", bottom="#1a5fb4",
+                           badge='\n  <circle cx="104" cy="24" r="18" fill="#e01b24" stroke="#fff" stroke-width="4"/>'),
+}
 
 APP_SYMBOLIC = ('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
                 '<path fill="#2e3436" d="M8 1 2 3.2V7.5c0 3.4 2.6 6.4 6 7.5 3.4-1.1 6-4.1 6-7.5V3.2zM5 5h6a1 1 0 0 1 1 '
@@ -94,6 +102,9 @@ def main():
         os.makedirs(os.path.join(data, sub), exist_ok=True)
     with open(os.path.join(data, "scalable", "apps", APPID + ".svg"), "w") as fh:
         fh.write(APP)
+    for state, svg in TRAY.items():
+        with open(os.path.join(data, "scalable", "apps", "%s-%s.svg" % (APPID, state)), "w") as fh:
+            fh.write(svg)
     with open(os.path.join(data, "symbolic", "apps", APPID + "-symbolic.svg"), "w") as fh:
         fh.write(APP_SYMBOLIC)
     # the app icon in the window's icon theme too, for running from the source tree

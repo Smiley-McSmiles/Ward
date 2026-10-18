@@ -63,6 +63,8 @@ class WardApplication(Adw.Application):
         self.core.notifier.connect("withdraw-notification", lambda _n, nid: self.withdraw_notification(nid))
         self.core.chats.connect("unread-changed", lambda *_: self._update_badge())
         self.core.chats.connect("activity", lambda *_: self._update_badge())
+        self.core.accounts.store.connect("items-changed", lambda *_: self._watch_accounts())
+        self._watched_accounts: set[int] = set()
         settings.connect("changed", self._on_setting)
         self._install_actions()
         if settings["general.background"]:
@@ -85,6 +87,7 @@ class WardApplication(Adw.Application):
             return
         if self.window is not None:
             self.window.ready()
+        self._watch_accounts()
         self._update_badge()
         if self.pending_uri and self.core.accounts.list():
             uri, self.pending_uri = self.pending_uri, ""
@@ -240,6 +243,8 @@ class WardApplication(Adw.Application):
             from .tray import Tray
 
             self.tray = Tray(self)
+            self._update_tray_state()
+            self.tray.set_unread(max(self._badge_count, 0))
         except Exception as e:
             log.debug("no tray: %s", e)
             self.tray = None
@@ -265,6 +270,27 @@ class WardApplication(Adw.Application):
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("\n".join(lines) + "\n")
             os.chmod(path, 0o600)
+
+    def _watch_accounts(self) -> None:
+        for acc in self.core.accounts.list():
+            if acc.id not in self._watched_accounts:
+                self._watched_accounts.add(acc.id)
+                acc.connect("notify::state", lambda *_: self._update_tray_state())
+                acc.connect("notify::enabled", lambda *_: self._update_tray_state())
+        self._update_tray_state()
+
+    def connection_state(self) -> str:
+        """online when any enabled account is connected, connecting while one tries, offline otherwise."""
+        states = [a.state for a in self.core.accounts.list() if a.enabled]
+        if "online" in states:
+            return "online"
+        if "connecting" in states:
+            return "connecting"
+        return "offline"
+
+    def _update_tray_state(self) -> None:
+        if self.tray is not None and self.core is not None:
+            self.tray.set_state(self.connection_state())
 
     def _tray_wanted(self) -> bool:
         return self.core is not None and self.core.settings["general.tray"] != "never"
