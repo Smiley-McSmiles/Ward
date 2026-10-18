@@ -161,6 +161,11 @@ installed) and the interface tests (with a display; `xvfb-run -a` works). `ruff 
 the Flatpak where their tools are installed, and writes recipes for Alpine, Gentoo, the FreeBSD ports tree, OpenBSD
 ports, NetBSD pkgsrc and Flatpak into `dist/recipes/`, with `dist/SHA256SUMS`. See `./package.sh --help`.
 
+`./package.sh --version 1.1.0 --all` first sets the version everywhere it is written (the app, README, man page,
+metainfo and a new CHANGELOG section to fill in; `tools/set_version.py` does that part on its own). Pre-releases such
+as `--version 1.1.0-rc1` work too: each package spells it the way its format sorts before 1.1.0 (`1.1.0~rc1` in the
+.deb and .rpm, `1.1.0_rc1` for Alpine and Gentoo, `1.1.0rc1` for Arch, Void and the BSDs).
+
 ## Translating
 
 Strings are in `po/ward.pot` (`tools/update-pot.sh` refreshes it). Copy it to `po/<language>.po`, translate, and

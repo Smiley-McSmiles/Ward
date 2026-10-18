@@ -93,8 +93,10 @@ class MessageRow(Gtk.Box):
         widgets.clear(self.separator)
         widgets.clear(self.row)
         if self.hover is not None:
-            self.overlay.remove_overlay(self.hover)
+            if self.hover.get_parent() is self.overlay:
+                self.overlay.remove_overlay(self.hover)
             self.hover = None
+        self.bubble_wrap = None
         settings = self.view.settings
         layout = settings["appearance.layout"]
         for c in ("first", "outgoing", "selected", "highlight", "mention"):
@@ -147,8 +149,9 @@ class MessageRow(Gtk.Box):
             col.set_hexpand(False)
             col.set_halign(Gtk.Align.END if m.outgoing else Gtk.Align.START)
             self.row.set_halign(Gtk.Align.FILL)
-            wrap = Gtk.Box(hexpand=True, halign=Gtk.Align.END if m.outgoing else Gtk.Align.START)
+            wrap = Gtk.Box(hexpand=True, halign=Gtk.Align.END if m.outgoing else Gtk.Align.START, spacing=6)
             wrap.append(col)
+            self.bubble_wrap = wrap
             self.row.append(wrap)
         else:
             self.row.append(col)
@@ -420,7 +423,18 @@ class MessageRow(Gtk.Box):
         reply.connect("clicked", lambda *_: self.view.start_reply(m))
         bar.append(reply)
         self.hover = bar
-        self.overlay.add_overlay(bar)
+        wrap = getattr(self, "bubble_wrap", None)
+        if wrap is not None:
+            # bubbles: beside the bubble, in the empty side of the row, so it never covers text to select
+            bar.set_halign(Gtk.Align.CENTER)
+            bar.set_valign(Gtk.Align.CENTER)
+            bar.set_margin_end(0)
+            if m.outgoing:
+                wrap.prepend(bar)
+            else:
+                wrap.append(bar)
+        else:
+            self.overlay.add_overlay(bar)
 
     def _hover(self, inside: bool) -> None:
         if self.hover is not None:

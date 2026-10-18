@@ -36,7 +36,8 @@ def test_install_stages_everything(staged):
                 "share/icons/hicolor/256x256/apps/%s.png" % APPID, "share/man/man1/ward.1",
                 "share/bash-completion/completions/ward", "share/zsh/site-functions/_ward",
                 "share/fish/vendor_completions.d/ward.fish", "share/ward/icons", "lib/systemd/user/ward.service",
-                "share/ward/runit/run", "share/ward/runit/log/run"):
+                "share/ward/runit/run", "share/ward/runit/log/run",
+                "share/ward/sounds/message-new-instant.oga"):
         assert (usr / rel).exists(), rel
     assert os.access(usr / "bin/ward", os.X_OK) and os.access(usr / "share/ward/runit/run", os.X_OK)
     assert "exec /usr/bin/ward --background" in (usr / "share/ward/runit/run").read_text()
@@ -135,3 +136,31 @@ def test_extras_dirs(tmp_path, monkeypatch):
     import wardtestmod
 
     assert wardtestmod.X == 1
+
+
+def test_version_spellings_per_format():
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    try:
+        import set_version
+    finally:
+        sys.path.pop(0)
+    assert set_version.package_versions("1.1.0") == {"deb": "1.1.0", "alpine": "1.1.0", "plain": "1.1.0"}
+    assert set_version.package_versions("1.1.0-rc1") == {"deb": "1.1.0~rc1", "alpine": "1.1.0_rc1",
+                                                         "plain": "1.1.0rc1"}
+    if shutil.which("dpkg"):
+        assert subprocess.run(["dpkg", "--compare-versions", "1.1.0~rc1", "lt", "1.1.0"]).returncode == 0
+
+
+def test_set_version_everywhere(tmp_path):
+    for rel in ("ward/__init__.py", "README.md", "CHANGELOG.md", "data/ward.1", "po/ward.pot",
+                "data/%s.metainfo.xml" % APPID, "tools/set_version.py", "tools/check_version.py"):
+        dest = tmp_path / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(os.path.join(ROOT, rel), dest)
+    run = [sys.executable, str(tmp_path / "tools/set_version.py")]
+    subprocess.run([*run, "9.8.7-rc2", "--note", "Testing"], check=True, capture_output=True)
+    subprocess.run([sys.executable, str(tmp_path / "tools/check_version.py"), "v9.8.7-rc2"], check=True,
+                   capture_output=True)
+    assert (tmp_path / "README.md").read_text().startswith("# Ward v9.8.7-rc2")
+    assert "## v9.8.7-rc2" in (tmp_path / "CHANGELOG.md").read_text()
+    assert subprocess.run([*run, "nonsense"], capture_output=True).returncode == 2

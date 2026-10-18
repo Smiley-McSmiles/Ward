@@ -7,7 +7,7 @@ import logging
 import os
 from collections import OrderedDict
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import deps, paths, schema, util
 from ..core.models import AccountItem
@@ -69,6 +69,8 @@ def spec_row(spec: schema.Spec, value, on_change) -> Gtk.Widget | None:
         if value:
             row.set_subtitle(value)
         return row
+    if spec.type == "sound":
+        return _sound_row(spec, title, value, on_change)
     if spec.type in ("str", "list", "time_range"):
         text = ", ".join(value) if isinstance(value, list) else str(value or "")
         if spec.type == "list" and value and all(len(v) <= 4 for v in value):
@@ -95,6 +97,68 @@ def spec_row(spec: schema.Spec, value, on_change) -> Gtk.Widget | None:
         row.connect("apply", apply)
         return row
     return None
+
+
+def _sound_row(spec: schema.Spec, title: str, value, on_change) -> Gtk.Widget:
+    """A notification sound: the system's default, or an audio file chosen with a file chooser."""
+    row = Adw.ActionRow(title=title)
+    current = [str(value or spec.default)]
+
+    def describe() -> None:
+        v = current[0]
+        row.set_subtitle(_("Default") if v == spec.default else os.path.basename(v) if os.path.isabs(v) else v)
+        row.set_tooltip_text(v if os.path.isabs(v) else None)
+        reset.set_visible(v != spec.default)
+
+    def set_value(v: str) -> None:
+        current[0] = v
+        describe()
+        on_change(v)
+
+    def play(*_a) -> None:
+        app = Gio.Application.get_default()
+        if app is not None and hasattr(app, "play_sound"):
+            app.play_sound(current[0])
+
+    def choose(*_a) -> None:
+        dialog = Gtk.FileDialog(title=_("Choose a sound"))
+        audio = Gtk.FileFilter(name=_("Sounds"))
+        for mime in ("audio/ogg", "audio/x-vorbis+ogg", "audio/x-wav", "audio/wav", "audio/x-flac", "audio/flac",
+                     "audio/mpeg", "audio/opus"):
+            audio.add_mime_type(mime)
+        for pattern in ("*.oga", "*.ogg", "*.opus", "*.wav", "*.flac", "*.mp3"):
+            audio.add_pattern(pattern)
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(audio)
+        dialog.set_filters(filters)
+        dialog.set_default_filter(audio)
+        if os.path.isabs(current[0]) and os.path.exists(current[0]):
+            dialog.set_initial_file(Gio.File.new_for_path(current[0]))
+
+        def done(d, res):
+            try:
+                f = d.open_finish(res)
+            except GLib.Error:
+                return      # cancelled
+            if f is not None and f.get_path():
+                set_value(f.get_path())
+                play()
+        dialog.open(row.get_root(), None, done)
+
+    preview = Gtk.Button(icon_name="media-playback-start-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
+                         tooltip_text=_("Play"))
+    preview.connect("clicked", play)
+    pick = Gtk.Button(icon_name="document-open-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
+                      tooltip_text=_("Choose a sound file…"))
+    pick.connect("clicked", choose)
+    reset = Gtk.Button(icon_name="edit-undo-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
+                       tooltip_text=_("Use the default sound"))
+    reset.connect("clicked", lambda *_: set_value(spec.default))
+    for b in (preview, pick, reset):
+        row.add_suffix(b)
+    row.set_activatable_widget(pick)
+    describe()
+    return row
 
 
 def build_groups(page: Adw.PreferencesPage, specs: list[tuple[str, schema.Spec]], get, set_,

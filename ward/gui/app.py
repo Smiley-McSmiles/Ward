@@ -23,6 +23,39 @@ log = logging.getLogger("ward.gui")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+SOUND_EXTENSIONS = (".oga", ".ogg", ".wav")
+
+
+def _data_dirs() -> list[str]:
+    home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return [home, *(os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")]
+
+
+def sound_theme_has(name: str) -> bool:
+    """Whether a sound theme (freedesktop, or one following it) has this sound, so playing it by name works."""
+    for d in _data_dirs():
+        base = os.path.join(d, "sounds")
+        if not os.path.isdir(base):
+            continue
+        for theme in os.listdir(base):
+            for sub in ("stereo", ""):
+                if any(os.path.isfile(os.path.join(base, theme, sub, name + ext)) for ext in SOUND_EXTENSIONS):
+                    return True
+    return False
+
+
+def bundled_sound(name: str) -> str:
+    """The copy of a freedesktop sound that Ward ships (share/ward/sounds), or ""."""
+    if not name or "/" in name:
+        return ""
+    share = paths.share_dir()
+    for ext in SOUND_EXTENSIONS:
+        path = os.path.join(share, "sounds", name + ext) if share else ""
+        if path and os.path.isfile(path):
+            return path
+    return ""
+
+
 class WardApplication(Adw.Application):
     __gtype_name__ = "WardApplication"
 
@@ -343,8 +376,21 @@ class WardApplication(Adw.Application):
         self.core.notifier.chat_read(chat)
 
     def play_sound(self, name: str) -> None:
+        """A freedesktop sound by name, from the sound theme.  Systems without the theme (Void, minimal installs)
+        get the copy Ward ships in share/ward/sounds."""
         if not name:
             return
+        if os.path.isabs(name):         # a file chosen in the preferences
+            if os.path.isfile(name):
+                self._play_file(name)
+                return
+            name = "message-new-instant"
+        if not sound_theme_has(name):
+            # Ward ships one sound: it stands in for the others (contact requests) too
+            path = bundled_sound(name) or bundled_sound("message-new-instant")
+            if path:
+                self._play_file(path)
+                return
         try:
             import gi
 
@@ -364,6 +410,31 @@ class WardApplication(Adw.Application):
                 subprocess.Popen([player, "-i", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except OSError:
                 pass
+
+    def _play_file(self, path: str) -> None:
+        try:
+            import gi
+
+            gi.require_version("GSound", "1.0")
+            from gi.repository import GSound
+
+            if not hasattr(self, "_gsound"):
+                self._gsound = GSound.Context()
+                self._gsound.init()
+            self._gsound.play_simple({GSound.ATTR_MEDIA_FILENAME: path})
+            return
+        except Exception:
+            pass
+        # PipeWire, PulseAudio, libcanberra, then GStreamer (which plays .oga on its own, even with plain ALSA)
+        for cmd in (["pw-play", path], ["paplay", path], ["canberra-gtk-play", "-f", path],
+                    ["gst-play-1.0", "--no-interactive", "-q", path], ["ogg123", "-q", path]):
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return
+                except OSError:
+                    continue
+        log.info("no program to play %s (install pipewire, pulseaudio-utils or gst-plugins-base)", path)
 
     def _open_chat(self, chat_id: str) -> None:
         self.activate()
