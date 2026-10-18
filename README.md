@@ -85,7 +85,7 @@ out, and talk OMEMO 2 only.
 ### Optional extras
 
 GtkSourceView 5 (code highlighting), libspelling (spell check), libsecret (passwords in the system keyring), GnuPG
-(OpenPGP), Pillow (smaller images), segno (QR codes), linkify-it-py (better link detection) and the GStreamer media
+(OpenPGP), Pillow (smaller images), linkify-it-py (better link detection) and the GStreamer media
 plugins (video and audio). `ward --check` lists what you have.
 
 ## Running in the background, systemd and runit

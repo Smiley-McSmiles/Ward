@@ -121,22 +121,22 @@ pyver() {   # py311 style prefix for FreeBSD and NetBSD package names
 packages() {
     case "$(pm_name)" in
         apt-get) REQ="python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-slixmpp python3-markdown-it python3-cryptography"
-                 OPT="gir1.2-gtksource-5 gir1.2-spelling-1 gir1.2-secret-1 python3-pil python3-segno python3-linkify-it python3-mdit-py-plugins python3-pip gnupg libgtk-4-media-gstreamer desktop-file-utils" ;;
+                 OPT="gir1.2-gtksource-5 gir1.2-spelling-1 gir1.2-secret-1 python3-pil python3-linkify-it python3-mdit-py-plugins python3-pip gnupg libgtk-4-media-gstreamer desktop-file-utils" ;;
         dnf) REQ="python3 python3-gobject gobject-introspection cairo-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
-             OPT="gtksourceview5 libspelling libsecret python3-pillow python3-segno python3-linkify-it-py python3-mdit-py-plugins python3-pip gnupg2 gstreamer1-plugins-good desktop-file-utils" ;;
+             OPT="gtksourceview5 libspelling libsecret python3-pillow python3-linkify-it-py python3-mdit-py-plugins python3-pip gnupg2 gstreamer1-plugins-good desktop-file-utils" ;;
         zypper) REQ="python3 python3-gobject typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 python3-slixmpp python3-markdown-it-py python3-cryptography"
-                OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-segno python3-linkify-it-py python3-pip gpg2 desktop-file-utils" ;;
+                OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-linkify-it-py python3-pip gpg2 desktop-file-utils" ;;
         pacman) REQ="python python-gobject gtk4 libadwaita python-slixmpp python-markdown-it-py python-cryptography"
-                OPT="gtksourceview5 libspelling libsecret python-pillow python-segno python-linkify-it-py python-mdit_py_plugins python-pip gnupg gst-plugins-good desktop-file-utils" ;;
+                OPT="gtksourceview5 libspelling libsecret python-pillow python-linkify-it-py python-mdit_py_plugins python-pip gnupg gst-plugins-good desktop-file-utils" ;;
         xbps-install) REQ="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
                       OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-linkify-it-py python3-pip gnupg gst-plugins-good1 desktop-file-utils gtk-update-icon-cache" ;;
         apk) REQ="python3 py3-gobject3 gtk4.0 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
-             OPT="gtksourceview5 libspelling libsecret py3-pillow py3-segno py3-linkify-it-py py3-pip gnupg gst-plugins-good desktop-file-utils" ;;
+             OPT="gtksourceview5 libspelling libsecret py3-pillow py3-linkify-it-py py3-pip gnupg gst-plugins-good desktop-file-utils" ;;
         emerge) REQ="dev-lang/python dev-python/pygobject gui-libs/gtk gui-libs/libadwaita dev-python/slixmpp dev-python/markdown-it-py dev-python/cryptography"
                 OPT="x11-libs/gtksourceview:5 app-crypt/libsecret dev-python/pillow dev-python/linkify-it-py dev-python/pip app-crypt/gnupg" ;;
         pkg) P=$(pyver)
              REQ="python3 $P-gobject3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
-             OPT="gtksourceview5 libspelling libsecret $P-pillow $P-segno $P-linkify-it-py $P-pip gnupg desktop-file-utils" ;;
+             OPT="gtksourceview5 libspelling libsecret $P-pillow $P-linkify-it-py $P-pip gnupg desktop-file-utils" ;;
         pkg_add) REQ="python%3 py3-gobject3 gtk+4 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
                  OPT="gtksourceview5 libsecret py3-Pillow py3-pip gnupg desktop-file-utils" ;;
         pkgin) P=$(pyver)
@@ -246,7 +246,6 @@ vendor() {   # fetch modules the system lacks with pip into LIBDIR/vendor (VENDO
     if [ "$VENDOR" -eq 1 ]; then
         module mdit_py_plugins || want="$want mdit-py-plugins"
         module linkify_it || want="$want linkify-it-py"
-        module segno || want="$want segno"
         for m in omemo x3dh doubleratchet xeddsa; do module "$m" || want="$want $m>=1.0"; done
         module twomemo.etree || want="$want twomemo[xml]>=1.0"
         if [ "$LEGACY" -eq 1 ]; then module oldmemo.etree || want="$want oldmemo[xml]>=1.0"; fi

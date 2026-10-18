@@ -23,7 +23,6 @@ log = logging.getLogger("ward.extras")
 OMEMO = ["omemo>=1.0", "twomemo[xml]>=1.0", "x3dh>=1.0", "doubleratchet>=1.0", "xeddsa>=1.0"]
 # AGPL-3.0: only installed when the user asks for compatibility with today's apps (Conversations, Monal, Dino...)
 LEGACY_OMEMO = ["oldmemo[xml]>=1.0"]
-QR = ["segno"]
 
 
 def user_dir() -> str:

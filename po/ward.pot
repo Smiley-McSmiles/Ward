@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ward 1.0.0\n"
 "Report-Msgid-Bugs-To: https://github.com/smiley-mcsmiles/ward/issues\n"
-"POT-Creation-Date: 2026-10-18 02:49+0000\n"
+"POT-Creation-Date: 2026-10-18 04:09+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,13 +18,17 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
-#: ward/core/chat.py:404
+#: ward/core/chat.py:414
 msgid "Deleted message"
 msgstr ""
 
-#: ward/core/chat.py:685
+#: ward/core/chat.py:705
 #, python-format
 msgid "Encryption failed: %s"
+msgstr ""
+
+#: ward/core/chat.py:794
+msgid "The reaction could not be sent"
 msgstr ""
 
 #: ward/core/core.py:45
@@ -71,7 +75,7 @@ msgstr ""
 msgid "This is not supported"
 msgstr ""
 
-#: ward/core/core.py:347
+#: ward/core/core.py:352
 #, python-format
 msgid "Failed (%s)"
 msgstr ""
@@ -255,11 +259,15 @@ msgstr ""
 msgid "This message cannot be moderated"
 msgstr ""
 
-#: ward/core/names.py:22 ward/core/names.py:37 ward/gui/conversation.py:891
+#: ward/core/names.py:16 ward/gui/sidebar.py:518
+msgid "Note to self"
+msgstr ""
+
+#: ward/core/names.py:25 ward/core/names.py:40 ward/gui/conversation.py:909
 msgid "You"
 msgstr ""
 
-#: ward/core/names.py:27
+#: ward/core/names.py:30
 msgid "Someone"
 msgstr ""
 
@@ -294,106 +302,106 @@ msgstr ""
 msgid "%d new encrypted messages"
 msgstr ""
 
-#: ward/core/notify.py:117 ward/gui/message_row.py:328
+#: ward/core/notify.py:117 ward/gui/message_row.py:345
 msgid "File"
 msgstr ""
 
-#: ward/core/omemo/service.py:347
+#: ward/core/omemo/service.py:348
 msgid "legacy"
 msgstr ""
 
-#: ward/core/omemo/service.py:428
+#: ward/core/omemo/service.py:429
 msgid "Device names need OMEMO 2 only (turn off legacy OMEMO)"
 msgstr ""
 
-#: ward/core/omemo/service.py:514
+#: ward/core/omemo/service.py:515
 msgid "This file belongs to another account"
 msgstr ""
 
-#: ward/core/omemo/service.py:535
+#: ward/core/omemo/service.py:536
 #, python-format
 msgid ""
 "%s has no encryption keys. They need an app with OMEMO, or you can turn "
 "encryption off for this chat."
 msgstr ""
 
-#: ward/core/omemo/service.py:538
+#: ward/core/omemo/service.py:539
 #, python-format
 msgid "None of %s's devices is trusted yet. Verify or trust a device to write."
 msgstr ""
 
-#: ward/core/omemo/service.py:544
+#: ward/core/omemo/service.py:545
 #, python-format
 msgid "%s only has devices with legacy OMEMO, which is turned off"
 msgstr ""
 
-#: ward/core/omemo/service.py:546
+#: ward/core/omemo/service.py:547
 msgid ""
 "Some devices use legacy OMEMO, which is turned off: they won't get your "
 "messages"
 msgstr ""
 
-#: ward/core/omemo/service.py:547
+#: ward/core/omemo/service.py:548
 msgid ""
 "Some devices use legacy OMEMO: only the text is encrypted, reactions and "
 "replies are not"
 msgstr ""
 
-#: ward/core/omemo/service.py:564
+#: ward/core/omemo/service.py:565
 msgid "Private messages in groups cannot be encrypted"
 msgstr ""
 
-#: ward/core/omemo/service.py:582
+#: ward/core/omemo/service.py:587
 #, python-format
 msgid ""
 "Not sent: %s has no trusted device that can receive encrypted messages. "
 "Check the contact's devices, or turn encryption off for this chat."
 msgstr ""
 
-#: ward/core/omemo/service.py:586
+#: ward/core/omemo/service.py:591
 msgid "Not sent: decide about the new devices first"
 msgstr ""
 
-#: ward/core/omemo/service.py:603
+#: ward/core/omemo/service.py:614
 msgid ""
 "Not sent: nobody else in this group can read encrypted messages yet. Invite "
 "people first, or turn encryption off for this group."
 msgstr ""
 
-#: ward/core/omemo/service.py:605
+#: ward/core/omemo/service.py:616
 msgid "Not sent: nothing could be encrypted for the recipients"
 msgstr ""
 
-#: ward/core/omemo/service.py:653
+#: ward/core/omemo/service.py:664
 msgid "Encryption is not ready yet on this device"
 msgstr ""
 
-#: ward/core/omemo/service.py:659
+#: ward/core/omemo/service.py:670
 msgid "Can't decrypt: this group does not show who sent the message"
 msgstr ""
 
-#: ward/core/omemo/service.py:668
+#: ward/core/omemo/service.py:679
 msgid "This message uses legacy OMEMO, which is not installed here"
 msgstr ""
 
-#: ward/core/omemo/service.py:674
+#: ward/core/omemo/service.py:685
 msgid "Sent from this account before this device was added"
 msgstr ""
 
-#: ward/core/omemo/service.py:676
+#: ward/core/omemo/service.py:687
 msgid "This message was not encrypted for this device"
 msgstr ""
 
-#: ward/core/omemo/service.py:679
+#: ward/core/omemo/service.py:690
 msgid "Sent from a device you distrusted; not shown"
 msgstr ""
 
-#: ward/core/omemo/service.py:683
+#: ward/core/omemo/service.py:694
 #, python-format
 msgid "Could not decrypt this message (%s)"
 msgstr ""
 
-#: ward/core/omemo/service.py:701
+#: ward/core/omemo/service.py:712
 #, python-format
 msgid "Rejected an encrypted message: %s"
 msgstr ""
@@ -563,75 +571,71 @@ msgstr ""
 msgid "The server did not answer in time"
 msgstr ""
 
-#: ward/deps.py:235
+#: ward/deps.py:246
 msgid "Python 3.11 or newer"
 msgstr ""
 
-#: ward/deps.py:237
+#: ward/deps.py:248
 msgid "PyGObject"
 msgstr ""
 
-#: ward/deps.py:238
+#: ward/deps.py:249
 msgid "GTK 4.12 or newer"
 msgstr ""
 
-#: ward/deps.py:239
+#: ward/deps.py:250
 msgid "libadwaita 1.4 or newer"
 msgstr ""
 
-#: ward/deps.py:240
+#: ward/deps.py:251
 msgid "slixmpp 1.8 or newer (XMPP)"
 msgstr ""
 
-#: ward/deps.py:241
+#: ward/deps.py:252
 msgid "markdown-it-py (Markdown)"
 msgstr ""
 
-#: ward/deps.py:242
+#: ward/deps.py:253
 msgid "cryptography (encrypted files)"
 msgstr ""
 
-#: ward/deps.py:243
+#: ward/deps.py:254
 msgid "OMEMO 2 encryption (python-omemo, twomemo)"
 msgstr ""
 
-#: ward/deps.py:244
+#: ward/deps.py:255
 msgid "Legacy OMEMO 0.3 for today's apps (oldmemo, AGPL-3.0)"
 msgstr ""
 
-#: ward/deps.py:246
+#: ward/deps.py:257
 msgid "OpenPGP (GnuPG)"
 msgstr ""
 
-#: ward/deps.py:247
+#: ward/deps.py:258
 msgid "Code highlighting and Markdown composer (GtkSourceView 5)"
 msgstr ""
 
-#: ward/deps.py:249
+#: ward/deps.py:260
 msgid "Spell check (libspelling)"
 msgstr ""
 
-#: ward/deps.py:250
+#: ward/deps.py:261
 msgid "System keyring (libsecret)"
 msgstr ""
 
-#: ward/deps.py:251
+#: ward/deps.py:262
 msgid "Image resizing and metadata stripping (Pillow)"
 msgstr ""
 
-#: ward/deps.py:252
+#: ward/deps.py:263
 msgid "GdkPixbuf is used without it"
 msgstr ""
 
-#: ward/deps.py:253
-msgid "QR codes (segno)"
-msgstr ""
-
-#: ward/deps.py:254
+#: ward/deps.py:264
 msgid "Better link detection (linkify-it-py)"
 msgstr ""
 
-#: ward/deps.py:255
+#: ward/deps.py:265
 msgid "Reading QR codes from images (zbar)"
 msgstr ""
 
@@ -704,66 +708,67 @@ msgstr ""
 msgid "Finish"
 msgstr ""
 
-#: ward/gui/app.py:95
+#: ward/gui/app.py:98
 msgid "Ward could not start"
 msgstr ""
 
-#: ward/gui/app.py:95 ward/gui/app.py:162 ward/gui/sidebar.py:64
+#: ward/gui/app.py:98 ward/gui/app.py:165 ward/gui/sidebar.py:64
+#: ward/gui/tray.py:249
 msgid "Quit"
 msgstr ""
 
-#: ward/gui/app.py:161
+#: ward/gui/app.py:164
 msgid "Quit Ward?"
 msgstr ""
 
-#: ward/gui/app.py:161
+#: ward/gui/app.py:164
 msgid "You won't get messages until you start it again."
 msgstr ""
 
-#: ward/gui/app.py:162 ward/gui/composer.py:584 ward/gui/conversation.py:582
-#: ward/gui/conversation.py:745 ward/gui/conversation.py:754
-#: ward/gui/conversation.py:806 ward/gui/conversation.py:823
-#: ward/gui/conversation.py:851 ward/gui/details.py:195 ward/gui/details.py:205
+#: ward/gui/app.py:165 ward/gui/composer.py:592 ward/gui/conversation.py:600
+#: ward/gui/conversation.py:763 ward/gui/conversation.py:772
+#: ward/gui/conversation.py:824 ward/gui/conversation.py:841
+#: ward/gui/conversation.py:869 ward/gui/details.py:195 ward/gui/details.py:205
 #: ward/gui/details.py:308 ward/gui/dialogs.py:37 ward/gui/dialogs.py:817
-#: ward/gui/members.py:187 ward/gui/message_row.py:344 ward/gui/prefs.py:470
-#: ward/gui/prefs.py:514 ward/gui/trust.py:242 ward/gui/trust.py:323
-#: ward/gui/trust.py:341 ward/gui/window.py:310
+#: ward/gui/members.py:187 ward/gui/message_row.py:361 ward/gui/prefs.py:470
+#: ward/gui/prefs.py:514 ward/gui/trust.py:254 ward/gui/trust.py:335
+#: ward/gui/trust.py:353 ward/gui/window.py:310
 msgid "Cancel"
 msgstr ""
 
-#: ward/gui/app.py:197
+#: ward/gui/app.py:202
 #, python-format
 msgid "custom.css: %s"
 msgstr ""
 
-#: ward/gui/app.py:227
+#: ward/gui/app.py:232
 msgid "Receive messages in the background"
 msgstr ""
 
-#: ward/gui/app.py:288 ward/gui/sidebar.py:280 ward/gui/window.py:31
+#: ward/gui/app.py:331 ward/gui/sidebar.py:280 ward/gui/window.py:31
 msgid "Mark as read"
 msgstr ""
 
-#: ward/gui/app.py:398
+#: ward/gui/app.py:441
 msgid "Some fingerprints in the link did not match"
 msgstr ""
 
-#: ward/gui/app.py:400 ward/gui/trust.py:268
+#: ward/gui/app.py:443 ward/gui/trust.py:280
 #, python-format
 msgid "Verified %d devices"
 msgstr ""
 
-#: ward/gui/app.py:448
+#: ward/gui/app.py:491
 msgid "A private, modern XMPP client"
 msgstr ""
 
-#: ward/gui/app.py:453
+#: ward/gui/app.py:496
 msgid ""
 "Legacy OMEMO support (oldmemo) is licensed under the AGPL-3.0 and is "
 "optional."
 msgstr ""
 
-#: ward/gui/chatrow.py:84 ward/gui/conversation.py:374
+#: ward/gui/chatrow.py:84 ward/gui/conversation.py:392
 #, python-format
 msgid "%s is typing…"
 msgstr ""
@@ -789,121 +794,121 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
-#: ward/gui/chatrow.py:173 ward/gui/conversation.py:385 ward/gui/details.py:70
+#: ward/gui/chatrow.py:173 ward/gui/conversation.py:403 ward/gui/details.py:70
 #, python-format
 msgid "Last seen %s"
 msgstr ""
 
-#: ward/gui/composer.py:97
+#: ward/gui/composer.py:105
 msgid "Cancel (Escape)"
 msgstr ""
 
-#: ward/gui/composer.py:105
+#: ward/gui/composer.py:113
 msgid "Bold (Ctrl+B)"
 msgstr ""
 
-#: ward/gui/composer.py:106
+#: ward/gui/composer.py:114
 msgid "Italic (Ctrl+I)"
 msgstr ""
 
-#: ward/gui/composer.py:107
+#: ward/gui/composer.py:115
 msgid "Strikethrough"
 msgstr ""
 
-#: ward/gui/composer.py:108 ward/gui/render.py:169
+#: ward/gui/composer.py:116 ward/gui/render.py:174
 msgid "Code"
 msgstr ""
 
-#: ward/gui/composer.py:109 ward/gui/conversation.py:704
+#: ward/gui/composer.py:117 ward/gui/conversation.py:722
 msgid "Quote"
 msgstr ""
 
-#: ward/gui/composer.py:118 ward/gui/window.py:38
+#: ward/gui/composer.py:126 ward/gui/window.py:38
 msgid "Send a file"
 msgstr ""
 
-#: ward/gui/composer.py:145
+#: ward/gui/composer.py:153
 msgid "Emoji"
 msgstr ""
 
-#: ward/gui/composer.py:151 ward/gui/composer.py:584 ward/gui/tools.py:69
+#: ward/gui/composer.py:159 ward/gui/composer.py:592 ward/gui/tools.py:69
 #: ward/gui/window.py:36
 msgid "Send"
 msgstr ""
 
-#: ward/gui/composer.py:211 ward/gui/composer.py:441
+#: ward/gui/composer.py:219 ward/gui/composer.py:449
 msgid "Edit message"
 msgstr ""
 
-#: ward/gui/composer.py:213
+#: ward/gui/composer.py:221
 msgid "Encrypted message"
 msgstr ""
 
-#: ward/gui/composer.py:215
+#: ward/gui/composer.py:223
 #, python-format
 msgid "Message %s"
 msgstr ""
 
-#: ward/gui/composer.py:217 ward/gui/dialogs.py:381
+#: ward/gui/composer.py:225 ward/gui/dialogs.py:381
 msgid "Message"
 msgstr ""
 
-#: ward/gui/composer.py:429
+#: ward/gui/composer.py:437
 #, python-format
 msgid "Reply to %s"
 msgstr ""
 
-#: ward/gui/composer.py:481
+#: ward/gui/composer.py:489
 msgid "Could not edit"
 msgstr ""
 
-#: ward/gui/composer.py:491 ward/gui/conversation.py:689
+#: ward/gui/composer.py:499 ward/gui/conversation.py:707
 msgid "Could not send"
 msgstr ""
 
-#: ward/gui/composer.py:514
+#: ward/gui/composer.py:522
 #, python-format
 msgid "/%s only works in groups"
 msgstr ""
 
-#: ward/gui/composer.py:520
+#: ward/gui/composer.py:528
 msgid "Could not change the topic"
 msgstr ""
 
-#: ward/gui/composer.py:523 ward/gui/dialogs.py:369
+#: ward/gui/composer.py:531 ward/gui/dialogs.py:369
 #, python-format
 msgid "Invited %s"
 msgstr ""
 
-#: ward/gui/composer.py:526 ward/gui/members.py:194
+#: ward/gui/composer.py:534 ward/gui/members.py:194
 #, python-format
 msgid "Could not remove %s"
 msgstr ""
 
-#: ward/gui/composer.py:529 ward/gui/members.py:200
+#: ward/gui/composer.py:537 ward/gui/members.py:200
 #, python-format
 msgid "Could not ban %s"
 msgstr ""
 
-#: ward/gui/composer.py:534
+#: ward/gui/composer.py:542
 #, python-format
 msgid "Usage: /%s …"
 msgstr ""
 
-#: ward/gui/composer.py:539
+#: ward/gui/composer.py:547
 msgid "Send files"
 msgstr ""
 
-#: ward/gui/composer.py:556
+#: ward/gui/composer.py:564
 #, python-format
 msgid "Could not send %s"
 msgstr ""
 
-#: ward/gui/composer.py:584
+#: ward/gui/composer.py:592
 msgid "Send this image?"
 msgstr ""
 
-#: ward/gui/conversation.py:80 ward/gui/conversation.py:468
+#: ward/gui/conversation.py:80 ward/gui/conversation.py:486
 #: ward/gui/members.py:134
 msgid "Details"
 msgstr ""
@@ -947,91 +952,92 @@ msgstr ""
 msgid "Could not load messages"
 msgstr ""
 
-#: ward/gui/conversation.py:374
+#: ward/gui/conversation.py:392
 #, python-format
 msgid "%s are typing…"
 msgstr ""
 
-#: ward/gui/conversation.py:377
+#: ward/gui/conversation.py:395
 msgid "Not joined"
 msgstr ""
 
-#: ward/gui/conversation.py:381
+#: ward/gui/conversation.py:399
 #, python-format
 msgid "%d member"
 msgid_plural "%d members"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ward/gui/conversation.py:425
+#: ward/gui/conversation.py:443
 #, python-format
 msgid "%s is not in your contacts. Messages from strangers can be spam."
 msgstr ""
 
-#: ward/gui/conversation.py:427 ward/gui/conversation.py:851
+#: ward/gui/conversation.py:445 ward/gui/conversation.py:869
 #: ward/gui/details.py:195 ward/gui/dialogs.py:676 ward/schema.py:218
 msgid "Block"
 msgstr ""
 
-#: ward/gui/conversation.py:428 ward/gui/dialogs.py:686
+#: ward/gui/conversation.py:446 ward/gui/dialogs.py:686
 msgid "Accept"
 msgstr ""
 
-#: ward/gui/conversation.py:430 ward/gui/sidebar.py:450 ward/gui/sidebar.py:452
-#: ward/gui/sidebar.py:535 ward/gui/welcome.py:152 ward/gui/welcome.py:172
+#: ward/gui/conversation.py:448 ward/gui/sidebar.py:459 ward/gui/sidebar.py:461
+#: ward/gui/sidebar.py:552 ward/gui/tray.py:215 ward/gui/welcome.py:152
+#: ward/gui/welcome.py:172
 msgid "Connecting…"
 msgstr ""
 
-#: ward/gui/conversation.py:430 ward/gui/sidebar.py:446 ward/gui/sidebar.py:533
+#: ward/gui/conversation.py:448 ward/gui/sidebar.py:455 ward/gui/sidebar.py:550
 msgid "Not connected"
 msgstr ""
 
-#: ward/gui/conversation.py:431
+#: ward/gui/conversation.py:449
 msgid "Enter your password to connect."
 msgstr ""
 
-#: ward/gui/conversation.py:431
+#: ward/gui/conversation.py:449
 msgid "You are offline."
 msgstr ""
 
-#: ward/gui/conversation.py:433
+#: ward/gui/conversation.py:451
 msgid "Messages you write are sent when you are back online."
 msgstr ""
 
-#: ward/gui/conversation.py:435 ward/gui/dialogs.py:600 ward/gui/prefs.py:357
+#: ward/gui/conversation.py:453 ward/gui/dialogs.py:600 ward/gui/prefs.py:357
 msgid "Connect"
 msgstr ""
 
-#: ward/gui/conversation.py:438
+#: ward/gui/conversation.py:456
 msgid "You are not in this group right now"
 msgstr ""
 
-#: ward/gui/conversation.py:439 ward/gui/dialogs.py:218 ward/gui/dialogs.py:375
+#: ward/gui/conversation.py:457 ward/gui/dialogs.py:218 ward/gui/dialogs.py:375
 msgid "Join"
 msgstr ""
 
-#: ward/gui/conversation.py:442
+#: ward/gui/conversation.py:460
 msgid ""
 "Encryption support is not installed yet, so messages can't be sent encrypted."
 msgstr ""
 
-#: ward/gui/conversation.py:444 ward/gui/conversation.py:449
+#: ward/gui/conversation.py:462 ward/gui/conversation.py:467
 msgid "Send unencrypted"
 msgstr ""
 
-#: ward/gui/conversation.py:445 ward/gui/dialogs.py:925
+#: ward/gui/conversation.py:463 ward/gui/dialogs.py:925
 msgid "Install"
 msgstr ""
 
-#: ward/gui/conversation.py:447
+#: ward/gui/conversation.py:465
 msgid "Devices"
 msgstr ""
 
-#: ward/gui/conversation.py:451
+#: ward/gui/conversation.py:469
 msgid "Turn off encryption"
 msgstr ""
 
-#: ward/gui/conversation.py:455
+#: ward/gui/conversation.py:473
 #, python-format
 msgid ""
 "%(name)s has a new device. Check it if you want to be sure who reads your "
@@ -1042,262 +1048,262 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: ward/gui/conversation.py:458
+#: ward/gui/conversation.py:476
 msgid "Review"
 msgstr ""
 
-#: ward/gui/conversation.py:469 ward/gui/dialogs.py:406
+#: ward/gui/conversation.py:487 ward/gui/dialogs.py:406
 msgid "Search"
 msgstr ""
 
-#: ward/gui/conversation.py:471 ward/gui/members.py:28
+#: ward/gui/conversation.py:489 ward/gui/members.py:28
 msgid "Invite…"
 msgstr ""
 
-#: ward/gui/conversation.py:474 ward/gui/sidebar.py:278
+#: ward/gui/conversation.py:492 ward/gui/sidebar.py:278
 msgid "Unpin"
 msgstr ""
 
-#: ward/gui/conversation.py:474 ward/gui/sidebar.py:278
+#: ward/gui/conversation.py:492 ward/gui/sidebar.py:278
 msgid "Pin"
 msgstr ""
 
-#: ward/gui/conversation.py:476 ward/gui/sidebar.py:281
+#: ward/gui/conversation.py:494 ward/gui/sidebar.py:281
 msgid "Unmute"
 msgstr ""
 
-#: ward/gui/conversation.py:479
+#: ward/gui/conversation.py:497
 msgid "For an hour"
 msgstr ""
 
-#: ward/gui/conversation.py:480
+#: ward/gui/conversation.py:498
 msgid "For a day"
 msgstr ""
 
-#: ward/gui/conversation.py:481
+#: ward/gui/conversation.py:499
 msgid "Until I unmute"
 msgstr ""
 
-#: ward/gui/conversation.py:482 ward/gui/members.py:141 ward/gui/sidebar.py:281
+#: ward/gui/conversation.py:500 ward/gui/members.py:141 ward/gui/sidebar.py:281
 msgid "Mute"
 msgstr ""
 
-#: ward/gui/conversation.py:483 ward/gui/sidebar.py:282
+#: ward/gui/conversation.py:501 ward/gui/sidebar.py:282
 msgid "Unarchive"
 msgstr ""
 
-#: ward/gui/conversation.py:483 ward/gui/sidebar.py:282
+#: ward/gui/conversation.py:501 ward/gui/sidebar.py:282
 msgid "Archive"
 msgstr ""
 
-#: ward/gui/conversation.py:486 ward/gui/details.py:118
+#: ward/gui/conversation.py:504 ward/gui/details.py:118
 msgid "Clear history…"
 msgstr ""
 
-#: ward/gui/conversation.py:488 ward/gui/details.py:278 ward/gui/sidebar.py:283
+#: ward/gui/conversation.py:506 ward/gui/details.py:278 ward/gui/sidebar.py:283
 msgid "Leave group"
 msgstr ""
 
-#: ward/gui/conversation.py:490 ward/gui/sidebar.py:283
+#: ward/gui/conversation.py:508 ward/gui/sidebar.py:283
 msgid "Close chat"
 msgstr ""
 
-#: ward/gui/conversation.py:508
+#: ward/gui/conversation.py:526
 msgid "Only the people in this chat can read the messages, not the servers."
 msgstr ""
 
-#: ward/gui/conversation.py:510 ward/gui/prefs.py:50 ward/gui/prefs.py:58
+#: ward/gui/conversation.py:528 ward/gui/prefs.py:50 ward/gui/prefs.py:58
 #: ward/gui/prefs.py:63 ward/gui/prefs.py:66
 msgid "Default"
 msgstr ""
 
-#: ward/gui/conversation.py:513 ward/schema.py:108 ward/schema.py:144
+#: ward/gui/conversation.py:531 ward/schema.py:108 ward/schema.py:144
 #: ward/schema.py:187 ward/schema.py:237 ward/schema.py:293
 msgid "Off"
 msgstr ""
 
-#: ward/gui/conversation.py:524
+#: ward/gui/conversation.py:542
 msgid "Devices and keys…"
 msgstr ""
 
-#: ward/gui/conversation.py:580
+#: ward/gui/conversation.py:598
 msgid "Open this link?"
 msgstr ""
 
-#: ward/gui/conversation.py:580
+#: ward/gui/conversation.py:598
 #, python-format
 msgid ""
 "The link text says “%(text)s” but it opens\n"
 "%(uri)s"
 msgstr ""
 
-#: ward/gui/conversation.py:582 ward/gui/message_row.py:349
+#: ward/gui/conversation.py:600 ward/gui/message_row.py:366
 msgid "Open"
 msgstr ""
 
-#: ward/gui/conversation.py:591
+#: ward/gui/conversation.py:609
 msgid "Edit history"
 msgstr ""
 
-#: ward/gui/conversation.py:598
+#: ward/gui/conversation.py:616
 msgid "Current"
 msgstr ""
 
-#: ward/gui/conversation.py:626
+#: ward/gui/conversation.py:644
 msgid "The original message is not available"
 msgstr ""
 
-#: ward/gui/conversation.py:654 ward/gui/conversation.py:683
+#: ward/gui/conversation.py:672 ward/gui/conversation.py:701
 msgid "Download failed"
 msgstr ""
 
-#: ward/gui/conversation.py:677 ward/gui/details.py:150
+#: ward/gui/conversation.py:695 ward/gui/details.py:150
 msgid "Saved"
 msgstr ""
 
-#: ward/gui/conversation.py:686
+#: ward/gui/conversation.py:704
 msgid "Could not react"
 msgstr ""
 
-#: ward/gui/conversation.py:701 ward/gui/message_row.py:244
-#: ward/gui/message_row.py:399
+#: ward/gui/conversation.py:719 ward/gui/message_row.py:246
+#: ward/gui/message_row.py:419
 msgid "Reply"
 msgstr ""
 
-#: ward/gui/conversation.py:703
+#: ward/gui/conversation.py:721
 msgid "Copy text"
 msgstr ""
 
-#: ward/gui/conversation.py:705
+#: ward/gui/conversation.py:723
 msgid "Forward…"
 msgstr ""
 
-#: ward/gui/conversation.py:707 ward/gui/trust.py:56
+#: ward/gui/conversation.py:725 ward/gui/trust.py:63
 msgid "Copy link"
 msgstr ""
 
-#: ward/gui/conversation.py:711
+#: ward/gui/conversation.py:729
 msgid "Edit"
 msgstr ""
 
-#: ward/gui/conversation.py:712
+#: ward/gui/conversation.py:730
 msgid "Delete for me"
 msgstr ""
 
-#: ward/gui/conversation.py:714
+#: ward/gui/conversation.py:732
 msgid "Delete for everyone"
 msgstr ""
 
-#: ward/gui/conversation.py:716
+#: ward/gui/conversation.py:734
 msgid "Remove as moderator…"
 msgstr ""
 
-#: ward/gui/conversation.py:719 ward/gui/dialogs.py:516
+#: ward/gui/conversation.py:737 ward/gui/dialogs.py:516
 msgid "Message details"
 msgstr ""
 
-#: ward/gui/conversation.py:739
+#: ward/gui/conversation.py:757
 msgid "Could not delete"
 msgstr ""
 
-#: ward/gui/conversation.py:743
+#: ward/gui/conversation.py:761
 msgid "Delete for everyone?"
 msgstr ""
 
-#: ward/gui/conversation.py:744
+#: ward/gui/conversation.py:762
 msgid ""
 "The message is deleted on all devices. Apps that don't support deleting keep "
 "showing it."
 msgstr ""
 
-#: ward/gui/conversation.py:745 ward/gui/details.py:308 ward/gui/dialogs.py:860
+#: ward/gui/conversation.py:763 ward/gui/details.py:308 ward/gui/dialogs.py:860
 msgid "Delete"
 msgstr ""
 
-#: ward/gui/conversation.py:748 ward/gui/details.py:300 ward/gui/members.py:186
+#: ward/gui/conversation.py:766 ward/gui/details.py:300 ward/gui/members.py:186
 msgid "Reason (optional)"
 msgstr ""
 
-#: ward/gui/conversation.py:752
+#: ward/gui/conversation.py:770
 msgid "Could not remove"
 msgstr ""
 
-#: ward/gui/conversation.py:753
+#: ward/gui/conversation.py:771
 msgid "Remove this message?"
 msgstr ""
 
-#: ward/gui/conversation.py:753
+#: ward/gui/conversation.py:771
 msgid "It is removed for everyone in the group."
 msgstr ""
 
-#: ward/gui/conversation.py:754 ward/gui/details.py:205 ward/gui/details.py:383
+#: ward/gui/conversation.py:772 ward/gui/details.py:205 ward/gui/details.py:383
 #: ward/gui/dialogs.py:817 ward/gui/members.py:192 ward/gui/prefs.py:514
-#: ward/gui/trust.py:242
+#: ward/gui/trust.py:254
 msgid "Remove"
 msgstr ""
 
-#: ward/gui/conversation.py:763
+#: ward/gui/conversation.py:781
 msgid "Could not forward"
 msgstr ""
 
-#: ward/gui/conversation.py:764
+#: ward/gui/conversation.py:782
 #, python-format
 msgid "Forwarded to %s"
 msgstr ""
 
-#: ward/gui/conversation.py:765
+#: ward/gui/conversation.py:783
 msgid "Forward to…"
 msgstr ""
 
-#: ward/gui/conversation.py:805
+#: ward/gui/conversation.py:823
 msgid "Clear history?"
 msgstr ""
 
-#: ward/gui/conversation.py:805
+#: ward/gui/conversation.py:823
 msgid "Messages are deleted from this computer only."
 msgstr ""
 
-#: ward/gui/conversation.py:806 ward/gui/prefs.py:241 ward/gui/tools.py:36
+#: ward/gui/conversation.py:824 ward/gui/prefs.py:241 ward/gui/tools.py:36
 msgid "Clear"
 msgstr ""
 
-#: ward/gui/conversation.py:819
+#: ward/gui/conversation.py:837
 msgid "Could not leave"
 msgstr ""
 
-#: ward/gui/conversation.py:821
+#: ward/gui/conversation.py:839
 #, python-format
 msgid "Leave %s?"
 msgstr ""
 
-#: ward/gui/conversation.py:822
+#: ward/gui/conversation.py:840
 msgid ""
 "You stop getting its messages. You can join again later if the group allows "
 "it."
 msgstr ""
 
-#: ward/gui/conversation.py:823
+#: ward/gui/conversation.py:841
 msgid "Leave"
 msgstr ""
 
-#: ward/gui/conversation.py:834
+#: ward/gui/conversation.py:852
 msgid "Could not join"
 msgstr ""
 
-#: ward/gui/conversation.py:844
+#: ward/gui/conversation.py:862
 msgid "Report as spam"
 msgstr ""
 
-#: ward/gui/conversation.py:850 ward/gui/details.py:193
+#: ward/gui/conversation.py:868 ward/gui/details.py:193
 #, python-format
 msgid "Block %s?"
 msgstr ""
 
-#: ward/gui/conversation.py:850
+#: ward/gui/conversation.py:868
 msgid "You won't get messages or requests from them."
 msgstr ""
 
-#: ward/gui/conversation.py:887
+#: ward/gui/conversation.py:905
 msgid "Nothing found"
 msgstr ""
 
@@ -1309,11 +1315,12 @@ msgstr ""
 msgid "Copy address"
 msgstr ""
 
-#: ward/gui/details.py:68 ward/gui/dialogs.py:542
+#: ward/gui/details.py:68 ward/gui/dialogs.py:542 ward/gui/tray.py:245
 msgid "Status"
 msgstr ""
 
-#: ward/gui/details.py:70 ward/gui/sidebar.py:538
+#: ward/gui/details.py:70 ward/gui/sidebar.py:555 ward/gui/tray.py:55
+#: ward/gui/tray.py:215
 msgid "Offline"
 msgstr ""
 
@@ -1446,7 +1453,7 @@ msgstr ""
 msgid "End-to-end encrypted"
 msgstr ""
 
-#: ward/gui/details.py:254 ward/gui/dialogs.py:534 ward/gui/message_row.py:224
+#: ward/gui/details.py:254 ward/gui/dialogs.py:534 ward/gui/message_row.py:226
 msgid "Not encrypted"
 msgstr ""
 
@@ -1751,7 +1758,7 @@ msgstr ""
 msgid "Device trust"
 msgstr ""
 
-#: ward/gui/dialogs.py:540 ward/gui/message_row.py:334
+#: ward/gui/dialogs.py:540 ward/gui/message_row.py:351
 msgid "Failed"
 msgstr ""
 
@@ -1809,7 +1816,7 @@ msgstr ""
 msgid "Image"
 msgstr ""
 
-#: ward/gui/dialogs.py:573 ward/gui/message_row.py:353
+#: ward/gui/dialogs.py:573 ward/gui/message_row.py:370
 msgid "Save as…"
 msgstr ""
 
@@ -1821,7 +1828,7 @@ msgstr ""
 msgid "Copy image"
 msgstr ""
 
-#: ward/gui/dialogs.py:591 ward/gui/widgets.py:238
+#: ward/gui/dialogs.py:591 ward/gui/widgets.py:246
 msgid "Copied"
 msgstr ""
 
@@ -2063,16 +2070,24 @@ msgstr ""
 msgid "Progress"
 msgstr ""
 
-#: ward/gui/dialogs.py:943
+#: ward/gui/dialogs.py:944
+msgid "The encryption libraries are installed but do not load:"
+msgstr ""
+
+#: ward/gui/dialogs.py:945
+msgid "Installing again replaces them with a fresh copy."
+msgstr ""
+
+#: ward/gui/dialogs.py:947
 #, python-format
 msgid "pip is missing: %s"
 msgstr ""
 
-#: ward/gui/dialogs.py:958 ward/gui/dialogs.py:968
+#: ward/gui/dialogs.py:962 ward/gui/dialogs.py:972
 msgid "Restart Ward"
 msgstr ""
 
-#: ward/gui/dialogs.py:969
+#: ward/gui/dialogs.py:973
 msgid "Installed. Restart Ward to turn on encryption."
 msgstr ""
 
@@ -2179,69 +2194,73 @@ msgstr ""
 msgid "Encrypted with %s"
 msgstr ""
 
-#: ward/gui/message_row.py:227
+#: ward/gui/message_row.py:222
+msgid "Kept on this device only: you have no other device that can read it"
+msgstr ""
+
+#: ward/gui/message_row.py:229
 msgid "edited"
 msgstr ""
 
-#: ward/gui/message_row.py:248
+#: ward/gui/message_row.py:250
 msgid "Go to the original message"
 msgstr ""
 
-#: ward/gui/message_row.py:254
+#: ward/gui/message_row.py:256
 msgid "This message was deleted"
 msgstr ""
 
-#: ward/gui/message_row.py:254
+#: ward/gui/message_row.py:256
 msgid "You deleted this message"
 msgstr ""
 
-#: ward/gui/message_row.py:255
+#: ward/gui/message_row.py:257
 msgid "Removed by a moderator"
 msgstr ""
 
-#: ward/gui/message_row.py:255
+#: ward/gui/message_row.py:257
 msgid "Deleted"
 msgstr ""
 
-#: ward/gui/message_row.py:278
+#: ward/gui/message_row.py:280
 msgid "This message was not encrypted, although this chat is"
 msgstr ""
 
-#: ward/gui/message_row.py:280
+#: ward/gui/message_row.py:282
 msgid "Spoiler"
 msgstr ""
 
-#: ward/gui/message_row.py:291
+#: ward/gui/message_row.py:297
 msgid "Show more"
 msgstr ""
 
-#: ward/gui/message_row.py:332
+#: ward/gui/message_row.py:308
+msgid "Show less"
+msgstr ""
+
+#: ward/gui/message_row.py:349
 msgid "encrypted"
 msgstr ""
 
-#: ward/gui/message_row.py:358
+#: ward/gui/message_row.py:375
 msgid "Download"
 msgstr ""
 
-#: ward/gui/message_row.py:377
+#: ward/gui/message_row.py:394
 msgid "Not sent"
 msgstr ""
 
-#: ward/gui/message_row.py:379 ward/gui/sidebar.py:447
+#: ward/gui/message_row.py:396 ward/gui/sidebar.py:456
 msgid "Retry"
 msgstr ""
 
-#: ward/gui/message_row.py:391
+#: ward/gui/message_row.py:408
 #, python-format
 msgid "React with %s"
 msgstr ""
 
-#: ward/gui/message_row.py:394
+#: ward/gui/message_row.py:411
 msgid "Add reaction"
-msgstr ""
-
-#: ward/gui/message_row.py:402
-msgid "More"
 msgstr ""
 
 #: ward/gui/prefs.py:164
@@ -2260,7 +2279,7 @@ msgstr ""
 msgid "No accounts"
 msgstr ""
 
-#: ward/gui/prefs.py:198
+#: ward/gui/prefs.py:198 ward/gui/trust.py:93 ward/gui/trust.py:94
 msgid "Install encryption support…"
 msgstr ""
 
@@ -2272,7 +2291,7 @@ msgstr ""
 msgid "Downloads the OMEMO libraries into Ward's own folder"
 msgstr ""
 
-#: ward/gui/prefs.py:204 ward/gui/trust.py:74
+#: ward/gui/prefs.py:204 ward/gui/trust.py:81
 msgid "Your devices"
 msgstr ""
 
@@ -2356,7 +2375,7 @@ msgstr ""
 msgid "Reconnect now"
 msgstr ""
 
-#: ward/gui/prefs.py:338 ward/gui/sidebar.py:507
+#: ward/gui/prefs.py:338 ward/gui/sidebar.py:523
 msgid "Profile…"
 msgstr ""
 
@@ -2388,7 +2407,7 @@ msgstr ""
 msgid "Stop trusting"
 msgstr ""
 
-#: ward/gui/prefs.py:417 ward/gui/trust.py:210 ward/schema.py:294
+#: ward/gui/prefs.py:417 ward/gui/trust.py:222 ward/schema.py:294
 msgid "OpenPGP key"
 msgstr ""
 
@@ -2451,15 +2470,15 @@ msgid ""
 "shows it too."
 msgstr ""
 
-#: ward/gui/prefs.py:473 ward/gui/trust.py:279
+#: ward/gui/prefs.py:473 ward/gui/trust.py:291
 msgid "Import an OpenPGP key"
 msgstr ""
 
-#: ward/gui/prefs.py:475 ward/gui/trust.py:98
+#: ward/gui/prefs.py:475 ward/gui/trust.py:110
 msgid "OpenPGP keys"
 msgstr ""
 
-#: ward/gui/prefs.py:495 ward/gui/trust.py:292
+#: ward/gui/prefs.py:495 ward/gui/trust.py:304
 #, python-format
 msgid "Imported %d keys"
 msgstr ""
@@ -2470,11 +2489,11 @@ msgid ""
 "on the server."
 msgstr ""
 
-#: ward/gui/render.py:157
+#: ward/gui/render.py:162
 msgid "Spoiler: click to reveal"
 msgstr ""
 
-#: ward/gui/render.py:170
+#: ward/gui/render.py:175
 msgid "Copy"
 msgstr ""
 
@@ -2482,7 +2501,7 @@ msgstr ""
 msgid "Accounts and status"
 msgstr ""
 
-#: ward/gui/sidebar.py:54 ward/gui/window.py:22
+#: ward/gui/sidebar.py:54 ward/gui/tray.py:248 ward/gui/window.py:22
 msgid "Preferences"
 msgstr ""
 
@@ -2547,66 +2566,70 @@ msgstr ""
 msgid "Add people by their address, like alex@example.org"
 msgstr ""
 
-#: ward/gui/sidebar.py:414
+#: ward/gui/sidebar.py:423
 #, python-format
 msgid "%d account"
 msgid_plural "%d accounts"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ward/gui/sidebar.py:442 ward/gui/sidebar.py:537
+#: ward/gui/sidebar.py:451 ward/gui/sidebar.py:554
 msgid "Password needed"
 msgstr ""
 
-#: ward/gui/sidebar.py:443 ward/schema.py:122
+#: ward/gui/sidebar.py:452 ward/schema.py:122
 msgid "Enter"
 msgstr ""
 
-#: ward/gui/sidebar.py:450 ward/gui/welcome.py:171
+#: ward/gui/sidebar.py:459 ward/gui/welcome.py:171
 msgid "Looking up the server…"
 msgstr ""
 
-#: ward/gui/sidebar.py:451 ward/gui/welcome.py:171
+#: ward/gui/sidebar.py:460 ward/gui/welcome.py:171
 msgid "Securing the connection…"
 msgstr ""
 
-#: ward/gui/sidebar.py:451 ward/gui/welcome.py:172
+#: ward/gui/sidebar.py:460 ward/gui/welcome.py:172
 msgid "Signing in…"
 msgstr ""
 
-#: ward/gui/sidebar.py:452
+#: ward/gui/sidebar.py:461
 msgid "Syncing…"
 msgstr ""
 
-#: ward/gui/sidebar.py:480
+#: ward/gui/sidebar.py:489
 msgid "All accounts"
 msgstr ""
 
-#: ward/gui/sidebar.py:493
+#: ward/gui/sidebar.py:503
 msgid "Show only this account's chats"
 msgstr ""
 
-#: ward/gui/sidebar.py:503
+#: ward/gui/sidebar.py:513
 msgid "Status message"
 msgstr ""
 
-#: ward/gui/sidebar.py:514
+#: ward/gui/sidebar.py:519
+msgid "Notes, links and files for yourself, on all your devices"
+msgstr ""
+
+#: ward/gui/sidebar.py:531
 msgid "Add account…"
 msgstr ""
 
-#: ward/gui/sidebar.py:517
+#: ward/gui/sidebar.py:534
 msgid "Manage accounts…"
 msgstr ""
 
-#: ward/gui/sidebar.py:529
+#: ward/gui/sidebar.py:546
 msgid "Disabled"
 msgstr ""
 
-#: ward/gui/sidebar.py:550
+#: ward/gui/sidebar.py:567
 msgid "Could not change your status"
 msgstr ""
 
-#: ward/gui/sidebar.py:556
+#: ward/gui/sidebar.py:573
 #, python-format
 msgid "%d request"
 msgid_plural "%d requests"
@@ -2663,207 +2686,233 @@ msgstr ""
 msgid "Extended information"
 msgstr ""
 
-#: ward/gui/tray.py:133
+#: ward/gui/tray.py:54
+msgid "Available"
+msgstr ""
+
+#: ward/gui/tray.py:54
+msgid "Away"
+msgstr ""
+
+#: ward/gui/tray.py:54
+msgid "Busy"
+msgstr ""
+
+#: ward/gui/tray.py:55
+msgid "Away for a while"
+msgstr ""
+
+#: ward/gui/tray.py:215
+msgid "Connected"
+msgstr ""
+
+#: ward/gui/tray.py:216
 #, python-format
 msgid "%d unread"
 msgstr ""
 
-#: ward/gui/trust.py:50
-msgid "Install “segno” to show a QR code"
+#: ward/gui/tray.py:243
+msgid "Show Ward"
 msgstr ""
 
-#: ward/gui/trust.py:79
+#: ward/gui/tray.py:246
+msgid "Mute sounds"
+msgstr ""
+
+#: ward/gui/trust.py:57
+msgid "This link is too long for a QR code"
+msgstr ""
+
+#: ward/gui/trust.py:86
 msgid "OMEMO devices"
 msgstr ""
 
-#: ward/gui/trust.py:80
+#: ward/gui/trust.py:87
 msgid ""
 "Compare fingerprints with what the other person's app shows, in person or on "
 "a call, then mark the device as verified"
 msgstr ""
 
-#: ward/gui/trust.py:84
-msgid ""
-"OMEMO is not installed. Install python-omemo, twomemo and python-x3dh to use "
-"encryption."
+#: ward/gui/trust.py:92
+msgid "Encryption support is not installed yet"
 msgstr ""
 
-#: ward/gui/trust.py:86
+#: ward/gui/trust.py:97
 msgid "Verify with a link"
 msgstr ""
 
-#: ward/gui/trust.py:87
+#: ward/gui/trust.py:99
 msgid "Paste an xmpp: link with fingerprints, or scan one"
 msgstr ""
 
-#: ward/gui/trust.py:91
+#: ward/gui/trust.py:103
 msgid "Show this device's QR code"
 msgstr ""
 
-#: ward/gui/trust.py:92
+#: ward/gui/trust.py:104
 msgid "Scan it with your other devices to verify this one"
 msgstr ""
 
-#: ward/gui/trust.py:102
+#: ward/gui/trust.py:114
 msgid "Import their key from a file (for example exported from GPGMan)"
 msgstr ""
 
-#: ward/gui/trust.py:106
+#: ward/gui/trust.py:118
 msgid "Manage"
 msgstr ""
 
-#: ward/gui/trust.py:107
+#: ward/gui/trust.py:119
 msgid "Remove inactive devices"
 msgstr ""
 
-#: ward/gui/trust.py:108
+#: ward/gui/trust.py:120
 msgid "Devices that have not been used for a long time"
 msgstr ""
 
-#: ward/gui/trust.py:111
+#: ward/gui/trust.py:123
 msgid "Export trust decisions…"
 msgstr ""
 
-#: ward/gui/trust.py:112
+#: ward/gui/trust.py:124
 msgid "A passphrase-protected file to move them to another computer"
 msgstr ""
 
-#: ward/gui/trust.py:115
+#: ward/gui/trust.py:127
 msgid "Import trust decisions…"
 msgstr ""
 
-#: ward/gui/trust.py:137
+#: ward/gui/trust.py:149
 msgid "No OMEMO devices"
 msgstr ""
 
-#: ward/gui/trust.py:138
+#: ward/gui/trust.py:150
 msgid "Their app doesn't support OMEMO, or they never used it"
 msgstr ""
 
-#: ward/gui/trust.py:142
+#: ward/gui/trust.py:154
 msgid "Connect to see devices"
 msgstr ""
 
-#: ward/gui/trust.py:151
+#: ward/gui/trust.py:163
 msgid "Your key"
 msgstr ""
 
-#: ward/gui/trust.py:151
+#: ward/gui/trust.py:163
 msgid "No key chosen"
 msgstr ""
 
-#: ward/gui/trust.py:152
+#: ward/gui/trust.py:164
 msgid "Choose or create one in Preferences > Accounts"
 msgstr ""
 
-#: ward/gui/trust.py:165
+#: ward/gui/trust.py:177
 msgid "No OpenPGP key"
 msgstr ""
 
-#: ward/gui/trust.py:166
+#: ward/gui/trust.py:178
 msgid "They have not published one; you can import a key file"
 msgstr ""
 
-#: ward/gui/trust.py:171
+#: ward/gui/trust.py:183
 msgid "This device"
 msgstr ""
 
-#: ward/gui/trust.py:171
+#: ward/gui/trust.py:183
 #, python-format
 msgid "Device %d"
 msgstr ""
 
-#: ward/gui/trust.py:174
+#: ward/gui/trust.py:186
 msgid "this device"
 msgstr ""
 
-#: ward/gui/trust.py:176
+#: ward/gui/trust.py:188
 msgid "inactive"
 msgstr ""
 
-#: ward/gui/trust.py:178
+#: ward/gui/trust.py:190
 #, python-format
 msgid "last used %s"
 msgstr ""
 
-#: ward/gui/trust.py:192
+#: ward/gui/trust.py:204
 msgid "Remove this device"
 msgstr ""
 
-#: ward/gui/trust.py:198
+#: ward/gui/trust.py:210
 msgid "Name of this device"
 msgstr ""
 
-#: ward/gui/trust.py:211
+#: ward/gui/trust.py:223
 msgid "published"
 msgstr ""
 
-#: ward/gui/trust.py:211
+#: ward/gui/trust.py:223
 msgid "not published (imported)"
 msgstr ""
 
-#: ward/gui/trust.py:240
+#: ward/gui/trust.py:252
 msgid "Remove this device?"
 msgstr ""
 
-#: ward/gui/trust.py:241
+#: ward/gui/trust.py:253
 msgid ""
 "It stops getting messages. If it is still in use, it adds itself again when "
 "it goes online."
 msgstr ""
 
-#: ward/gui/trust.py:251
+#: ward/gui/trust.py:263
 #, python-format
 msgid "Removed %d devices"
 msgstr ""
 
-#: ward/gui/trust.py:256
+#: ward/gui/trust.py:268
 msgid "This link has no fingerprints"
 msgstr ""
 
-#: ward/gui/trust.py:266
+#: ward/gui/trust.py:278
 #, python-format
 msgid ""
 "%d fingerprints did not match! Someone may be pretending to be this person."
 msgstr ""
 
-#: ward/gui/trust.py:276
+#: ward/gui/trust.py:288
 msgid "Verify this device"
 msgstr ""
 
-#: ward/gui/trust.py:297 ward/gui/trust.py:337
+#: ward/gui/trust.py:309 ward/gui/trust.py:349
 msgid "Passphrase"
 msgstr ""
 
-#: ward/gui/trust.py:319
+#: ward/gui/trust.py:331
 msgid "Exported"
 msgstr ""
 
-#: ward/gui/trust.py:322
+#: ward/gui/trust.py:334
 msgid "Export trust decisions"
 msgstr ""
 
-#: ward/gui/trust.py:322
+#: ward/gui/trust.py:334
 msgid "Choose a passphrase for the file"
 msgstr ""
 
-#: ward/gui/trust.py:323
+#: ward/gui/trust.py:335
 msgid "Export"
 msgstr ""
 
-#: ward/gui/trust.py:326 ward/gui/trust.py:340
+#: ward/gui/trust.py:338 ward/gui/trust.py:352
 msgid "Import trust decisions"
 msgstr ""
 
-#: ward/gui/trust.py:340
+#: ward/gui/trust.py:352
 msgid "Enter the file's passphrase"
 msgstr ""
 
-#: ward/gui/trust.py:341
+#: ward/gui/trust.py:353
 msgid "Import"
 msgstr ""
 
-#: ward/gui/trust.py:344
+#: ward/gui/trust.py:356
 #, python-format
 msgid "Imported %d decisions"
 msgstr ""
@@ -3084,24 +3133,24 @@ msgstr ""
 msgid "Create an account first; then the invite adds the contact"
 msgstr ""
 
-#: ward/gui/widgets.py:121
+#: ward/gui/widgets.py:129
 msgid "Today"
 msgstr ""
 
-#: ward/gui/widgets.py:123
+#: ward/gui/widgets.py:131
 msgid "Yesterday"
 msgstr ""
 
-#: ward/gui/widgets.py:153
+#: ward/gui/widgets.py:161
 msgid "just now"
 msgstr ""
 
-#: ward/gui/widgets.py:155
+#: ward/gui/widgets.py:163
 #, python-format
 msgid "%d minutes ago"
 msgstr ""
 
-#: ward/gui/widgets.py:157
+#: ward/gui/widgets.py:165
 #, python-format
 msgid "%d hours ago"
 msgstr ""

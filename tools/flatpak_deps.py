@@ -18,7 +18,7 @@ import tempfile
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REQUIREMENTS = ["slixmpp>=1.8", "markdown-it-py>=2", "mdit-py-plugins", "linkify-it-py", "cryptography", "segno",
+REQUIREMENTS = ["slixmpp>=1.8", "markdown-it-py>=2", "mdit-py-plugins", "linkify-it-py", "cryptography",
                 "pillow", "omemo>=1.0", "twomemo[xml]>=1.0", "oldmemo[xml]>=1.0", "x3dh>=1.0", "doubleratchet>=1.0",
                 "xeddsa>=1.0"]
 ARCHES = {"x86_64": "manylinux_2_28_x86_64", "aarch64": "manylinux_2_28_aarch64"}

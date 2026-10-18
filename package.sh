@@ -93,7 +93,7 @@ build_tar() {
 
 # ---------------------------------------------------------------------------------------------- Debian
 DEB_DEPENDS="python3 (>= 3.11), python3-gi, gir1.2-gtk-4.0 (>= 4.12), gir1.2-adw-1 (>= 1.4), python3-slixmpp (>= 1.8), python3-markdown-it, python3-cryptography"
-DEB_RECOMMENDS="python3-pip, gir1.2-gtksource-5, gir1.2-secret-1, gnupg, python3-segno, python3-pil, python3-linkify-it, python3-mdit-py-plugins, libgtk-4-media-gstreamer, desktop-file-utils"
+DEB_RECOMMENDS="python3-pip, gir1.2-gtksource-5, gir1.2-secret-1, gnupg, python3-pil, python3-linkify-it, python3-mdit-py-plugins, libgtk-4-media-gstreamer, desktop-file-utils"
 DEB_SUGGESTS="gir1.2-spelling-1, zbar-tools"
 
 build_deb() {
@@ -160,7 +160,6 @@ Recommends:     (gtksourceview5 or typelib-1_0-GtkSource-5)
 Recommends:     (libsecret or typelib-1_0-Secret-1)
 Recommends:     (gnupg2 or gpg2)
 Recommends:     (python3-pillow or python3-Pillow)
-Recommends:     python3-segno
 Recommends:     python3-linkify-it-py
 Suggests:       libspelling
 
@@ -228,7 +227,7 @@ build_rpm() {
 # ---------------------------------------------------------------------------------------------- Arch
 ARCH_DEPENDS=(python python-gobject gtk4 libadwaita python-slixmpp python-markdown-it-py python-cryptography)
 ARCH_OPTDEPENDS=('python-pip: let Ward install the OMEMO libraries' 'gtksourceview5: code highlighting'
-                 'libsecret: keep passwords in the keyring' 'gnupg: OpenPGP encryption' 'python-segno: QR codes'
+                 'libsecret: keep passwords in the keyring' 'gnupg: OpenPGP encryption'
                  'python-pillow: smaller images' 'libspelling: spell check' 'python-linkify-it-py: link detection')
 
 recipe_arch() {

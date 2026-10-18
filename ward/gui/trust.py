@@ -17,19 +17,26 @@ log = logging.getLogger("ward.gui")
 
 
 def qr_texture(text: str, scale: int = 6) -> Gdk.Texture | None:
-    """A QR code as a texture (segno, when installed)."""
-    try:
-        import io
+    """A QR code as a texture, from Ward's own encoder (ward.qr): dark modules on white, with a quiet zone."""
+    from .. import qr
 
-        import segno
-    except ImportError:
-        return None
-    buf = io.BytesIO()
-    segno.make(text, error="m").save(buf, kind="png", scale=scale, border=2)
     try:
-        return Gdk.Texture.new_from_bytes(GLib.Bytes.new(buf.getvalue()))
-    except GLib.Error:
+        matrix = qr.qr_matrix(text)
+    except qr.QrError:
         return None
+    border = 4
+    n = len(matrix) + border * 2
+    size = n * scale
+    rows = []
+    for y in range(n):
+        line = bytearray()
+        for x in range(n):
+            my, mx = y - border, x - border
+            dark = 0 <= my < len(matrix) and 0 <= mx < len(matrix) and matrix[my][mx]
+            line += (b"\x00\x00\x00" if dark else b"\xff\xff\xff") * scale
+        rows.extend([bytes(line)] * scale)
+    data = GLib.Bytes.new(b"".join(rows))
+    return Gdk.MemoryTexture.new(size, size, Gdk.MemoryFormat.R8G8B8, data, size * 3)
 
 
 def share_dialog(parent: Gtk.Widget, title: str, link: str, description: str = "") -> None:
@@ -47,7 +54,7 @@ def share_dialog(parent: Gtk.Widget, title: str, link: str, description: str = "
         pic.set_halign(Gtk.Align.CENTER)
         box.append(pic)
     else:
-        box.append(widgets.label(_("Install “segno” to show a QR code"), ["dim-label"], 0.5, wrap=True))
+        box.append(widgets.label(_("This link is too long for a QR code"), ["dim-label"], 0.5, wrap=True))
     if description:
         box.append(widgets.label(description, ["dim-label"], 0.5, wrap=True))
     lbl = Gtk.Label(label=link, selectable=True, wrap=True, css_classes=["fingerprint", "caption"])

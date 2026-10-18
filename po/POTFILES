@@ -73,6 +73,7 @@ ward/i18n.py
 ward/log.py
 ward/main.py
 ward/paths.py
+ward/qr.py
 ward/schema.py
 ward/settings.py
 ward/util.py

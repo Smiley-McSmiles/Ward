@@ -2,8 +2,8 @@
 
 Ward needs only Python 3.11, PyGObject, GTK 4.12, libadwaita 1.4, slixmpp, markdown-it-py and cryptography.
 Everything else is optional and switches a feature on: the OMEMO libraries (encryption), gpg (OpenPGP),
-GtkSourceView (code highlighting and the Markdown composer), libspelling, libsecret (keyring), Pillow, segno (QR
-codes)...  `ward --check` prints this report; the app shows the same hints where a feature is unavailable.
+GtkSourceView (code highlighting and the Markdown composer), libspelling, libsecret (keyring), Pillow, linkify-it-py
+(link detection)...  `ward --check` prints this report; the app shows the same hints where a feature is unavailable.
 """
 
 from __future__ import annotations
@@ -28,38 +28,36 @@ PACKAGES: dict[str, dict[str, str]] = {
             "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it", "mdit": "python3-mdit-py-plugins",
             "linkify": "python3-linkify-it", "crypto": "python3-cryptography", "pillow": "python3-pil",
             "gpg": "gnupg", "media": "libgtk-4-media-gstreamer", "zbar": "zbar-tools", "pip": "python3-pip",
-            "omemo": "-", "segno": "python3-segno"},
+            "omemo": "-"},
     "dnf": {"python": "python3", "gi": "python3-gobject", "gtk": "gtk4", "adw": "libadwaita",
             "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
             "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it-py", "mdit": "python3-mdit-py-plugins",
             "linkify": "python3-linkify-it-py", "crypto": "python3-cryptography", "pillow": "python3-pillow",
             "gpg": "gnupg2", "media": "gstreamer1-plugins-good", "zbar": "zbar", "pip": "python3-pip",
-            "omemo": "-", "segno": "python3-segno"},
+            "omemo": "-"},
     "pacman": {"python": "python", "gi": "python-gobject", "gtk": "gtk4", "adw": "libadwaita",
                "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
                "slixmpp": "python-slixmpp", "markdown": "python-markdown-it-py", "mdit": "python-mdit_py_plugins",
                "linkify": "python-linkify-it-py", "crypto": "python-cryptography", "pillow": "python-pillow",
                "gpg": "gnupg", "media": "gst-plugins-good", "zbar": "zbar", "pip": "python-pip",
-               "omemo": "-", "segno": "python-segno"},
+               "omemo": "-"},
     "zypper": {"python": "python3", "gi": "python3-gobject", "gtk": "typelib-1_0-Gtk-4_0",
                "adw": "typelib-1_0-Adw-1", "source": "typelib-1_0-GtkSource-5",
                "spelling": "typelib-1_0-Spelling-1", "secret": "typelib-1_0-Secret-1",
                "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it-py",
                "mdit": "python3-mdit-py-plugins", "linkify": "python3-linkify-it-py",
                "crypto": "python3-cryptography", "pillow": "python3-Pillow", "gpg": "gpg2",
-               "media": "gstreamer-plugins-good", "zbar": "zbar", "pip": "python3-pip", "omemo": "-",
-               "segno": "python3-segno"},
+               "media": "gstreamer-plugins-good", "zbar": "zbar", "pip": "python3-pip", "omemo": "-"},
     "xbps": {"python": "python3", "gi": "python3-gobject", "gtk": "gtk4", "adw": "libadwaita",
              "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
              "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it-py", "mdit": "python3-mdit-py-plugins",
              "linkify": "python3-linkify-it-py", "crypto": "python3-cryptography", "pillow": "python3-Pillow",
-             "gpg": "gnupg", "media": "gst-plugins-good1", "zbar": "zbar", "pip": "python3-pip", "omemo": "-",
-             "segno": "-"},
+             "gpg": "gnupg", "media": "gst-plugins-good1", "zbar": "zbar", "pip": "python3-pip", "omemo": "-"},
     "apk": {"python": "python3", "gi": "py3-gobject3", "gtk": "gtk4.0", "adw": "libadwaita",
             "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
             "slixmpp": "py3-slixmpp", "markdown": "py3-markdown-it-py", "mdit": "py3-mdit-py-plugins",
             "linkify": "py3-linkify-it-py", "crypto": "py3-cryptography", "pillow": "py3-pillow", "gpg": "gnupg",
-            "media": "gst-plugins-good", "zbar": "zbar", "pip": "py3-pip", "omemo": "-", "segno": "py3-segno"},
+            "media": "gst-plugins-good", "zbar": "zbar", "pip": "py3-pip", "omemo": "-"},
     "emerge": {"python": "dev-lang/python", "gi": "dev-python/pygobject", "gtk": "gui-libs/gtk",
                "adw": "gui-libs/libadwaita", "source": "x11-libs/gtksourceview:5",
                "spelling": "app-text/libspelling", "secret": "app-crypt/libsecret",
@@ -67,24 +65,24 @@ PACKAGES: dict[str, dict[str, str]] = {
                "mdit": "dev-python/mdit-py-plugins", "linkify": "dev-python/linkify-it-py",
                "crypto": "dev-python/cryptography", "pillow": "dev-python/pillow", "gpg": "app-crypt/gnupg",
                "media": "media-plugins/gst-plugins-meta", "zbar": "media-gfx/zbar", "pip": "dev-python/pip",
-               "omemo": "-", "segno": "-"},
+               "omemo": "-"},
     "pkg": {"python": "python3", "gi": PY + "-gobject3", "gtk": "gtk4", "adw": "libadwaita",
             "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
             "slixmpp": PY + "-slixmpp", "markdown": PY + "-markdown-it-py", "mdit": PY + "-mdit-py-plugins",
             "linkify": PY + "-linkify-it-py", "crypto": PY + "-cryptography", "pillow": PY + "-pillow",
             "gpg": "gnupg", "media": "gstreamer1-plugins-good", "zbar": "zbar", "pip": PY + "-pip",
-            "omemo": "-", "segno": PY + "-segno"},
+            "omemo": "-"},
     "pkg_add": {"python": "python%3", "gi": "py3-gobject3", "gtk": "gtk+4", "adw": "libadwaita",
                 "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
                 "slixmpp": "py3-slixmpp", "markdown": "py3-markdown-it-py", "mdit": "py3-mdit-py-plugins",
                 "linkify": "py3-linkify-it-py", "crypto": "py3-cryptography", "pillow": "py3-Pillow",
                 "gpg": "gnupg", "media": "gstreamer1-plugins-good", "zbar": "zbar", "pip": "py3-pip",
-                "omemo": "-", "segno": "-"},
+                "omemo": "-"},
     "pkgin": {"python": "python311", "gi": PY + "-gobject3", "gtk": "gtk4", "adw": "libadwaita",
               "source": "gtksourceview5", "spelling": "-", "secret": "libsecret", "slixmpp": PY + "-slixmpp",
               "markdown": PY + "-markdown-it-py", "mdit": PY + "-mdit-py-plugins", "linkify": "-",
               "crypto": PY + "-cryptography", "pillow": PY + "-Pillow", "gpg": "gnupg2",
-              "media": "gst-plugins1-good", "zbar": "zbar", "pip": PY + "-pip", "omemo": "-", "segno": "-"},
+              "media": "gst-plugins1-good", "zbar": "zbar", "pip": PY + "-pip", "omemo": "-"},
 }
 
 INSTALL_CMD = {"apt": "sudo apt install", "dnf": "sudo dnf install", "pacman": "sudo pacman -S",
@@ -222,8 +220,6 @@ def have(name: str) -> bool:
         return _typelib("Secret", "1")[0]
     if name == "pillow":
         return _module("PIL")
-    if name == "segno":
-        return _module("segno")
     if name == "linkify":
         return _module("linkify_it")
     if name == "mdit":
@@ -265,7 +261,6 @@ def features() -> list[Feature]:
         Feature("secret", N_("System keyring (libsecret)"), have("secret"), "", ("secret",)),
         Feature("pillow", N_("Image resizing and metadata stripping (Pillow)"), have("pillow"),
                 N_("GdkPixbuf is used without it"), ("pillow",)),
-        Feature("segno", N_("QR codes (segno)"), have("segno"), "", ("segno",)),
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
     ]
