@@ -90,6 +90,7 @@ class MessageRow(Gtk.Box):
     # ------------------------------------------------------------------ building
     def _build(self, prev: MessageItem | None) -> None:
         m = self.msg
+        self.view._layout_changing()
         widgets.clear(self.separator)
         widgets.clear(self.row)
         if self.hover is not None:
