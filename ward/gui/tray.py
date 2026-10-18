@@ -10,7 +10,7 @@ import os
 from gi.repository import Gio, GLib
 
 from .. import APP_ID, APP_NAME
-from ..i18n import _
+from ..i18n import N_, _
 
 log = logging.getLogger("ward.tray")
 
@@ -49,8 +49,10 @@ MENU_XML = """<node><interface name="com.canonical.dbusmenu">
 <signal name="ItemsPropertiesUpdated"><arg type="a(ia{sv})"/><arg type="a(ias)"/></signal>
 </interface></node>"""
 
-ITEMS = ((1, "show"), (4, "preferences"), (2, "separator"), (3, "quit"))
-LABELS = {"show": "Show Ward", "preferences": "Preferences", "quit": "Quit"}
+# dbusmenu ids: fixed ones, the status entries from 10 up
+SHOW, QUIT, SEPARATOR, PREFERENCES, STATUS, MUTE, SEPARATOR2 = 1, 3, 2, 4, 5, 6, 7
+STATUSES = (("available", N_("Available")), ("away", N_("Away")), ("dnd", N_("Busy")),
+            ("xa", N_("Away for a while")), ("offline", N_("Offline")))
 
 
 def register(bus, path: str, info, method_call, get_property) -> int:
@@ -232,13 +234,40 @@ class Tray:
         invocation.return_value(None)
 
     # ------------------------------------------------------------------ dbusmenu
-    def _item(self, item_id: int, kind: str) -> GLib.Variant:
-        if kind == "separator":
-            props = {"type": GLib.Variant("s", "separator")}
-        else:
-            props = {"label": GLib.Variant("s", _(LABELS[kind])),
-                     "enabled": GLib.Variant("b", True), "visible": GLib.Variant("b", True)}
-        return GLib.Variant("(ia{sv}av)", (item_id, props, []))
+    def _tree(self) -> list[tuple[int, dict, list]]:
+        """The menu, as Gajim has it: show, status, mute sounds, preferences, quit."""
+        current = self.app.common_show()
+        statuses = [(10 + i, {"label": _(label), "toggle-type": "radio", "toggle-state": int(show == current)}, [])
+                    for i, (show, label) in enumerate(STATUSES)]
+        muted = not self.app.core.settings["notify.sounds"] if self.app.core is not None else False
+        return [(SHOW, {"label": _("Show Ward")}, []),
+                (SEPARATOR, {"type": "separator"}, []),
+                (STATUS, {"label": _("Status"), "children-display": "submenu"}, statuses),
+                (MUTE, {"label": _("Mute sounds"), "toggle-type": "checkmark", "toggle-state": int(muted)}, []),
+                (SEPARATOR2, {"type": "separator"}, []),
+                (PREFERENCES, {"label": _("Preferences")}, []),
+                (QUIT, {"label": _("Quit")}, [])]
+
+    def _variant(self, item: tuple[int, dict, list]) -> GLib.Variant:
+        item_id, props, children = item
+        return GLib.Variant("(ia{sv}av)", (item_id, {k: _wrap(v) for k, v in props.items()},
+                                           [self._variant(c) for c in children]))
+
+    def _flat(self) -> list[tuple[int, dict]]:
+        out = []
+        for item_id, props, children in self._tree():
+            out.append((item_id, props))
+            out.extend((c[0], c[1]) for c in children)
+        return out
+
+    def menu_changed(self) -> None:
+        """Status or sounds changed: hosts fetch the menu again."""
+        self.revision += 1
+        try:
+            self.bus.emit_signal(None, "/MenuBar", "com.canonical.dbusmenu", "LayoutUpdated",
+                                 GLib.Variant("(ui)", (self.revision, 0)))
+        except GLib.Error:
+            pass
 
     def _menu_prop(self, _conn, _sender, _path, _iface, name):
         return {"Version": GLib.Variant("u", 3), "TextDirection": GLib.Variant("s", "ltr"),
@@ -246,15 +275,12 @@ class Tray:
 
     def _menu_call(self, _conn, _sender, _path, _iface, method, params, invocation) -> None:
         if method == "GetLayout":
-            children = [self._item(i, k) for i, k in ITEMS]
+            children = [self._variant(i) for i in self._tree()]
             root = (0, {"children-display": GLib.Variant("s", "submenu")}, children)
             invocation.return_value(GLib.Variant("(u(ia{sv}av))", (self.revision, root)))
         elif method == "GetGroupProperties":
             ids = params.unpack()[0]
-            out = []
-            for i, k in ITEMS:
-                if not ids or i in ids:
-                    out.append((i, self._item(i, k).unpack()[1]))
+            out = [(i, p) for i, p in self._flat() if not ids or i in ids]
             invocation.return_value(GLib.Variant("(a(ia{sv}))", (
                 [(i, {k: _wrap(v) for k, v in p.items()}) for i, p in out],)))
         elif method == "GetProperty":
@@ -277,15 +303,23 @@ class Tray:
             invocation.return_value(None)
 
     def _clicked(self, item_id: int) -> None:
-        if item_id == 1:
+        if item_id == SHOW:
             self.app.activate()
-        elif item_id == 4:
+        elif item_id == PREFERENCES:
             self.app.show_preferences()
-        elif item_id == 3:
+        elif item_id == QUIT:
             self.app.quit_app(force=True)
+        elif item_id == MUTE and self.app.core is not None:
+            settings = self.app.core.settings
+            settings.set("notify.sounds", not settings["notify.sounds"])
+            self.menu_changed()
+        elif 10 <= item_id < 10 + len(STATUSES):
+            self.app.set_all_presence(STATUSES[item_id - 10][0])
 
 
 def _wrap(v) -> GLib.Variant:
     if isinstance(v, bool):
         return GLib.Variant("b", v)
+    if isinstance(v, int):
+        return GLib.Variant("i", v)
     return GLib.Variant("s", str(v))

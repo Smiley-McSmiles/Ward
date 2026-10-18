@@ -37,6 +37,13 @@ class FakeApp:
             settings = Settings()
         self.core = Core()
         self.window = None
+        self.presence = []
+
+    def common_show(self):
+        return "away"
+
+    def set_all_presence(self, show):
+        self.presence.append(show)
 
 
 def test_tray_registers_and_follows_state(bus):
@@ -55,7 +62,8 @@ def test_tray_registers_and_follows_state(bus):
                                            None, None)
     try:
         assert _iterate(lambda: tray.watcher_running(bus))
-        t = tray.Tray(FakeApp())
+        app = FakeApp()
+        t = tray.Tray(app)
         assert _iterate(lambda: registered), "the item registered with the watcher"
         name = registered[0][1]
         assert name.startswith("org.kde.StatusNotifierItem-")
@@ -83,7 +91,15 @@ def test_tray_registers_and_follows_state(bus):
         assert p["Status"] == "NeedsAttention" and p["AttentionIconName"].endswith("-unread")
         layout = call("/MenuBar", "com.canonical.dbusmenu", "GetLayout", GLib.Variant("(iias)", (0, -1, [])))
         labels = [c[1].get("label") for c in layout[1][2]]
-        assert "Quit" in labels and "Show Ward" in labels
+        assert "Quit" in labels and "Show Ward" in labels and "Mute sounds" in labels
+        status = next(c for c in layout[1][2] if c[1].get("label") == "Status")
+        radios = {c[1]["label"]: c[1]["toggle-state"] for c in status[2]}
+        assert radios["Away"] == 1 and radios["Available"] == 0 and len(radios) == 5
+        t._clicked(10)
+        assert app.presence == ["available"]
+        sounds = app.core.settings["notify.sounds"]
+        t._clicked(tray.MUTE)
+        assert app.core.settings["notify.sounds"] is not sounds
         t.close()
     finally:
         Gio.bus_unown_name(owner)

@@ -188,6 +188,8 @@ class WardApplication(Adw.Application):
         self.quit()
 
     def _on_setting(self, settings, key: str) -> None:
+        if key == "notify.sounds" and self.tray is not None:
+            self.tray.menu_changed()
         if key == "general.background":
             self._hold(settings[key])
         elif key == "general.autostart":
@@ -277,7 +279,22 @@ class WardApplication(Adw.Application):
                 self._watched_accounts.add(acc.id)
                 acc.connect("notify::state", lambda *_: self._update_tray_state())
                 acc.connect("notify::enabled", lambda *_: self._update_tray_state())
+                acc.connect("notify::show", lambda *_: self.tray.menu_changed() if self.tray is not None else None)
         self._update_tray_state()
+
+    def common_show(self) -> str:
+        """The status all enabled accounts share, or "" when they differ."""
+        shows = {a.show if a.state == "online" or a.show == "offline" else "offline"
+                 for a in self.core.accounts.list() if a.enabled} if self.core is not None else set()
+        return shows.pop() if len(shows) == 1 else ""
+
+    def set_all_presence(self, show: str) -> None:
+        """From the tray: the same status for every enabled account."""
+        if self.core is None:
+            return
+        for acc in self.core.accounts.list():
+            if acc.enabled:
+                aio.spawn(self.core.set_presence(acc, show))
 
     def connection_state(self) -> str:
         """online when any enabled account is connected, connecting while one tries, offline otherwise."""
