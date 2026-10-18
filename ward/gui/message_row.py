@@ -19,7 +19,7 @@ from ..core.models import (
     MessageItem,
 )
 from ..i18n import _
-from . import render, style, widgets
+from . import render, style, video, widgets
 
 GROUP_WINDOW = 5 * 60 * 1000
 STATUS_ICON = {STATUS_PENDING: ("ward-clock-symbolic", "Sending"), STATUS_SENT: ("ward-check-symbolic", "Sent"),
@@ -323,7 +323,7 @@ class MessageRow(Gtk.Box):
         path = att.local_path if att.local_path and os.path.exists(att.local_path) else ""
         thumb = att.thumbnail if att.thumbnail and os.path.exists(att.thumbnail) else ""
         if att.is_image and (path or thumb):
-            pic = Gtk.Picture.new_for_filename(thumb or path)
+            pic = Gtk.Picture.new_for_paintable(widgets.texture(thumb or path, widgets.IMAGE_PIXELS))
             pic.set_can_shrink(True)
             pic.set_content_fit(Gtk.ContentFit.COVER if hasattr(Gtk, "ContentFit") else 0)
             w = max(att.width or 320, 1)
@@ -337,10 +337,7 @@ class MessageRow(Gtk.Box):
             btn.connect("clicked", lambda *_: self.view.open_attachment(m, att))
             return btn
         if path and (att.is_audio or att.is_video):
-            vid = Gtk.Video.new_for_filename(path)
-            vid.set_size_request(320 if att.is_video else 280, 220 if att.is_video else -1)
-            vid.set_halign(Gtk.Align.START)
-            return vid
+            return video.attachment(path, att.is_video, lambda: self.view.save_attachment(m, att))
         card = Gtk.Box(spacing=10, css_classes=["attachment-card"], halign=Gtk.Align.START)
         gicon = Gio.content_type_get_symbolic_icon(Gio.content_type_from_mime_type(att.mime or "") or "")
         card.append(Gtk.Image.new_from_gicon(gicon) if gicon else Gtk.Image.new_from_icon_name("text-x-generic"))
@@ -371,7 +368,7 @@ class MessageRow(Gtk.Box):
             card.append(op)
             sv = Gtk.Button(icon_name="document-save-symbolic", css_classes=["flat", "circular"],
                             tooltip_text=_("Save as…"))
-            sv.connect("clicked", lambda *_: self.view.save_attachment(att))
+            sv.connect("clicked", lambda *_: self.view.save_attachment(m, att))
             card.append(sv)
         elif att.url:
             dl = Gtk.Button(icon_name="folder-download-symbolic", css_classes=["flat", "circular"],
@@ -412,11 +409,8 @@ class MessageRow(Gtk.Box):
             b.connect("clicked", lambda _b, e=e: self.view.react(m, e))
             bar.append(b)
         more = Gtk.MenuButton(icon_name="ward-react-symbolic", css_classes=["flat"], tooltip_text=_("Add reaction"))
-        chooser = Gtk.EmojiChooser()
-        chooser.connect("emoji-picked", lambda _c, e: self.view.react(m, e))
-        more.set_popover(chooser)
         # keep the bar (and so the picker) while the picker is open: the pointer leaves the row to use it
-        chooser.connect("closed", lambda *_: self._hover(False))
+        widgets.emoji_button(more, self.view.settings, lambda e: self.view.react(m, e), lambda: self._hover(False))
         self.react_button = more
         bar.append(more)
         reply = Gtk.Button(icon_name="ward-reply-symbolic", css_classes=["flat"], tooltip_text=_("Reply"))

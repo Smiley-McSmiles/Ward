@@ -1,7 +1,7 @@
 """Emoji helpers: :shortcode: conversion while typing, ASCII smileys, and emoji-only detection (shown large).
 
-The emoji picker itself is GTK's Gtk.EmojiChooser, which knows every emoji; this table only covers the
-shortcodes people actually type (the GitHub/Slack names)."""
+The emoji picker (gui/emoji_picker.py) uses GTK's own table of every emoji; this one only covers the shortcodes
+people actually type (the GitHub/Slack names)."""
 
 from __future__ import annotations
 

@@ -56,7 +56,9 @@ ward/gui/composer.py
 ward/gui/conversation.py
 ward/gui/details.py
 ward/gui/dialogs.py
+ward/gui/emoji_picker.py
 ward/gui/forms_view.py
+ward/gui/lifetime.py
 ward/gui/members.py
 ward/gui/message_row.py
 ward/gui/prefs.py
@@ -66,12 +68,14 @@ ward/gui/style.py
 ward/gui/tools.py
 ward/gui/tray.py
 ward/gui/trust.py
+ward/gui/video.py
 ward/gui/welcome.py
 ward/gui/widgets.py
 ward/gui/window.py
 ward/i18n.py
 ward/log.py
 ward/main.py
+ward/memreport.py
 ward/paths.py
 ward/qr.py
 ward/schema.py

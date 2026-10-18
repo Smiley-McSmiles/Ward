@@ -15,7 +15,7 @@ from .. import deps, paths
 from ..core.markup import emoji
 from ..core.models import ChatItem, MessageItem
 from ..i18n import _, ngettext
-from . import compat, widgets
+from . import compat, lifetime, widgets
 
 log = logging.getLogger("ward.gui")
 
@@ -72,7 +72,7 @@ def _make_view() -> Gtk.TextView:
             if scheme is not None:
                 buf.set_style_scheme(scheme)
         follow_style()
-        Adw.StyleManager.get_default().connect("notify::dark", follow_style)
+        lifetime.watch(Adw.StyleManager.get_default(), "notify::dark", follow_style)
         return GtkSource.View(buffer=buf, wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
     except (ImportError, ValueError):
         return Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
@@ -155,9 +155,7 @@ class Composer(Gtk.Box):
         box.append(overlay)
         self.emoji_button = Gtk.MenuButton(icon_name="ward-emoji-symbolic", css_classes=["flat", "circular"],
                                            valign=Gtk.Align.END, tooltip_text=_("Emoji"))
-        chooser = Gtk.EmojiChooser()
-        chooser.connect("emoji-picked", lambda _c, e: self._insert(e))
-        self.emoji_button.set_popover(chooser)
+        widgets.emoji_button(self.emoji_button, self.settings, self._insert)
         box.append(self.emoji_button)
         self.send_button = Gtk.Button(icon_name="ward-send-symbolic", css_classes=["suggested-action", "circular"],
                                       valign=Gtk.Align.END, sensitive=False, tooltip_text=_("Send"))
@@ -179,10 +177,25 @@ class Composer(Gtk.Box):
         self.popover_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, css_classes=["navigation-sidebar"])
         self.popover_list.connect("row-activated", lambda _l, r: self._complete(r.get_index()))
         self.popover.set_child(self.popover_list)
+        # GtkTextView cannot remove a popover attached with set_parent and loops forever trying: detach it when
+        # the composer goes, before the text view is disposed
+        popover = self.popover
+        lifetime.when_unrooted(self, lambda: popover.get_parent() is not None and popover.unparent())
 
-        self._spell = _spelling(self.text, self.settings["chats.spell_languages"]) \
-            if self.settings["chats.spellcheck"] and deps.have("spelling") else None
-        self.settings.connect("changed::chats.toolbar", lambda *_: self.toolbar.set_visible(
+        # the spell checker loads its dictionaries: only once someone starts writing
+        self._spell = None
+        spell_focus = Gtk.EventControllerFocus()
+
+        def first_focus(*_a) -> None:
+            if spell_focus.get_widget() is None:
+                return
+            # not while GTK is still delivering this event to it
+            GLib.idle_add(lambda: spell_focus.get_widget() is not None and self.text.remove_controller(spell_focus))
+            if self.settings["chats.spellcheck"] and deps.have("spelling") and self._spell is None:
+                self._spell = _spelling(self.text, self.settings["chats.spell_languages"])
+        spell_focus.connect("enter", first_focus)
+        self.text.add_controller(spell_focus)
+        lifetime.watch(self.settings, "changed::chats.toolbar", lambda *_: self.toolbar.set_visible(
             self.settings["chats.toolbar"]))
         self._update_placeholder()
         self.scroller.connect("notify::width", lambda *_: GLib.idle_add(self._fit))

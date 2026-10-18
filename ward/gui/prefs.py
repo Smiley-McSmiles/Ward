@@ -12,7 +12,7 @@ from gi.repository import Adw, Gio, GLib, Gtk
 from .. import deps, paths, schema, util
 from ..core.models import AccountItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 
 log = logging.getLogger("ward.gui")
 
@@ -197,6 +197,7 @@ class Preferences:
         self.core = window.core
         self.settings = self.core.settings
         self.d = compat.preferences_dialog()
+        lifetime.forget_when_closed(self, self.d)
         self.pages: dict[str, Adw.PreferencesPage] = {}
         for key, title, icon in schema.PAGES:
             p = Adw.PreferencesPage(title=_(title), icon_name=icon, name=key)
@@ -236,7 +237,7 @@ class Preferences:
         self._account_rows: list[Gtk.Widget] = []
         self._fill_accounts()
         h = self.core.accounts.store.connect("items-changed", lambda *_: self._fill_accounts())
-        self.d.connect("destroy", lambda *_: self.core.accounts.store.disconnect(h))
+        lifetime.on_closed(self.d, lambda: self.core.accounts.store.disconnect(h))
 
     def _fill_accounts(self) -> None:
         for r in self._account_rows:
@@ -380,7 +381,8 @@ class AccountPage:
         self.connect_button.connect("clicked", lambda *_: self._toggle_connection())
         state.add_suffix(self.connect_button)
         top.add(state)
-        self._h = acc.connect("notify::state", lambda *_: self._update_state())
+        h = acc.connect("notify::state", lambda *_: self._update_state())
+        lifetime.on_closed(prefs.d, lambda: acc.disconnect(h))
         self._update_state()
 
         specs = [(k, s) for k, s in schema.ACCOUNT_SPECS.items() if s.type != "json" and k not in ("pgp_key",)]

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Ward installer - POSIX sh, for any Linux distribution and FreeBSD, OpenBSD, NetBSD and DragonFly BSD.
 #
-#   sudo ./install.sh                     install for every user (/usr/local)
-#   ./install.sh --prefix ~/.local        install for yourself only, no root needed
+#   sudo ./install.sh                     install for every user (/usr/local); in a terminal it checks what is
+#                                         missing and offers to install it (with legacy OMEMO)
+#   ./install.sh --prefix ~/.local        install for yourself only (installing packages then uses sudo or doas)
 #   sudo ./install.sh --install-deps      install Python, GTK 4, libadwaita and the libraries first
 #   ./install.sh --vendor                 also fetch libraries your system has no packages for (OMEMO) with pip
 #   ./install.sh --check                  only check this machine
@@ -22,6 +23,8 @@ DEPS=0
 CHECK=0
 VENDOR=0
 LEGACY=1
+ASK=ask         # ask | yes | no: whether to install missing dependencies
+AS_ROOT=""      # sudo or doas, to run the package manager when we are not root
 SYSLINKS=1
 MANDIR_OPT=""
 WARNINGS=""
@@ -31,7 +34,7 @@ APPID=io.github.smiley_mcsmiles.Ward
 MIN_PY=11      # Python 3.11
 
 usage() {
-    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
     cat <<USAGE
 
 Options:
@@ -40,7 +43,9 @@ Options:
                         (apt, dnf, zypper, pacman, xbps, apk, emerge, FreeBSD pkg, OpenBSD pkg_add, NetBSD pkgin)
   --vendor              download what the system does not package (the OMEMO libraries...) with pip into
                         PREFIX/lib/ward/vendor.  Ward can also do this itself: Preferences > Encryption
-  --no-legacy-omemo     with --vendor: leave out legacy OMEMO (oldmemo, AGPL-3.0)
+  --no-legacy-omemo     leave out legacy OMEMO (oldmemo, AGPL-3.0) when fetching the OMEMO libraries
+  -y, --yes             install missing dependencies without asking (packages, then OMEMO with pip)
+  --no-deps             do not check for missing dependencies or offer to install them
   --mandir DIR          where the man page goes (default PREFIX/share/man/man1, PREFIX/man/man1 on OpenBSD
                         and NetBSD)
   --check               report what is missing on this machine, install nothing
@@ -60,6 +65,8 @@ while [ $# -gt 0 ]; do
         --install-deps) DEPS=1 ;;
         --vendor) VENDOR=1 ;;
         --no-legacy-omemo) LEGACY=0 ;;
+        -y|--yes) ASK=yes ;;
+        --no-deps) ASK=no ;;
         --mandir) MANDIR_OPT=$2; shift ;;
         --mandir=*) MANDIR_OPT=${1#*=} ;;
         --check) CHECK=1 ;;
@@ -94,8 +101,7 @@ SYSTEM_SHARE=${WARD_SYSTEM_SHARE:-/usr/share}
 USER_INSTALL=0
 case "$PREFIX" in "$HOME"/*) USER_INSTALL=1 ;; esac
 
-if [ -z "$DESTDIR" ] && [ "$CHECK" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
-    if [ "$DEPS" -eq 1 ]; then die "--install-deps needs root (sudo sh $0 --install-deps)"; fi
+if [ -z "$DESTDIR" ] && [ "$CHECK" -eq 0 ] && [ "$UNINSTALL" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
     mkdir -p "$PREFIX" 2>/dev/null || true
     [ -w "$PREFIX" ] || die "no write access to $PREFIX - run as root (sudo sh $0) or install for yourself: sh $0 --prefix ~/.local"
 fi
@@ -163,27 +169,40 @@ deps_hint() {
     esac
 }
 
+# the package manager runs as root: directly when we are root, through sudo or doas otherwise
+need_root() {
+    [ "$(id -u)" -eq 0 ] && return 0
+    for t in sudo doas; do
+        if have "$t"; then AS_ROOT=$t; return 0; fi
+    done
+    return 1
+}
+
 install_pkgs() {
+    # shellcheck disable=SC2086   # AS_ROOT is empty or one word
     case "$(pm_name)" in
-        apt-get) DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
-        dnf) dnf install -y "$@" ;;
-        zypper) zypper --non-interactive install "$@" ;;
-        pacman) pacman -S --needed --noconfirm "$@" ;;
-        xbps-install) xbps-install -y "$@" ;;
-        apk) apk add "$@" ;;
-        emerge) emerge --noreplace "$@" ;;
-        pkg) pkg install -y "$@" ;;
-        pkg_add) pkg_add -I "$@" ;;
-        pkgin) pkgin -y install "$@" ;;
+        apt-get) $AS_ROOT env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+        dnf) $AS_ROOT dnf install -y "$@" ;;
+        zypper) $AS_ROOT zypper --non-interactive install "$@" ;;
+        pacman) $AS_ROOT pacman -S --needed --noconfirm "$@" ;;
+        xbps-install) $AS_ROOT xbps-install -y "$@" ;;
+        apk) $AS_ROOT apk add "$@" ;;
+        emerge) $AS_ROOT emerge --noreplace "$@" ;;
+        pkg) $AS_ROOT pkg install -y "$@" ;;
+        pkg_add) $AS_ROOT pkg_add -I "$@" ;;
+        pkgin) $AS_ROOT pkgin -y install "$@" ;;
         *) return 1 ;;
     esac
 }
 
 install_deps() {
     [ "$(pm_name)" != none ] || die "no supported package manager found; $(deps_hint)"
-    say "Installing dependencies with $(pm_name)"
-    [ "$(pm_name)" = apt-get ] && { apt-get update || warn "apt-get update failed"; }
-    [ "$(pm_name)" = xbps-install ] && { xbps-install -S >/dev/null 2>&1 || true; }
+    need_root || die "installing packages needs root: run sudo sh $0, or install them yourself: $(deps_hint)"
+    say "Installing dependencies with ${AS_ROOT:+$AS_ROOT }$(pm_name)"
+    # shellcheck disable=SC2086
+    [ "$(pm_name)" = apt-get ] && { $AS_ROOT apt-get update || warn "apt-get update failed"; }
+    # shellcheck disable=SC2086
+    [ "$(pm_name)" = xbps-install ] && { $AS_ROOT xbps-install -S >/dev/null 2>&1 || true; }
     packages
     # all at once; if the package manager refuses (one name it doesn't know makes most refuse everything), one by
     # one, so the rest still get installed and the warning names exactly what is missing
@@ -213,7 +232,81 @@ find_python() {   # the first Python 3.11+ that has GTK 4 and libadwaita (falls 
     return 1
 }
 
-module() { "$PY" -c "import $1" 2>/dev/null; }
+# what the system has, or a previous install fetched into Ward's own folder
+module() { PYTHONPATH="$LIBDIR/vendor${PYTHONPATH:+:$PYTHONPATH}" "$PY" -c "import $1" 2>/dev/null; }
+
+typelib() { "$PY" -c "import gi; gi.require_version('$1', '$2')" 2>/dev/null; }
+
+# missing_deps: what this machine lacks, without stopping at the first gap.  Sets MISSING_SYS (things the package
+# manager installs), MISSING_OMEMO (OMEMO libraries, fetched with pip) and MISSING (a list to show)
+missing_deps() {
+    MISSING_SYS=0; MISSING_OMEMO=0; MISSING=""
+    gap() { MISSING="$MISSING
+    - $1"; }
+    if ! PY=$(find_python); then
+        PY=""
+        MISSING_SYS=1; gap "Python 3.$MIN_PY or newer, with GTK 4 and libadwaita (required)"
+    else
+        py_ok "$PY" || { MISSING_SYS=1; gap "PyGObject with GTK 4 and libadwaita (required)"; }
+        for m in slixmpp:slixmpp markdown_it:markdown-it-py cryptography:cryptography; do
+            module "${m%%:*}" || { MISSING_SYS=1; gap "${m#*:} (required)"; }
+        done
+        typelib GtkSource 5 || { MISSING_SYS=1; gap "GtkSourceView 5 (code blocks)"; }
+        typelib Spelling 1 || { MISSING_SYS=1; gap "libspelling (spell checking)"; }
+        typelib Secret 1 || { MISSING_SYS=1; gap "libsecret (passwords in the keyring)"; }
+        module PIL || { MISSING_SYS=1; gap "Pillow (image previews)"; }
+        module linkify_it || { MISSING_SYS=1; gap "linkify-it-py (links in messages)"; }
+        "$PY" -m pip --version >/dev/null 2>&1 || { MISSING_SYS=1; gap "pip (to fetch the OMEMO libraries)"; }
+        omemo="omemo twomemo.etree xeddsa x3dh doubleratchet"
+        [ "$LEGACY" -eq 1 ] && omemo="$omemo oldmemo.etree"
+        for m in $omemo; do
+            module "$m" || MISSING_OMEMO=1
+        done
+        if [ "$MISSING_OMEMO" -eq 1 ]; then
+            if [ "$LEGACY" -eq 1 ]; then
+                gap "OMEMO encryption libraries, with legacy OMEMO (fetched with pip)"
+            else
+                gap "OMEMO encryption libraries (fetched with pip)"
+            fi
+        fi
+    fi
+    have gpg || have gpg2 || { MISSING_SYS=1; gap "GnuPG (OpenPGP encryption, optional)"; }
+}
+
+# Before installing: say what is missing and, in a terminal (or with --yes), offer to install it
+offer_deps() {
+    [ "$ASK" != no ] && [ -z "$DESTDIR" ] && [ "$DEPS" -eq 0 ] || return 0
+    [ "$ASK" = yes ] || [ -t 0 ] || return 0
+    say "Checking what Ward needs"
+    missing_deps
+    if [ -z "$MISSING" ]; then
+        say "Every dependency is installed"
+        return 0
+    fi
+    printf '
+This machine is missing:%s
+
+' "$MISSING"
+    if [ "$ASK" = ask ]; then
+        printf 'Install them now? [Y/n] '
+        read -r answer || answer=n
+        case "$answer" in
+            ""|[Yy]*) ;;
+            *) say "Not installing dependencies (install them later with: sh $0 --yes)"; return 0 ;;
+        esac
+    fi
+    if [ "$MISSING_SYS" -eq 1 ]; then
+        if [ "$(pm_name)" = none ]; then
+            warn "no supported package manager found; $(deps_hint)"
+        elif ! need_root; then
+            warn "installing packages needs root (sudo sh $0), or install them yourself: $(deps_hint)"
+        else
+            install_deps
+        fi
+    fi
+    # the OMEMO libraries (and anything required the distribution doesn't package) with pip, into Ward's folder
+    VENDOR=1
+}
 
 preflight() {
     PY=$(find_python) || die "Python 3.$MIN_PY or newer is required. $(deps_hint)"
@@ -232,6 +325,8 @@ preflight() {
     done
     if module omemo && module twomemo && module xeddsa; then
         say "OMEMO encryption: available"
+    elif [ "$VENDOR" -eq 1 ]; then
+        say "OMEMO encryption: fetching it with pip"
     else
         say "OMEMO encryption: not installed yet - Ward offers to install it on first use (or: $0 --vendor)"
     fi
@@ -255,7 +350,8 @@ vendor() {   # fetch modules the system lacks with pip into LIBDIR/vendor (VENDO
     say "Fetching with pip:$want"
     mkdir -p "$D$LIBDIR/vendor"
     # shellcheck disable=SC2086
-    "$PY" -m pip install --upgrade --target "$D$LIBDIR/vendor" --disable-pip-version-check --no-warn-script-location \
+    # (installing for every user as root is what we mean: pip need not warn about it; older pips ignore the variable)
+    PIP_ROOT_USER_ACTION=ignore "$PY" -m pip install --upgrade --target "$D$LIBDIR/vendor" --disable-pip-version-check --no-warn-script-location \
         $want || warn "pip could not install everything ($want); Ward still runs, with fewer features"
 }
 
@@ -367,8 +463,9 @@ if [ "$CHECK" -eq 1 ]; then
     if [ -z "$WARNINGS" ]; then say "Everything Ward needs is installed."; else printf '\nTo fix:%s\n' "$WARNINGS"; fi
     exit 0
 fi
-if [ "$DEPS" -eq 1 ]; then install_deps; fi
 [ -d "$SRC/ward" ] && [ -d "$SRC/data" ] || die "run install.sh from the Ward source folder (ward/ and data/ must be next to it)"
+if [ "$DEPS" -eq 1 ]; then install_deps; fi
+offer_deps
 PY=""
 if [ -z "$DESTDIR" ] || [ "$VENDOR" -eq 1 ]; then preflight; fi
 # --install-deps: Python libraries the distribution doesn't package are fetched with pip into Ward's own folder
@@ -378,7 +475,7 @@ fi
 
 say "Installing Ward to $D$PREFIX"
 keep_vendor=""
-if [ -d "$D$LIBDIR/vendor" ] && [ "$VENDOR" -eq 0 ]; then
+if [ -d "$D$LIBDIR/vendor" ]; then      # libraries fetched before: kept, vendor() only adds what is missing
     keep_vendor=$(mktemp -d "${TMPDIR:-/tmp}/ward-vendor.XXXXXX")
     mv "$D$LIBDIR/vendor" "$keep_vendor/"
 fi

@@ -130,6 +130,8 @@ SPECS: dict[str, Spec] = {
                                advanced=True),
     "chats.quick_reactions": S("list", DEFAULT_REACTIONS, N_("Quick reactions"),
                                N_("The six emoji in the reaction bar"), page="chats", group=N_("Messages")),
+    "chats.recent_emoji": S("list", []),                  # the emoji picker's recently used, newest first
+    "chats.emoji_skin_tone": S("int", 0, min=0, max=5),   # the emoji picker's skin tone, 0 the default
     "chats.markdown_others": S("bool", False, N_("Render Markdown from other apps"),
                                N_("Other apps use simpler styling, where *text* is bold instead of italic"),
                                page="chats", group=N_("Messages")),
@@ -230,6 +232,14 @@ SPECS: dict[str, Spec] = {
                                     choices=((30, N_("30 days")), (90, N_("90 days")), (365, N_("365 days")),
                                              (0, N_("Never")))),
     # ------------------------------------------------------------------ Advanced
+    "advanced.renderer": S("choice", "opengl", N_("Graphics renderer"),
+                           N_("OpenGL uses much less memory than Vulkan on many systems. Applies after a restart"),
+                           page="advanced", group=N_("Performance"),
+                           choices=(("opengl", N_("OpenGL")), ("auto", N_("GTK's choice (often Vulkan)")),
+                                    ("software", N_("Software: no graphics driver, half the memory")))),
+    "advanced.free_window": S("bool", True, N_("Free the window's memory in the background"),
+                              N_("Closing the window releases it instead of hiding it; reopening takes a moment"),
+                              page="advanced", group=N_("Performance")),
     "advanced.devtools": S("bool", False, N_("Developer tools"),
                            N_("XML console, service discovery and PEP browser"), page="advanced",
                            group=N_("Developer")),

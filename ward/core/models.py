@@ -426,6 +426,18 @@ class MessageList(GObject.Object):
             self.store.remove(pos)
             del self._keys[pos]
 
+    def trim(self, keep: int) -> None:
+        """Forget all but the newest messages (the chat is no longer shown; older ones load again when scrolled
+        to), so the history someone scrolled back through does not stay in memory."""
+        extra = len(self) - keep
+        if extra <= 0:
+            return
+        for m in self.items()[:extra]:
+            self.by_id.pop(m.id, None)
+        self.store.splice(0, extra, [])
+        del self._keys[:extra]
+        self.has_older = True
+
     def get(self, msg_id: int) -> MessageItem | None:
         return self.by_id.get(msg_id)
 

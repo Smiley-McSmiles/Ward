@@ -13,7 +13,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
 from ..core import search as search_mod
 from ..core.models import AttachmentItem, ChatItem, MessageItem
 from ..i18n import _, ngettext
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .composer import Composer
 from .members import MembersPanel
 from .message_row import MessageRow
@@ -41,6 +41,9 @@ def selected_text(widget: Gtk.Widget) -> str:
             parts.append(t)
         child = child.get_next_sibling()
     return "\n".join(parts)
+
+
+KEEP_MESSAGES = 100     # of a chat no longer shown
 
 
 class ConversationView(Gtk.Box):
@@ -76,7 +79,7 @@ class ConversationView(Gtk.Box):
         drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
         drop.connect("drop", self._on_drop)
         self.add_controller(drop)
-        self.settings.connect("changed", self._on_setting)
+        lifetime.watch(self.settings, "changed", self._on_setting)
         self._apply_layout()
 
     # ================================================================== building
@@ -142,6 +145,7 @@ class ConversationView(Gtk.Box):
         self.factory.connect("setup", self._setup_row)
         self.factory.connect("bind", self._bind_row)
         self.factory.connect("unbind", self._unbind_row)
+        self.factory.connect("teardown", widgets.teardown_row)
         self.list = Gtk.ListView(factory=self.factory, css_classes=["message-list"])
         self.list.set_single_click_activate(False)
         self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
@@ -207,7 +211,17 @@ class ConversationView(Gtk.Box):
             a = Gio.SimpleAction.new(name, None)
             a.connect("activate", lambda _a, _p, cb=cb: self._menu_msg is not None and cb(self._menu_msg))
             group.add_action(a)
+        # attachments, by their index in the message
+        for name, cb in (("save-attachment", self.save_attachment), ("open-attachment", self.open_attachment)):
+            a = Gio.SimpleAction.new(name, GLib.VariantType("i"))
+            a.connect("activate", lambda _a, p, cb=cb: self._attachment_action(p.get_int32(), cb))
+            group.add_action(a)
         self.insert_action_group("msg", group)
+
+    def _attachment_action(self, i: int, cb) -> None:
+        m = self._menu_msg
+        if m is not None and 0 <= i < len(m.attachments):
+            cb(m, m.attachments[i])
         chat_group = Gio.SimpleActionGroup()
         for name, cb in (("details", self.show_details), ("search", lambda: self.search_button.set_active(True)),
                          ("pin", lambda: self._toggle_flag("pinned")),
@@ -226,6 +240,9 @@ class ConversationView(Gtk.Box):
         if chat is self.chat:
             return
         self._detach()
+        if self.ml is not None:
+            # once the list view has let go of it: keep only the newest messages of the chat we leave
+            GLib.idle_add(lambda ml=self.ml: ml is not self.ml and ml.trim(KEEP_MESSAGES) and False)
         self.chat = chat
         self.rows.clear()
         self.highlight_id = 0
@@ -296,7 +313,7 @@ class ConversationView(Gtk.Box):
         item.set_selectable(False)
         if hasattr(item, "set_focusable"):
             item.set_focusable(False)
-        item.set_child(MessageRow(self))
+        widgets.setup_row(item, MessageRow(self))
 
     def _bind_row(self, _f, item: Gtk.ListItem) -> None:
         row: MessageRow = item.get_child()
@@ -695,9 +712,16 @@ class ConversationView(Gtk.Box):
         else:
             widgets.open_file(self, path)
 
-    def save_attachment(self, att: AttachmentItem) -> None:
+    def save_attachment(self, m: MessageItem | None, att: AttachmentItem) -> None:
+        """A copy wherever the user picks (downloaded first when it isn't yet)."""
         path = att.local_path
         if not path or not os.path.exists(path):
+            if m is None or self.chat is None:
+                return
+            async def go():
+                if await self.core.files.download(self.chat, m, att):
+                    self.save_attachment(m, att)
+            widgets.run(self, go(), error=_("Download failed"))
             return
         dialog = Gtk.FileDialog(initial_name=att.name or os.path.basename(path))
 
@@ -742,6 +766,15 @@ class ConversationView(Gtk.Box):
             if self.chat.type == "groupchat" and m.stanza_id:
                 sec.append(_("Copy link"), "msg.copy-link")
         menu.append_section(None, sec)
+        if m.attachments and not m.retracted:
+            sec = Gio.Menu()
+            for i, att in enumerate(m.attachments):
+                name = att.name or _("file")
+                many = len(m.attachments) > 1
+                sec.append(_("Save “%s” as…") % name if many else _("Save as…"),
+                           "msg.save-attachment(%d)" % i)
+                sec.append(_("Open “%s”") % name if many else _("Open"), "msg.open-attachment(%d)" % i)
+            menu.append_section(None, sec)
         sec = Gio.Menu()
         if m.outgoing and not m.retracted and m.kind in ("text", "me"):
             sec.append(_("Edit"), "msg.edit")

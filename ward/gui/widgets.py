@@ -14,6 +14,7 @@ from .. import aio, util
 from ..core import colors
 from ..i18n import _
 from . import compat
+from .lifetime import release, setup_row, teardown_row  # noqa: F401 - used through widgets
 
 log = logging.getLogger("ward.gui")
 
@@ -39,24 +40,75 @@ def run(widget: Gtk.Widget | None, coro: Coroutine, done: Callable | None = None
 
 
 # ------------------------------------------------------------------------------------------------ avatars
-_textures: OrderedDict[str, Gdk.Texture] = OrderedDict()
+_textures: OrderedDict[tuple[str, int], Gdk.Texture] = OrderedDict()
+AVATAR_PIXELS = 192        # the largest avatar shown is 96 px: twice that for high-resolution screens
+IMAGE_PIXELS = 640         # images in the chat are shown at most 320 px wide
 
 
-def texture(path: str) -> Gdk.Texture | None:
+def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
+    """An image as a texture, decoded at no more than max_side pixels a side (0: full size, not cached).  A photo
+    used as an avatar decoded at full size takes tens of MB, in memory and again on the graphics card."""
     if not path or not os.path.exists(path):
         return None
-    t = _textures.get(path)
+    if not max_side:
+        try:
+            return Gdk.Texture.new_from_filename(path)
+        except GLib.Error:
+            return None
+    key = (path, max_side)
+    t = _textures.get(key)
     if t is not None:
-        _textures.move_to_end(path)
+        _textures.move_to_end(key)
         return t
     try:
-        t = Gdk.Texture.new_from_filename(path)
-    except GLib.Error:
-        return None
-    _textures[path] = t
-    if len(_textures) > 300:
+        from gi.repository import GdkPixbuf
+
+        info = GdkPixbuf.Pixbuf.get_file_info(path)
+        w, h = (info[1], info[2]) if info and info[0] is not None else (0, 0)
+        if w > max_side or h > max_side:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, max_side, max_side, True)
+            t = Gdk.Texture.new_for_pixbuf(pb)
+        else:
+            t = Gdk.Texture.new_from_filename(path)
+    except (GLib.Error, ImportError, ValueError):
+        try:
+            t = Gdk.Texture.new_from_filename(path)
+        except GLib.Error:
+            return None
+    _textures[key] = t
+    if len(_textures) > 200:
         _textures.popitem(last=False)
     return t
+
+
+def emoji_button(button: Gtk.MenuButton, settings, picked, closed=None) -> None:
+    """Give the menu button an emoji picker, built when it opens and dropped when it closes (see emoji_picker for why
+    not Gtk.EmojiChooser, which is only the fallback)."""
+    # the callbacks live on the button, where the garbage collector sees them (it cannot see into the popup func:
+    # a closure there referring back to the row would keep the row alive for good)
+    button._ward_emoji = (picked, closed, settings)
+    button.set_create_popup_func(_create_emoji_chooser)
+
+
+def _create_emoji_chooser(button: Gtk.MenuButton, *_a) -> None:
+    if button.get_popover() is not None:
+        return
+    from . import emoji_picker
+
+    if emoji_picker.available():
+        chooser: Gtk.Popover = emoji_picker.EmojiPicker(button._ward_emoji[2])
+    else:
+        chooser = Gtk.EmojiChooser()
+    chooser.connect("emoji-picked", lambda _c, e: button._ward_emoji[0](e))
+
+    def on_closed(*_a) -> None:
+        closed = button._ward_emoji[1]
+        if closed is not None:
+            closed()
+        GLib.idle_add(lambda: button.get_popover() is chooser and not button.get_active()
+                      and button.set_popover(None))
+    chooser.connect("closed", on_closed)
+    button.set_popover(chooser)
 
 
 class Avatar(Gtk.Overlay):

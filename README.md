@@ -60,9 +60,13 @@ and libadwaita 1.4+**. Download from the [releases page](https://github.com/smil
 | NetBSD | the pkgsrc package in the recipes (`chat/ward`), or `sudo sh install.sh --install-deps --vendor` |
 | Anything else | the tarball: `sudo ./install.sh` (or `./install.sh --prefix ~/.local` without root) |
 
-`install.sh` is plain POSIX sh. Useful options:
+`install.sh` is plain POSIX sh. Run in a terminal, it first lists what this machine is missing and asks whether to
+install it: packages with the system's package manager (through sudo or doas when not run as root), then the OMEMO
+libraries, legacy OMEMO included, with pip into Ward's own folder. Useful options:
 
 ```sh
+sudo ./install.sh --yes            # install missing dependencies without asking (--no-legacy-omemo leaves oldmemo out)
+./install.sh --no-deps             # don't check or offer to install anything
 sudo ./install.sh --install-deps   # dependencies with apt, dnf, zypper, pacman, xbps, apk, emerge, pkg, pkg_add or pkgin
 ./install.sh --check               # what is missing on this machine, and the command to install it
 ./install.sh --vendor              # also fetch Python libraries your system has no packages for
@@ -102,6 +106,16 @@ mkdir -p ~/.config/service && cp -r /usr/share/ward/runit ~/.config/service/ward
 Quitting from the app is respected by both: systemd only restarts Ward after a crash, and under runit Ward marks its
 service down before exiting. Nothing in Ward depends on systemd (sleep and resume are noticed through logind or
 elogind when either is there).
+
+### Memory
+
+While Ward runs in the background with its window closed, the window is let go after 30 seconds, with everything GTK
+and the graphics driver held for it; opening Ward builds it again (Preferences > Advanced > Performance can keep it
+instead). Ward also asks GTK for its OpenGL renderer rather than Vulkan, which on many drivers uses several hundred MB
+more; Preferences > Advanced > Graphics renderer changes that, and `GSK_RENDERER` or `WARD_RENDERER` in the
+environment override it. "Software" leaves the graphics driver out entirely, which roughly halves Ward's memory.
+
+`ward --memory-report`, run while Ward is running, shows where its memory goes (and Gajim's, when it runs too).
 
 ## Tray icon
 

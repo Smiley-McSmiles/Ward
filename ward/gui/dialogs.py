@@ -12,7 +12,7 @@ from .. import util
 from ..core import register, secrets
 from ..core.models import AccountItem, AttachmentItem, ChatItem, MessageItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 
 log = logging.getLogger("ward.gui")
 
@@ -47,6 +47,7 @@ class BaseDialog:
         self.toasts.set_child(self.view)
         self.dialog.set_child(self.toasts)
         self.spinner = None
+        lifetime.forget_when_closed(self, self.dialog.widget)
 
     def group(self, title: str = "", description: str = "") -> Adw.PreferencesGroup:
         g = Adw.PreferencesGroup(title=title, description=description)
@@ -570,7 +571,7 @@ class ImageViewer:
         self.dialog = compat.Dialog(att.name or _("Image"), 900, 700)
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        for icon, tip, cb in (("document-save-symbolic", _("Save as…"), lambda: view.save_attachment(att)),
+        for icon, tip, cb in (("document-save-symbolic", _("Save as…"), lambda: view.save_attachment(None, att)),
                               ("document-open-symbolic", _("Open with another app"),
                                lambda: widgets.open_file(view, att.local_path)),
                               ("edit-copy-symbolic", _("Copy image"), self._copy)):
@@ -585,7 +586,7 @@ class ImageViewer:
         self.dialog.set_child(tv)
 
     def _copy(self) -> None:
-        tex = widgets.texture(self.att.local_path)
+        tex = widgets.texture(self.att.local_path, 0)      # the whole image
         if tex is not None:
             self.view.get_clipboard().set(tex)
             compat.toast(self.view, _("Copied"))

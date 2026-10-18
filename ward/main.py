@@ -23,9 +23,44 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("-b", "--background", action="store_true", help="start without a window")
     p.add_argument("-q", "--quit", action="store_true", help="quit the running instance")
     p.add_argument("--check", action="store_true", help="show which libraries and features are available")
+    p.add_argument("--memory-report", action="store_true", help="show where the running Ward's memory goes")
     p.add_argument("--debug", action="store_true", help="verbose logging to the terminal")
     p.add_argument("--version", action="version", version="%s v%s" % (APP_NAME, __version__))
     return p
+
+
+RENDERERS = {"opengl": "ngl", "software": "cairo"}
+
+
+def _choose_renderer() -> None:
+    """GTK's renderer, chosen before GTK starts: GSK_RENDERER from the environment wins, then WARD_RENDERER, then the
+    preference.  GTK picks Vulkan by default where it can, which on many drivers costs hundreds of MB more than
+    OpenGL for an app like this one, so Ward asks for OpenGL unless told otherwise."""
+    if os.environ.get("GSK_RENDERER"):
+        _software_only(os.environ["GSK_RENDERER"])
+        return
+    choice = os.environ.get("WARD_RENDERER", "")
+    if not choice:
+        try:
+            from .settings import Settings
+
+            choice = Settings()["advanced.renderer"]
+        except Exception:
+            choice = "opengl"
+    renderer = RENDERERS.get(choice, choice if choice not in ("auto", "") else "")
+    if renderer:
+        os.environ["GSK_RENDERER"] = renderer
+        _software_only(renderer)
+
+
+def _software_only(renderer: str) -> None:
+    """With the software renderer, keep GDK from setting up OpenGL and Vulkan anyway: the graphics driver it loads
+    for them costs 100 MB or more even when nothing is drawn with it."""
+    if renderer != "cairo":
+        return
+    for var, flags in (("GDK_DISABLE", "gl,vulkan"), ("GDK_DEBUG", "gl-disable,vulkan-disable")):
+        old = os.environ.get(var, "")
+        os.environ[var] = "%s,%s" % (old, flags) if old else flags
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,6 +77,11 @@ def main(argv: list[str] | None = None) -> int:
 
         print(deps.report())
         return 1 if deps.missing_required() else 0
+    if args.memory_report:
+        from . import memreport
+
+        return memreport.run()
+    _choose_renderer()
     try:
         import gi
 
@@ -61,8 +101,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("Missing: %s\n%s\n" % (", ".join(f.title for f in missing),
                                                 deps.install_hint(*[c for f in missing for c in f.components])))
         return 1
-    if os.environ.get("WARD_RENDERER"):
-        os.environ.setdefault("GSK_RENDERER", os.environ["WARD_RENDERER"])
     from . import aio
     from .gui.app import WardApplication
 
