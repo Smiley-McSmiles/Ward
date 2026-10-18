@@ -57,8 +57,8 @@ async def populate(home: str, scenario: dict) -> None:
     from ward.settings import Settings
 
     settings = Settings()
-    if scenario.get("dark"):
-        settings["appearance.style"] = "dark"
+    # the documentation's look: light except where a scenario asks for dark, whatever this machine's theme is
+    settings["appearance.style"] = "dark" if scenario.get("dark") else "light"
     if scenario.get("layout"):
         settings["appearance.layout"] = scenario["layout"]
     settings.flush()
@@ -124,8 +124,9 @@ def child(name: str, out: str) -> int:
     gi.require_version("Adw", "1")
     from gi.repository import GLib, Gtk
 
-    from ward import aio, i18n
+    from ward import aio, extras, i18n
 
+    extras.activate()       # the OMEMO libraries install.sh vendored, as the launcher would find them
     i18n.setup()
     scenario = SCENARIOS[name]
     loop = aio.install()
@@ -143,6 +144,9 @@ def child(name: str, out: str) -> int:
 
     def shoot():
         w = app.window
+        # the pointer may rest over a message: its hover actions are not part of the documentation
+        for row in list(w.conversation.rows.values()):
+            row._hover(False)
         if os.environ.get("WARD_DEBUG_TREE"):
             def walk(x, depth=0):
                 if type(x).__name__ == "Bin" or "Bin" in type(x).__gtype__.name:
