@@ -1,6 +1,8 @@
 """End to end OMEMO: OMEMO 2 with SCE, legacy OMEMO, trust (blind trust, verification, new devices), encrypted
 files and encrypted private groups."""
 
+import asyncio
+
 import pytest
 from helpers import account, befriend, fresh, make_core, session, stop, wait_for
 
@@ -199,3 +201,50 @@ def test_encrypted_note_to_self(trust_test_ca, tmp_path, run):
             await stop(*(c for c in (one, two) if c is not None))
 
     run(main(), timeout=90)
+
+
+def test_own_messages_reach_other_devices(trust_test_ca, tmp_path, run):
+    """A carbon copy of our own message must be encrypted for our other devices too."""
+    prosody = trust_test_ca
+
+    async def main():
+        ALICE = fresh(prosody, "alice-own")
+        BOB = fresh(prosody, "bob-own")
+        laptop = await make_core(tmp_path, prosody, ALICE, "alice-laptop", resource="laptop")
+        bob = await make_core(tmp_path, prosody, BOB, "bob-own")
+        phone = None
+        try:
+            a, b = account(laptop), account(bob)
+            await wait_for(lambda: a.omemo_ready and b.omemo_ready, 20, "OMEMO ready")
+            await befriend(laptop, bob)
+            phone = await make_core(tmp_path, prosody, ALICE, "alice-phone", resource="phone")
+            p = account(phone)
+            await wait_for(lambda: p.omemo_ready, 20, "phone OMEMO")
+            # Trust the two own devices in both directions: the default blind-trust policy asks about new devices.
+            async def other_device(owner):
+                for _ in range(100):
+                    devs = await owner.omemo.devices(session(owner), account(owner).jid)
+                    found = next((d for d in devs if not d.this_device), None)
+                    if found is not None:
+                        return found
+                    await asyncio.sleep(0.2)
+                raise AssertionError("the other own device did not appear")
+
+            for owner in (laptop, phone):
+                other_dev = await other_device(owner)
+                if other_dev.trust != "trusted":
+                    await owner.omemo.set_trust(session(owner), account(owner).jid, other_dev.device_id, "TRUSTED")
+
+            chat = await laptop.open_chat(a, b.jid)
+            await laptop.messaging.send_text(chat, "hello from the laptop")
+            pchat = await wait_for(lambda: phone.chats.find(p.id, b.jid, "chat"), 20, "phone chat")
+            pml = await phone.chats.open_messages(pchat)
+            await wait_for(lambda: any(m.body == "hello from the laptop" for m in pml.items()), 20,
+                           "carbon at phone")
+            got = next(m for m in pml.items() if m.body == "hello from the laptop")
+            assert got.outgoing
+            assert not got.extra.get("decrypt_error"), got.extra
+        finally:
+            await stop(laptop, bob, *([phone] if phone else []))
+
+    run(main(), timeout=120)
