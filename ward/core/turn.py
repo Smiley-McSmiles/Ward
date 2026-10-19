@@ -155,7 +155,13 @@ def time_limited_credentials(secret: str, ttl: int, name: str = "ward", now: flo
 def _urn(scheme: str, host: str, port: int, username: str = "", password: str = "",
          transport: str = "udp") -> str:
     if scheme.startswith("turn") and username:
-        userinfo = quote(username, safe="") + ":" + quote(password, safe="")
+        # libnice's TURN URI format for time-limited credentials is
+        # turn://timestamp:username:password@host:port, not the ordinary user:password form.
+        timestamp, sep, name = username.partition(":")
+        if sep and timestamp.isdigit():
+            userinfo = "%s:%s:%s" % (timestamp, quote(name, safe=""), quote(password, safe=""))
+        else:
+            userinfo = quote(username, safe="") + ":" + quote(password, safe="")
         base = "%s://%s@%s:%d" % (scheme, userinfo, host, port)
     else:
         base = "%s://%s:%d" % (scheme, host, port)

@@ -60,7 +60,9 @@ def test_webrtc_uris() -> None:
     settings["calls.turn_secret"] = "secret"
     _stun, turn_uris = turn.webrtc_uris(services, settings)
     userinfo, host = turn_uris[0].split("@", 1)
-    assert userinfo.startswith("turn://") and "%3A" in userinfo
+    assert userinfo.startswith("turn://")
+    timestamp, name, password = userinfo[len("turn://"):].split(":", 2)
+    assert timestamp.isdigit() and name == "user" and password
     assert host.startswith("turn.example.org:3478")
 
     settings["calls.relay_only"] = True

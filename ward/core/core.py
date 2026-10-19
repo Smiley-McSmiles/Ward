@@ -23,6 +23,7 @@ from ..settings import Settings
 from . import secrets
 from .accounts import Accounts
 from .admin import AdminService
+from .calls import Calls
 from .chat import ChatService
 from .chats import Chats
 from .disco import DiscoService
@@ -84,6 +85,7 @@ class Core(GObject.Object):
         self.chats = Chats(self)
         self.requests = Requests(self)
         self.names = Names(self)
+        self.calls = Calls(self)
         self.messaging = ChatService(self)
         self.history = HistoryService(self)
         self.disco = DiscoService(self)
@@ -198,7 +200,7 @@ class Core(GObject.Object):
         if s is not None:
             return s
         handlers = {}
-        for svc in (self.roster, self.omemo, self.pgp):
+        for svc in (self.roster, self.omemo, self.pgp, self.calls):
             for key, meth in (getattr(svc, "iq_handlers", None) or {}).items():
                 handlers[key] = getattr(svc, meth)
         s = AccountSession(acc, self.settings, handlers)
@@ -208,6 +210,7 @@ class Core(GObject.Object):
         self.roster.attach(s)
         self.messaging.attach(s)
         self.muc.attach(s)
+        self.calls.attach(s)
         for svc in (self.omemo, self.pgp):
             if svc is not None:
                 svc.attach(s)

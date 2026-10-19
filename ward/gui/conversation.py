@@ -119,6 +119,14 @@ class ConversationView(Gtk.Box):
         self.enc_popover.connect("show", lambda *_: self._fill_encryption_popover())
         self.enc_button.set_popover(self.enc_popover)
         self.header.pack_end(self.enc_button)
+        self.video_call_button = Gtk.Button(icon_name="camera-video-symbolic", css_classes=["flat"],
+                                            tooltip_text=_("Start a video call"), visible=False)
+        self.video_call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, True))
+        self.header.pack_end(self.video_call_button)
+        self.call_button = Gtk.Button(icon_name="call-start-symbolic", css_classes=["flat"],
+                                      tooltip_text=_("Start an audio call"), visible=False)
+        self.call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, False))
+        self.header.pack_end(self.call_button)
 
     def _build_banner(self) -> None:
         self.banner = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
@@ -515,6 +523,8 @@ class ConversationView(Gtk.Box):
         title = _(ENC_TITLES.get(chat.encryption_state or "omemo", "Encryption"))
         self.enc_button.set_tooltip_text("%s%s" % (title, ("\n" + chat.encryption_reason)
                                                    if chat.encryption_reason else ""))
+        for button in (self.call_button, self.video_call_button):
+            button.set_visible(not group)
 
     def _update_banner(self) -> None:
         chat = self.chat
