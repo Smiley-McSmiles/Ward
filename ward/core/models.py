@@ -305,6 +305,29 @@ class MessageItem(Item):
                                                self.body[:30])
 
 
+class CallItem(Item):
+    """One Jingle call, shown by the call window."""
+    __gtype_name__ = "WardCall"
+    sid = _prop(str)
+    account_id = _prop(int)
+    jid = _prop(str)
+    name = _prop(str)
+    direction = _prop(int)                 # 0 incoming, 1 outgoing
+    media = _prop(str, "audio")            # audio | video
+    state = _prop(str, "ringing")          # incoming | ringing | connecting | active | ended
+    error = _prop(str)
+    muted = _prop(bool)
+    video = _prop(bool)
+    screen = _prop(bool)
+    started_at = _prop("int64")
+    paintable = GObject.Property(type=GObject.TYPE_PYOBJECT)
+
+    def __init__(self, **kw):
+        super().__init__()
+        for k, v in kw.items():
+            setattr(self, k, v)
+
+
 class DeviceItem(Item):
     """An OMEMO device (ours or a contact's) or an OpenPGP key, for the trust pages."""
     __gtype_name__ = "WardDevice"

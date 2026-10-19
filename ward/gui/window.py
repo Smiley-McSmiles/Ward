@@ -11,6 +11,7 @@ from .. import APP_NAME
 from ..core.models import AccountItem, ChatItem
 from ..i18n import _
 from . import compat, lifetime, widgets
+from .call import CallWindow, IncomingCallWindow
 from .conversation import ConversationView
 from .sidebar import Sidebar
 
@@ -67,6 +68,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.settings = self.core.settings
         self.current_chat: ChatItem | None = None
         self.narrow = False
+        self._call_window: CallWindow | None = None
+        self._incoming_window: IncomingCallWindow | None = None
         self._asked_password: set[int] = set()
         self._omemo_watched = False
 
@@ -111,6 +114,7 @@ class MainWindow(Adw.ApplicationWindow):
         bp.connect("unapply", lambda *_: self._set_narrow(False))
         self.add_breakpoint(bp)
 
+        self.core.calls.connect("incoming", self._on_incoming_call)
         self._install_actions()
         self.connect("close-request", self._on_close)
         self.connect("notify::is-active", self._on_focus)
@@ -126,6 +130,46 @@ class MainWindow(Adw.ApplicationWindow):
         self._watch_omemo()
         if self.core.started:
             self.ready()
+
+    # ================================================================== calls
+    def start_call(self, chat: ChatItem | None, video: bool = False) -> None:
+        if chat is None or chat.type != "chat":
+            return
+        if self._call_window is not None:
+            compat.toast(self, _("You are already in a call"))
+            return
+        account = self.core.accounts.get(chat.account_id)
+        if account is None:
+            return
+
+        async def go():
+            call = await self.core.calls.place_call(account, chat.jid, video)
+            self._show_call(call)
+
+        widgets.run(self, go(), error=_("Could not start the call"))
+
+    def _on_incoming_call(self, _calls, call) -> None:
+        if self._call_window is not None:
+            return
+        call.connect("notify::state", lambda *_: self._call_state(call))
+        self._incoming_window = IncomingCallWindow(self.app, call)
+        self._incoming_window.set_transient_for(self)
+        self._incoming_window.connect("destroy", lambda *_: setattr(self, "_incoming_window", None))
+        self._incoming_window.present()
+
+    def _call_state(self, call) -> None:
+        if call.state in ("connecting", "active") and self._call_window is None:
+            self._show_call(call)
+        if call.state == "ended" and self._incoming_window is not None:
+            self._incoming_window.destroy()
+
+    def _show_call(self, call) -> None:
+        if self._call_window is not None:
+            return
+        self._call_window = CallWindow(self.app, call)
+        self._call_window.set_transient_for(self)
+        self._call_window.connect("destroy", lambda *_: setattr(self, "_call_window", None))
+        self._call_window.present()
 
     def _watch_omemo(self) -> None:
         """Connect to the encryption service whenever it is there: at startup it is created while the window is

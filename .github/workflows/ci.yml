@@ -44,7 +44,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y prosody xvfb gnupg python3-pip python3-pytest python3-hypothesis python3-gi gir1.2-gtk-4.0 \
             gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1 python3-slixmpp python3-markdown-it \
-            python3-cryptography python3-pil python3-linkify-it python3-mdit-py-plugins dbus-x11
+            python3-cryptography python3-pil python3-linkify-it python3-mdit-py-plugins dbus-x11 \
+            gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+            gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0
           sudo systemctl stop prosody || true
           pip install --user --break-system-packages omemo "twomemo[xml]" "oldmemo[xml]" x3dh doubleratchet xeddsa
           if [ "${{ matrix.slixmpp }}" = latest ]; then pip install --user --break-system-packages --upgrade slixmpp; fi

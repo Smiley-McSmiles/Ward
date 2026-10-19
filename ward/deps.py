@@ -85,6 +85,24 @@ PACKAGES: dict[str, dict[str, str]] = {
               "media": "gst-plugins1-good", "zbar": "zbar", "pip": PY + "-pip", "omemo": "-"},
 }
 
+# GStreamer WebRTC, libnice's ICE plugin and the audio/video plugins calls use.  Kept out of the table above so
+# the common packages stay easy to read; every one is optional, calls simply report what is missing.
+CALL_PACKAGES = {
+    "apt": "gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad "
+           "gir1.2-gstreamer-1.0",
+    "dnf": "libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free",
+    "pacman": "libnice gst-plugins-base gst-plugins-good gst-plugins-bad",
+    "zypper": "libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad",
+    "xbps": "libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1",
+    "apk": "libnice gst-plugins-base gst-plugins-good gst-plugins-bad",
+    "emerge": "media-libs/libnice media-plugins/gst-plugins-webrtc",
+    "pkg": "libnice gstreamer1-plugins-bad",
+    "pkg_add": "libnice gst-plugins1-bad",
+    "pkgin": "libnice gst-plugins1-bad",
+}
+for _manager, _packages in CALL_PACKAGES.items():
+    PACKAGES[_manager]["calls"] = _packages
+
 INSTALL_CMD = {"apt": "sudo apt install", "dnf": "sudo dnf install", "pacman": "sudo pacman -S",
                "zypper": "sudo zypper install", "xbps": "sudo xbps-install -S", "apk": "doas apk add",
                "emerge": "sudo emerge --ask", "pkg": "sudo pkg install", "pkg_add": "doas pkg_add",
@@ -139,6 +157,20 @@ class Feature:
     @property
     def hint(self) -> str:
         return "" if self.available else install_hint(*self.components)
+
+
+def calls_available() -> bool:
+    """GStreamer's webrtcbin plus libnice's ICE elements, which calls need."""
+    try:
+        import gi
+
+        gi.require_version("Gst", "1.0")
+        from gi.repository import Gst
+
+        Gst.init(None)
+        return bool(Gst.ElementFactory.find("webrtcbin") and Gst.ElementFactory.find("nicesrc"))
+    except (ImportError, ValueError, AttributeError):
+        return False
 
 
 def _module(name: str) -> bool:
@@ -273,6 +305,8 @@ def features() -> list[Feature]:
         Feature("pillow", N_("Image resizing and metadata stripping (Pillow)"), have("pillow"),
                 N_("GdkPixbuf is used without it"), ("pillow",)),
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
+        Feature("calls", N_("Voice, video and screen-sharing calls (GStreamer WebRTC)"), calls_available(), "",
+                ("calls",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
     ]
 

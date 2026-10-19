@@ -156,6 +156,20 @@ packages() {
                OPT="gtksourceview5 libsecret $P-Pillow $P-pip gnupg2 desktop-file-utils" ;;
         *) REQ=""; OPT="" ;;
     esac
+    # optional: GStreamer WebRTC and libnice for voice/video/screen-sharing calls
+    case "$(pm_name)" in
+        apt-get) OPT="$OPT gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gir1.2-gstreamer-1.0" ;;
+        dnf) OPT="$OPT libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free" ;;
+        zypper) OPT="$OPT libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad" ;;
+        pacman) OPT="$OPT libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
+        xbps-install) OPT="$OPT libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1" ;;
+        apk) OPT="$OPT libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
+        emerge) OPT="$OPT media-libs/libnice media-plugins/gst-plugins-webrtc" ;;
+        pkg) OPT="$OPT libnice gstreamer1-plugins-bad" ;;
+        pkg_add) if [ "$OS" = NetBSD ]; then OPT="$OPT libnice gst-plugins1-bad"
+                 else OPT="$OPT libnice gstreamer1-plugins-bad"; fi ;;
+        pkgin) OPT="$OPT libnice gst-plugins1-bad" ;;
+    esac
 }
 
 deps_hint() {
