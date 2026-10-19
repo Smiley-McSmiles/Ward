@@ -89,7 +89,7 @@ PACKAGES: dict[str, dict[str, str]] = {
 # the common packages stay easy to read; every one is optional, calls simply report what is missing.
 CALL_PACKAGES = {
     "apt": "gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad "
-           "gir1.2-gstreamer-1.0",
+           "gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0",
     "dnf": "libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free",
     "pacman": "libnice gst-plugins-base gst-plugins-good gst-plugins-bad",
     "zypper": "libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad",
@@ -165,6 +165,8 @@ def calls_available() -> bool:
         import gi
 
         gi.require_version("Gst", "1.0")
+        gi.require_version("GstWebRTC", "1.0")
+        gi.require_version("GstSdp", "1.0")
         from gi.repository import Gst
 
         Gst.init(None)

@@ -28,6 +28,7 @@ AS_ROOT=""      # sudo or doas, to run the package manager when we are not root
 SYSLINKS=1
 MANDIR_OPT=""
 WARNINGS=""
+CALLS=""
 SRC=$(cd "$(dirname "$0")" && pwd)
 DESTDIR=${DESTDIR:-}
 APPID=io.github.smiley_mcsmiles.Ward
@@ -156,35 +157,37 @@ packages() {
                OPT="gtksourceview5 libsecret $P-Pillow $P-pip gnupg2 desktop-file-utils" ;;
         *) REQ=""; OPT="" ;;
     esac
-    # optional: GStreamer WebRTC and libnice for voice/video/screen-sharing calls
+    # optional: GStreamer WebRTC (webrtcbin) and libnice's ICE plugin for voice/video/screen-sharing calls
+    CALLS=""
     case "$(pm_name)" in
-        apt-get) OPT="$OPT gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gir1.2-gstreamer-1.0" ;;
-        dnf) OPT="$OPT libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free" ;;
-        zypper) OPT="$OPT libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad" ;;
-        pacman) OPT="$OPT libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
-        xbps-install) OPT="$OPT libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1" ;;
-        apk) OPT="$OPT libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
-        emerge) OPT="$OPT media-libs/libnice media-plugins/gst-plugins-webrtc" ;;
-        pkg) OPT="$OPT libnice gstreamer1-plugins-bad" ;;
-        pkg_add) if [ "$OS" = NetBSD ]; then OPT="$OPT libnice gst-plugins1-bad"
-                 else OPT="$OPT libnice gstreamer1-plugins-bad"; fi ;;
-        pkgin) OPT="$OPT libnice gst-plugins1-bad" ;;
+        apt-get) CALLS="gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0" ;;
+        dnf) CALLS="libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free" ;;
+        zypper) CALLS="libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad" ;;
+        pacman) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
+        xbps-install) CALLS="libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1" ;;
+        apk) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
+        emerge) CALLS="media-libs/libnice media-plugins/gst-plugins-webrtc" ;;
+        pkg) CALLS="libnice gstreamer1-plugins-bad" ;;
+        pkg_add) if [ "$OS" = NetBSD ]; then CALLS="libnice gst-plugins1-bad"
+                 else CALLS="libnice gstreamer1-plugins-bad"; fi ;;
+        pkgin) CALLS="libnice gst-plugins1-bad" ;;
     esac
+    if [ -n "$CALLS" ]; then OPT="$OPT $CALLS"; fi
 }
 
 deps_hint() {
     packages
     case "$(pm_name)" in
-        apt-get) echo "sudo apt install $REQ" ;;
-        dnf) echo "sudo dnf install $REQ" ;;
-        zypper) echo "sudo zypper install $REQ" ;;
-        pacman) echo "sudo pacman -S $REQ" ;;
-        xbps-install) echo "sudo xbps-install -S $REQ" ;;
-        apk) echo "doas apk add $REQ" ;;
-        emerge) echo "sudo emerge --ask $REQ" ;;
-        pkg) echo "sudo pkg install $REQ" ;;
-        pkg_add) echo "doas pkg_add $REQ" ;;
-        pkgin) echo "sudo pkgin install $REQ" ;;
+        apt-get) echo "sudo apt install $REQ $CALLS" ;;
+        dnf) echo "sudo dnf install $REQ $CALLS" ;;
+        zypper) echo "sudo zypper install $REQ $CALLS" ;;
+        pacman) echo "sudo pacman -S $REQ $CALLS" ;;
+        xbps-install) echo "sudo xbps-install -S $REQ $CALLS" ;;
+        apk) echo "doas apk add $REQ $CALLS" ;;
+        emerge) echo "sudo emerge --ask $REQ $CALLS" ;;
+        pkg) echo "sudo pkg install $REQ $CALLS" ;;
+        pkg_add) echo "doas pkg_add $REQ $CALLS" ;;
+        pkgin) echo "sudo pkgin install $REQ $CALLS" ;;
         *) echo "install Python 3.11+, PyGObject, GTK 4.12+, libadwaita 1.4+, slixmpp, markdown-it-py and cryptography" ;;
     esac
 }
@@ -236,6 +239,9 @@ install_deps() {
     fi
     # one at a time: a recommended package missing from this release must not stop the others
     for p in $OPT; do install_pkgs "$p" >/dev/null 2>&1 || warn "optional package not available: $p"; done
+    if ! calls_available; then
+        warn "calls still need GStreamer webrtcbin and libnice-gstreamer (packages: $CALLS)"
+    fi
 }
 
 # ------------------------------------------------------------------------------------------- Python
@@ -258,6 +264,13 @@ find_python() {   # the first Python 3.11+ that has GTK 4 and libadwaita (falls 
 
 # what the system has, or a previous install fetched into Ward's own folder
 module() { PYTHONPATH="$LIBDIR/vendor${PYTHONPATH:+:$PYTHONPATH}" "$PY" -c "import $1" 2>/dev/null; }
+
+# calls_available: webrtcbin and libnice's nicesrc, the same probe Ward uses for its Calls feature
+calls_available() {
+    py=${PY:-}
+    [ -n "$py" ] || py=$(find_python 2>/dev/null) || return 1
+    "$py" -c 'import gi; gi.require_version("Gst", "1.0"); gi.require_version("GstWebRTC", "1.0"); gi.require_version("GstSdp", "1.0"); from gi.repository import Gst, GstSdp, GstWebRTC; Gst.init(None); raise SystemExit(0 if Gst.ElementFactory.find("webrtcbin") and Gst.ElementFactory.find("nicesrc") else 1)' 2>/dev/null
+}
 
 typelib() { "$PY" -c "import gi; gi.require_version('$1', '$2')" 2>/dev/null; }
 
@@ -292,6 +305,9 @@ missing_deps() {
             else
                 gap "OMEMO encryption libraries (fetched with pip)"
             fi
+        fi
+        if ! calls_available; then
+            MISSING_SYS=1; gap "GStreamer WebRTC calls (webrtcbin and libnice-gstreamer, optional)"
         fi
     fi
     have gpg || have gpg2 || { MISSING_SYS=1; gap "GnuPG (OpenPGP encryption, optional)"; }
@@ -333,6 +349,7 @@ This machine is missing:%s
 }
 
 preflight() {
+    packages
     PY=$(find_python) || die "Python 3.$MIN_PY or newer is required. $(deps_hint)"
     say "Python: $PY ($("$PY" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])'))"
     if py_ok "$PY"; then
@@ -353,6 +370,12 @@ preflight() {
         say "OMEMO encryption: fetching it with pip"
     else
         say "OMEMO encryption: not installed yet - Ward offers to install it on first use (or: $0 --vendor)"
+    fi
+    if calls_available; then
+        say "Calls: available (GStreamer WebRTC)"
+    else
+        say "Calls: not available - needs GStreamer webrtcbin and libnice-gstreamer (optional)"
+        if [ -n "$CALLS" ]; then say "       install with: $(deps_hint)"; fi
     fi
     have gpg || have gpg2 || say "OpenPGP: gpg not found (optional)"
 }
