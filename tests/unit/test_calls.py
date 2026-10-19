@@ -115,7 +115,7 @@ def test_outgoing_call(monkeypatch, run):
         sid, action, media = _jmi(session.messages[-1])
         assert (sid, action, media) == (call.sid, "propose", ("audio",))
 
-        await service._on_jmi(session, "bob@example.org/phone", call.sid, "accept", ("audio",))
+        await service._on_jmi(session, "bob@example.org/phone", call.sid, "proceed", ("audio",))
         assert call.state == "connecting"
         _type, to, payload = session.iqs[-1]
         j = jingle.parse_jingle(payload[0])
@@ -149,7 +149,8 @@ def test_incoming_call(monkeypatch, run):
 
         await service.accept(call)
         assert call.state == "connecting"
-        assert _jmi(session.messages[-1])[1] == "accept"
+        assert _jmi(session.messages[-1])[1] == "proceed"
+        assert session.messages[-1].get("to") == "bob@example.org"
 
         offer = jingle.build_jingle("session-initiate", "sid2", "bob@example.org/phone",
                                     [content("initiator", "offer")])

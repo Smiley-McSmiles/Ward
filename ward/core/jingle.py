@@ -113,7 +113,7 @@ def parse_jmi(el) -> tuple[str, str, tuple[str, ...]]:
     media: list[str] = []
     for child in el:
         name = local(child.tag)
-        if name in ("propose", "proceed", "accept", "reject", "retract", "finish"):
+        if name in ("propose", "proceed", "ringing", "accept", "reject", "retract", "finish"):
             action = name
             for desc in child:
                 if local(desc.tag) == "description":
