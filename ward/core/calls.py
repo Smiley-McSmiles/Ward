@@ -264,8 +264,9 @@ class Calls(GObject.Object):
             contents = await info.media.create_offer()
             info.contents = contents
             self._flush_candidates(info)
+            initiator = getattr(info.session, "bound_jid", "") or info.session.jid
             await info.session.iq("set", info.peer, jingle.build_jingle(
-                "session-initiate", info.call.sid, info.session.jid, contents))
+                "session-initiate", info.call.sid, initiator, contents))
         except Exception as e:
             log.info("could not start call %s: %s", info.call.sid, e)
             self._finish(info.call.sid, str(e), notify=True)
@@ -288,8 +289,9 @@ class Calls(GObject.Object):
             info.answer = answer
             info.contents = answer
             self._flush_candidates(info)
+            responder = getattr(info.session, "bound_jid", "") or info.session.jid
             await info.session.iq("set", info.peer, jingle.build_jingle(
-                "session-accept", info.call.sid, "", answer, responder=info.session.jid))
+                "session-accept", info.call.sid, "", answer, responder=responder))
             info.call.state = "active"
             info.call.started_at = int(time.time() * 1000)
         except Exception as e:
@@ -361,7 +363,8 @@ class Calls(GObject.Object):
                 call = CallItem(sid=j.sid, account_id=session.account.id, jid=util.bare(j.initiator),
                                 name=self.core.names.contact_name(session.account.id, j.initiator),
                                 direction=0, media="video" if video else "audio", state="incoming", video=video)
-                info = _Call(call, session, j.initiator or session.jid, offer=j.contents)
+                info = _Call(call, session, j.initiator or getattr(session, "bound_jid", "") or session.jid,
+                             offer=j.contents)
                 self._calls[j.sid] = info
                 if not self._busy():
                     self.active = call

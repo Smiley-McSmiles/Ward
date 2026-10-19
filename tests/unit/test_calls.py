@@ -16,6 +16,7 @@ class FakeSession:
     def __init__(self):
         self.account = AccountItem(id=1, jid="alice@example.org")
         self.jid = "alice@example.org/ward"
+        self.bound_jid = "alice@example.org/ward"
         self.online = True
         self.messages: list[ET.Element] = []
         self.iqs: list[tuple[str, str, tuple]] = []
@@ -121,6 +122,7 @@ def test_outgoing_call(monkeypatch, run):
         j = jingle.parse_jingle(payload[0])
         assert j.action == "session-initiate" and j.sid == call.sid
         assert to == "bob@example.org/phone", "the Jingle offer must go to the accepting resource"
+        assert j.initiator == "alice@example.org/ward"
 
         accept = jingle.build_jingle("session-accept", call.sid, "", [content("responder", "answer")],
                                      responder="bob@example.org/phone")
