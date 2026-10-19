@@ -1,6 +1,8 @@
 """End to end OMEMO: OMEMO 2 with SCE, legacy OMEMO, trust (blind trust, verification, new devices), encrypted
 files and encrypted private groups."""
 
+import asyncio
+
 import pytest
 from helpers import account, befriend, fresh, make_core, session, stop, wait_for
 
@@ -219,14 +221,19 @@ def test_own_messages_reach_other_devices(trust_test_ca, tmp_path, run):
             p = account(phone)
             await wait_for(lambda: p.omemo_ready, 20, "phone OMEMO")
             # Trust the two own devices in both directions: the default blind-trust policy asks about new devices.
-            for owner, other in ((laptop, phone), (phone, laptop)):
-                other_jid = account(other).jid
-                devs = await wait_for(
-                    lambda owner=owner, other_jid=other_jid: owner.omemo.devices(session(owner), other_jid),
-                    20, "own device list")
-                other_dev = next(d for d in devs if not d.this_device)
+            async def other_device(owner):
+                for _ in range(100):
+                    devs = await owner.omemo.devices(session(owner), account(owner).jid)
+                    found = next((d for d in devs if not d.this_device), None)
+                    if found is not None:
+                        return found
+                    await asyncio.sleep(0.2)
+                raise AssertionError("the other own device did not appear")
+
+            for owner in (laptop, phone):
+                other_dev = await other_device(owner)
                 if other_dev.trust != "trusted":
-                    await owner.omemo.set_trust(session(owner), other_jid, other_dev.device_id, "TRUSTED")
+                    await owner.omemo.set_trust(session(owner), account(owner).jid, other_dev.device_id, "TRUSTED")
 
             chat = await laptop.open_chat(a, b.jid)
             await laptop.messaging.send_text(chat, "hello from the laptop")
