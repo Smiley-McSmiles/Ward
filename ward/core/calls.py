@@ -17,7 +17,7 @@ from gi.repository import Gio, GLib, GObject
 from .. import aio, util
 from ..i18n import _
 from . import jingle
-from .jingle import Content
+from .jingle import Candidate, Content
 from .models import AccountItem, CallItem
 from .rtp import CallMedia
 from .rtp import available as media_available
@@ -41,7 +41,8 @@ class _Call:
     answer: list[Content] = field(default_factory=list)
     media: CallMedia | None = None
     contents: list[Content] = field(default_factory=list)
-    pending_candidates: list[tuple[int, object]] = field(default_factory=list)
+    pending_candidates: list[tuple[int, Candidate]] = field(default_factory=list)
+    remote_candidates: list[tuple[str, Candidate]] = field(default_factory=list)
     timeout: int = 0
     answered: bool = False
 
@@ -207,6 +208,10 @@ class Calls(GObject.Object):
             info.media = CallMedia(stun, turns, kinds, bool(self.core.settings["calls.relay_only"]))
             self._wire_media(info)
             info.contents = info.offer
+            for name, candidate in info.remote_candidates:
+                line = next((i for i, c in enumerate(info.contents) if c.name == name), 0)
+                info.media.add_candidate(line, candidate)
+            info.remote_candidates = []
             answer = await info.media.create_answer(info.offer)
             info.answer = answer
             info.contents = answer
@@ -320,8 +325,10 @@ class Calls(GObject.Object):
                     line = next(i for i, c in enumerate(info.contents) if c.name == content.name)
                 except StopIteration:
                     line = 0
-                if info.media is not None:
-                    for candidate in content.transport.candidates:
+                for candidate in content.transport.candidates:
+                    if info.media is None:
+                        info.remote_candidates.append((content.name, candidate))
+                    else:
                         info.media.add_candidate(line, candidate)
         elif j.action == "session-terminate":
             self._finish(j.sid, j.reason or _("Call ended"), notify=True)
