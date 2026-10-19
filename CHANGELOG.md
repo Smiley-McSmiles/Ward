@@ -20,7 +20,8 @@ An AppImage: one file with Python, GTK, libadwaita, GStreamer's WebRTC with libn
 for distributions where Ward's dependencies are missing or too old. Calls work in it on Void, whose own GStreamer has
 no WebRTC. `./package.sh appimage` builds it; CI builds and starts it. The image includes NSS's crypto modules
 (libsoftokn3, libfreebl3, ...): libsrtp2 is built against NSS, which loads them by name, and without them SRTP could
-not start, so calls connected but carried no voice.
+not start, so calls connected but carried no voice. Its own encryption libraries come before an existing
+distribution's private folder, whose modules are built for another Python and used to hide the image's.
 
 ## v1.0.1 (2026-10-19)
 
