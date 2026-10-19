@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="sh" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8e7e4"/>
+    </linearGradient>
+    <linearGradient id="bu" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8c94a"/><stop offset="1" stop-color="#e5a50a"/>
+    </linearGradient>
+  </defs>
+  <!-- the shield fills the icon; a soft edge and shadow keep it visible on light backgrounds -->
+  <path d="M64 10 14 28v34c0 31 21.5 56 50 64 28.5-8 50-33 50-64V28z" fill="#000" fill-opacity=".12"
+        transform="translate(0 3)"/>
+  <path d="M64 8 14 26v34c0 31 21.5 56 50 64 28.5-8 50-33 50-64V26z" fill="url(#sh)" stroke="#9a9996"
+        stroke-width="2" stroke-opacity=".6"/>
+  <path d="M34 40h60a9 9 0 0 1 9 9v30a9 9 0 0 1-9 9H66l-19 14V88h-13a9 9 0 0 1-9-9V49a9 9 0 0 1 9-9z"
+        fill="url(#bu)"/>
+  <circle cx="46" cy="64" r="6.5" fill="#fff"/><circle cx="64" cy="64" r="6.5" fill="#fff"/>
+  <circle cx="82" cy="64" r="6.5" fill="#fff"/>
+  <circle cx="104" cy="24" r="18" fill="#e01b24" stroke="#fff" stroke-width="4"/>
+</svg>

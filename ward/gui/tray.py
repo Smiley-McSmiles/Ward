@@ -91,6 +91,7 @@ class Tray:
         self.app = app
         self.unread = 0
         self.state = "offline"         # online | connecting | offline
+        self.show = "available"        # available | away | dnd | xa | offline
         self._pixmaps: dict[str, list] = {}
         self._pixmap_variants: dict[str, GLib.Variant] = {}
         self._registered = False
@@ -137,7 +138,11 @@ class Tray:
             return APP_ID + "-offline"
         if self.state == "connecting":
             return APP_ID + "-connecting"
-        return APP_ID + "-unread" if attention or self.unread else APP_ID
+        show = self.show if self.show in ("away", "dnd", "xa", "offline") else "available"
+        base = APP_ID if show == "available" else APP_ID + "-" + show
+        if (attention or self.unread) and show != "offline":
+            return base + "-unread"
+        return base
 
     def _pixmap(self, name: str) -> list:
         """The icon as ARGB32 pixels too: hosts that can't find our icon theme (GNOME's extension, Flatpak,
@@ -193,9 +198,11 @@ class Tray:
             self._pixmap_variants[name] = v
         return v
 
-    def set_state(self, state: str) -> None:
-        if state != self.state:
+    def set_state(self, state: str, show: str = "") -> None:
+        show = show or "available"
+        if state != self.state or show != self.show:
             self.state = state
+            self.show = show
             self._changed()
 
     def _changed(self) -> None:
@@ -262,6 +269,9 @@ class Tray:
             return GLib.Variant("o", "/MenuBar")
         if name == "ToolTip":
             state = {"online": _("Connected"), "connecting": _("Connecting…"), "offline": _("Offline")}[self.state]
+            if self.state == "online" and self.show in ("away", "dnd", "xa", "offline"):
+                state = {"away": _("Away"), "dnd": _("Busy"), "xa": _("Away for a while"),
+                         "offline": _("Offline")}[self.show]
             tip = state + (" · " + _("%d unread") % self.unread if self.unread else "")
             return GLib.Variant("(sa(iiay)ss)", (self._icon_name(), [], APP_NAME, tip))
         return None

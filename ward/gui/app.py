@@ -349,7 +349,7 @@ class WardApplication(Adw.Application):
                 self._watched_accounts.add(acc.id)
                 acc.connect("notify::state", lambda *_: self._update_tray_state())
                 acc.connect("notify::enabled", lambda *_: self._update_tray_state())
-                acc.connect("notify::show", lambda *_: self.tray.menu_changed() if self.tray is not None else None)
+                acc.connect("notify::show", self._on_account_show_changed)
         self._update_tray_state()
 
     def common_show(self) -> str:
@@ -375,9 +375,14 @@ class WardApplication(Adw.Application):
             return "connecting"
         return "offline"
 
+    def _on_account_show_changed(self, *_a) -> None:
+        self._update_tray_state()
+        if self.tray is not None:
+            self.tray.menu_changed()
+
     def _update_tray_state(self) -> None:
         if self.tray is not None and self.core is not None:
-            self.tray.set_state(self.connection_state())
+            self.tray.set_state(self.connection_state(), self.common_show())
 
     def _tray_wanted(self) -> bool:
         return self.core is not None and self.core.settings["general.tray"] != "never"
