@@ -138,7 +138,7 @@ class CallMedia(GObject.Object):
     def _add_audio(self) -> None:
         source = None
         if not self.test_mode:
-            for name in ("pulsesrc", "pipewiresrc"):
+            for name in ("pulsesrc", "autoaudiosrc"):
                 if _factory(name):
                     source = _make(name)
                     break
