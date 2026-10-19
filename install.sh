@@ -201,6 +201,17 @@ need_root() {
     return 1
 }
 
+# xbps-install refuses a whole transaction when one package is already installed: ask only for the others
+xbps_install() {
+    todo=""
+    for p in "$@"; do
+        xbps-query "$p" >/dev/null 2>&1 || todo="$todo $p"
+    done
+    [ -n "$todo" ] || return 0
+    # shellcheck disable=SC2086
+    $AS_ROOT xbps-install -y $todo
+}
+
 install_pkgs() {
     # shellcheck disable=SC2086   # AS_ROOT is empty or one word
     case "$(pm_name)" in
@@ -208,7 +219,7 @@ install_pkgs() {
         dnf) $AS_ROOT dnf install -y "$@" ;;
         zypper) $AS_ROOT zypper --non-interactive install "$@" ;;
         pacman) $AS_ROOT pacman -S --needed --noconfirm "$@" ;;
-        xbps-install) $AS_ROOT xbps-install -y "$@" ;;
+        xbps-install) xbps_install "$@" ;;
         apk) $AS_ROOT apk add "$@" ;;
         emerge) $AS_ROOT emerge --noreplace "$@" ;;
         pkg) $AS_ROOT pkg install -y "$@" ;;
@@ -240,7 +251,11 @@ install_deps() {
     # one at a time: a recommended package missing from this release must not stop the others
     for p in $OPT; do install_pkgs "$p" >/dev/null 2>&1 || warn "optional package not available: $p"; done
     if ! calls_available; then
-        warn "calls still need GStreamer webrtcbin and libnice-gstreamer (packages: $CALLS)"
+        if calls_built_without_webrtcbin; then
+            warn "calls are not possible with this distribution's GStreamer: $(calls_reason)"
+        else
+            warn "calls still need GStreamer webrtcbin and libnice-gstreamer (packages: $CALLS)"
+        fi
     fi
 }
 
@@ -270,6 +285,23 @@ calls_available() {
     py=${PY:-}
     [ -n "$py" ] || py=$(find_python 2>/dev/null) || return 1
     "$py" -c 'import gi; gi.require_version("Gst", "1.0"); gi.require_version("GstWebRTC", "1.0"); gi.require_version("GstSdp", "1.0"); from gi.repository import Gst, GstSdp, GstWebRTC; Gst.init(None); raise SystemExit(0 if Gst.ElementFactory.find("webrtcbin") and Gst.ElementFactory.find("nicesrc") else 1)' 2>/dev/null
+}
+
+# calls_built_without_webrtcbin: the ICE plugin and codecs are there but not webrtcbin, so the distribution built
+# GStreamer without it and no package brings it (Void's gst-plugins-bad1, whose libnice is too old)
+calls_built_without_webrtcbin() {
+    py=${PY:-}
+    [ -n "$py" ] || py=$(find_python 2>/dev/null) || return 1
+    "$py" -c 'import gi; gi.require_version("Gst", "1.0"); from gi.repository import Gst; Gst.init(None); f = Gst.ElementFactory.find; raise SystemExit(0 if not f("webrtcbin") and f("nicesrc") and f("opusenc") and f("vp8enc") else 1)' 2>/dev/null
+}
+
+calls_reason() {
+    if [ "$(pm_name)" = xbps-install ]; then
+        v=$(xbps-query -p pkgver libnice 2>/dev/null); v=${v##*-}; v=${v%_*}
+        echo "Void's gst-plugins-bad1 is built without webrtcbin, because its libnice (${v:-0.1.22}) is older than the 0.1.23 GStreamer's WebRTC plugin needs"
+    else
+        echo "this distribution's GStreamer is built without webrtcbin"
+    fi
 }
 
 typelib() { "$PY" -c "import gi; gi.require_version('$1', '$2')" 2>/dev/null; }
@@ -306,12 +338,10 @@ missing_deps() {
                 gap "OMEMO encryption libraries (fetched with pip)"
             fi
         fi
-        if ! calls_available; then
-            MISSING_SYS=1; gap "GStreamer WebRTC calls (webrtcbin and libnice-gstreamer, optional)"
+        # packages cannot help when the distribution built GStreamer without webrtcbin (Void): said in the summary
+        if ! calls_available && ! calls_built_without_webrtcbin; then
+            MISSING_SYS=1; gap "GStreamer WebRTC (audio and video calls, optional)"
         fi
-    fi
-    if [ -n "$PY" ] && ! calls_available; then
-        MISSING_SYS=1; gap "GStreamer WebRTC (audio and video calls)"
     fi
     have gpg || have gpg2 || { MISSING_SYS=1; gap "GnuPG (OpenPGP encryption, optional)"; }
 }
@@ -377,8 +407,12 @@ preflight() {
     if calls_available; then
         say "Calls: available (GStreamer WebRTC)"
     else
-        say "Calls: not available - needs GStreamer webrtcbin and libnice-gstreamer (optional)"
-        if [ -n "$CALLS" ]; then say "       install with: $(deps_hint)"; fi
+        if calls_built_without_webrtcbin; then
+            say "Calls: not available - $(calls_reason)"
+        else
+            say "Calls: not available - needs GStreamer webrtcbin and libnice-gstreamer (optional)"
+            if [ -n "$CALLS" ]; then say "       install with: $(deps_hint)"; fi
+        fi
     fi
     have gpg || have gpg2 || say "OpenPGP: gpg not found (optional)"
 }

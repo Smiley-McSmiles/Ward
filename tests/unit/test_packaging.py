@@ -201,3 +201,57 @@ def test_void_package_names():
     names.update(n for v in deps.PACKAGES["xbps"].values() for n in v.split() if n != "-")
     assert "python3-markdown-it" in names and "gst-plugins-bad1" in names     # the parsing found them
     assert names <= VOID_PACKAGES, "not Void package names (or not checked yet): %s" % sorted(names - VOID_PACKAGES)
+
+
+def _sh_function(name: str) -> str:
+    """One shell function from install.sh, to run on its own."""
+    import re
+
+    with open(os.path.join(ROOT, "install.sh")) as f:
+        text = f.read()
+    m = re.search(r"^%s\(\) \{\n.*?^\}\n" % re.escape(name), text, re.S | re.M)
+    assert m, name
+    return m.group(0)
+
+
+def _fake_bin(tmp_path, name: str, body: str) -> None:
+    path = tmp_path / name
+    path.write_text("#!/bin/sh\n" + body)
+    path.chmod(0o755)
+
+
+def test_xbps_install_skips_installed_packages(tmp_path):
+    """xbps-install refuses the whole transaction over one package that is already installed ("Package `python3'
+    already installed"), so nothing new was installed on a Void machine that already had any of them."""
+    log = tmp_path / "log"
+    _fake_bin(tmp_path, "xbps-query", 'case "$1" in python3|gtk4) exit 0 ;; *) exit 2 ;; esac\n')
+    _fake_bin(tmp_path, "xbps-install", 'echo "$@" >> "%s"\n' % log)
+    script = _sh_function("xbps_install") + 'AS_ROOT=""\nxbps_install python3 libnice gtk4 gst-plugins-bad1\n' \
+        'xbps_install python3 gtk4\n'
+    env = dict(os.environ, PATH="%s:%s" % (tmp_path, os.environ["PATH"]))
+    subprocess.run([_sh(), "-c", script], check=True, env=env)
+    assert log.read_text().split("\n")[0].split() == ["-y", "libnice", "gst-plugins-bad1"]
+    assert len(log.read_text().strip().splitlines()) == 1         # nothing left to install: not run at all
+
+
+def test_calls_reason_on_void(tmp_path):
+    _fake_bin(tmp_path, "xbps-query", 'echo libnice-0.1.22_1\n')
+    script = "pm_name() { echo xbps-install; }\n" + _sh_function("calls_reason") + "calls_reason\n"
+    env = dict(os.environ, PATH="%s:%s" % (tmp_path, os.environ["PATH"]))
+    out = subprocess.run([_sh(), "-c", script], check=True, env=env, capture_output=True, text=True).stdout
+    assert "built without webrtcbin" in out and "(0.1.22)" in out and "0.1.23" in out
+
+
+def test_check_explains_gstreamer_without_webrtcbin(monkeypatch):
+    """ward --check offered "xbps-install -S gst-plugins-bad1 libnice gst-plugins-good1" on Void although they
+    were installed: Void's gst-plugins-bad1 has no webrtcbin, since its libnice is older than GStreamer needs."""
+    from ward import deps
+
+    monkeypatch.setattr(deps, "_calls_missing", lambda: ["webrtcbin"])
+    monkeypatch.setattr(deps, "package_manager", lambda: "xbps")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "libnice-0.1.22_1\n", ""))
+    f = deps._calls_feature()
+    assert not f.available and f.hint == ""
+    assert "built without webrtcbin" in f.detail and "0.1.22" in f.detail
+    monkeypatch.setattr(deps, "_calls_missing", lambda: ["webrtcbin", "nicesrc"])
+    assert "xbps-install" in deps._calls_feature().hint          # really missing packages: the usual hint

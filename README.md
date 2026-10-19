@@ -111,6 +111,9 @@ plugins (video and audio) and GStreamer's WebRTC with libnice (calls; on Fedora 
 libnice-gstreamer1 gstreamer1-plugin-gtk4`). `ward --check` lists what you have, and `install.sh` offers to
 install them.
 
+Void's GStreamer comes without `webrtcbin` (Void's libnice, 0.1.22, is older than the 0.1.23 GStreamer's WebRTC
+plugin needs), so calls are not available there until Void updates libnice; `ward --check` says so.
+
 Calls cross the internet when your server offers STUN and TURN (XEP-0215, as Prosody and ejabberd do with coturn),
 or with the servers set in Preferences > Calls; without them they work between devices that can reach each other
 directly.

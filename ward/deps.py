@@ -292,19 +292,44 @@ def features() -> list[Feature]:
                 N_("GdkPixbuf is used without it"), ("pillow",)),
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
-        Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), _calls_available(),
-                ", ".join(_calls_missing()), ("calls",)),
+        _calls_feature(),
     ]
+
+
+def _calls_feature() -> Feature:
+    missing = _calls_missing()
+    reason = calls_built_without_webrtcbin()
+    if reason:
+        # the packages are there; installing them again would not help
+        return Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), False, reason, ())
+    return Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), not missing, ", ".join(missing),
+                   ("calls",))
+
+
+def calls_built_without_webrtcbin() -> str:
+    """Why calls cannot work although GStreamer's packages are installed, or "".  Void's gst-plugins-bad1 1.28 is
+    built without webrtcbin: GStreamer's WebRTC plugin needs libnice 0.1.23, and Void has 0.1.22."""
+    if _calls_missing() != ["webrtcbin"]:
+        return ""
+    text = "GStreamer here is built without webrtcbin"
+    if package_manager() == "xbps":
+        version = ""
+        try:
+            import subprocess
+
+            r = subprocess.run(["xbps-query", "-p", "pkgver", "libnice"], capture_output=True, text=True, timeout=5)
+            version = r.stdout.strip().rpartition("-")[2].split("_")[0]
+        except (OSError, subprocess.SubprocessError):
+            pass
+        text += ": Void's gst-plugins-bad1 leaves it out because its libnice (%s) is older than the 0.1.23 " \
+                "GStreamer's WebRTC plugin needs" % (version or "0.1.22")
+    return text
 
 
 def _calls_missing() -> list[str]:
     from .core.calls import media
 
     return media.missing_elements()
-
-
-def _calls_available() -> bool:
-    return not _calls_missing()
 
 
 def _gi_version() -> str:
