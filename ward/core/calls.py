@@ -74,6 +74,12 @@ class Calls(GObject.Object):
     def _session_for(self, account_id: int):
         return self._sessions.get(account_id)
 
+    def account_offline(self, account_id: int) -> None:
+        for sid, info in list(self._calls.items()):
+            if info.call.account_id == account_id:
+                self._finish(sid, _("Account disconnected"), notify=True)
+        self._sessions.pop(account_id, None)
+
     # ================================================================== placing
     async def place_call(self, account: AccountItem, peer: str, video: bool = False) -> CallItem:
         session = self._session_for(account.id)

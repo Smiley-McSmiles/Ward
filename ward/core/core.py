@@ -267,6 +267,7 @@ class Core(GObject.Object):
         self.emit("online", acc, resumed)
 
     def _on_offline(self, session: AccountSession) -> None:
+        self.calls.account_offline(session.account.id)
         self.muc.on_offline(session)
         for c in self.roster.contacts.for_account(session.account.id):
             if c.resources:
