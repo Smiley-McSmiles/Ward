@@ -274,6 +274,13 @@ class MainWindow(Adw.ApplicationWindow):
         self.narrow = narrow
         self.conversation.set_narrow(narrow)
 
+    def toggle_sidebar(self) -> None:
+        """Collapse or show the chat list; NavigationSplitView animates the column change."""
+        if self.narrow:
+            self.split.set_show_content(not self.split.get_show_content())
+        else:
+            self.split.set_collapsed(not self.split.get_collapsed())
+
     def open_chat_id(self, chat_id: int) -> None:
         chat = self.core.chats.by_id.get(chat_id)
         if chat is not None:

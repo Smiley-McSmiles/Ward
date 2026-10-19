@@ -93,6 +93,12 @@ class ConversationView(Gtk.Box):
     def _build_header(self) -> None:
         self.header = Adw.HeaderBar()
         self.toolbar.add_top_bar(self.header)
+        self.sidebar_button = Gtk.Button(icon_name="sidebar-show-symbolic", css_classes=["flat"])
+        self.sidebar_button.connect("clicked", lambda *_: self.window.toggle_sidebar())
+        self.header.pack_start(self.sidebar_button)
+        self.window.split.connect("notify::collapsed", lambda *_: self._update_sidebar_button())
+        self.window.split.connect("notify::show-content", lambda *_: self._update_sidebar_button())
+        self._update_sidebar_button()
         self.title_button = Gtk.Button(css_classes=["flat"])
         tb = Gtk.Box(spacing=8)
         self.title_avatar = widgets.Avatar(28)
@@ -107,6 +113,7 @@ class ConversationView(Gtk.Box):
         self.title_button.set_tooltip_text(_("Details"))
         self.title_button.connect("clicked", lambda *_: self.show_details())
         self.header.set_title_widget(self.title_button)
+        self._update_sidebar_button()
 
         self.menu_button = Gtk.MenuButton(icon_name="view-more-symbolic", tooltip_text=_("Chat menu"))
         self.header.pack_end(self.menu_button)
@@ -128,6 +135,11 @@ class ConversationView(Gtk.Box):
                                       tooltip_text=_("Start an audio call"), visible=False)
         self.call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, False))
         self.header.pack_end(self.call_button)
+
+    def _update_sidebar_button(self) -> None:
+        hidden = self.window.split.get_collapsed() if not self.window.narrow else \
+            not self.window.split.get_show_content()
+        self.sidebar_button.set_tooltip_text(_("Show chat list") if hidden else _("Hide chat list"))
 
     def _build_banner(self) -> None:
         self.banner = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
@@ -237,11 +249,6 @@ class ConversationView(Gtk.Box):
             a.connect("activate", lambda _a, p, cb=cb: self._attachment_action(p.get_int32(), cb))
             group.add_action(a)
         self.insert_action_group("msg", group)
-
-    def _attachment_action(self, i: int, cb) -> None:
-        m = self._menu_msg
-        if m is not None and 0 <= i < len(m.attachments):
-            cb(m, m.attachments[i])
         chat_group = Gio.SimpleActionGroup()
         for name, cb in (("details", self.show_details), ("search", lambda: self.search_button.set_active(True)),
                          ("pin", lambda: self._toggle_flag("pinned")),
@@ -254,6 +261,11 @@ class ConversationView(Gtk.Box):
             a.connect("activate", lambda _a, _p, cb=cb: self.chat is not None and cb())
             chat_group.add_action(a)
         self.insert_action_group("chat", chat_group)
+
+    def _attachment_action(self, i: int, cb) -> None:
+        m = self._menu_msg
+        if m is not None and 0 <= i < len(m.attachments):
+            cb(m, m.attachments[i])
 
     # ================================================================== showing a chat
     def show_chat(self, chat: ChatItem | None) -> None:
