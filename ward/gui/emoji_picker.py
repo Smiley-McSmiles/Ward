@@ -233,6 +233,7 @@ class EmojiPicker(Gtk.Popover):
     def __init__(self, settings=None):
         super().__init__(css_classes=["emoji-picker"])
         self.settings = settings
+        self._variants_popover = None
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.search = Gtk.SearchEntry(placeholder_text=_("Search emoji"))
         self.search.connect("search-changed", lambda *_: self._show_search())
@@ -345,13 +346,24 @@ class EmojiPicker(Gtk.Popover):
             self.grid._move_to(0)
         return True
 
+    def popdown(self) -> None:
+        # A variant popover is parented inside this popover.  Close it first: GTK can crash when the parent closes
+        # while a hand-parented child popover is still mapped (seen in the memory test under Xvfb).
+        if self._variants_popover is not None:
+            self._variants_popover.popdown()
+            self._variants_popover = None
+        super().popdown()
+
     def _show_variants(self, i: int) -> None:
         """The emoji in every skin tone, for this one pick."""
         emoji = self.grid.items[i][0]
         codes = takes_tone(emoji)
         if codes is None:
             return
+        if self._variants_popover is not None:
+            self._variants_popover.popdown()
         pop = Gtk.Popover(position=Gtk.PositionType.TOP)
+        self._variants_popover = pop
         pop.set_parent(self.grid)
         pop.set_pointing_to(self.grid.cell_rect(i))
         row = Gtk.Box(spacing=2)
@@ -362,7 +374,12 @@ class EmojiPicker(Gtk.Popover):
             row.append(b)
         pop.set_child(row)
         # popovers parented by hand must be unparented by hand
-        pop.connect("closed", lambda p: GLib.idle_add(lambda: p.get_parent() is not None and p.unparent()))
+        def closed(p):
+            if self._variants_popover is p:
+                self._variants_popover = None
+            GLib.idle_add(lambda: p.get_parent() is not None and p.unparent())
+
+        pop.connect("closed", closed)
         pop.popup()
 
     # ------------------------------------------------------------------ picking
