@@ -85,7 +85,8 @@ class Calls(GObject.Object):
         for sid, info in list(self._calls.items()):
             if info.call.account_id == account_id:
                 self._finish(sid, _("Account disconnected"), notify=True)
-        self._sessions.pop(account_id, None)
+        # Keep the session mapping: a reconnect reuses the same AccountSession, and dropping it here would make
+        # every later place_call() report "You are not connected" until Ward restarts.
 
     # ================================================================== placing
     def _busy(self) -> bool:
@@ -170,6 +171,7 @@ class Calls(GObject.Object):
             return
         if action == "accept" and info.call.direction == 1:
             self._clear_timeout(info)
+            info.peer = peer or info.peer
             info.call.state = "connecting"
             await self._start_offer(info)
         elif action in ("reject", "retract"):
