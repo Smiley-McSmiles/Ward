@@ -177,8 +177,9 @@ class MediaSession(GObject.Object):
         self._bus_handler = bus.connect("message", self._on_bus)
         self._mute = None
         self._camera = None
+        self._remote_sink = None
+        self._remote_video = None
         self._built = False
-        self._new: list = []        # elements made since the last _start_new()
 
     # ------------------------------------------------------------------ building
     def _make(self, factory: str, **props):
@@ -189,7 +190,6 @@ class MediaSession(GObject.Object):
         for k, v in props.items():
             el.set_property(k.rstrip("_").replace("_", "-"), v)
         self.pipe.add(el)
-        self._new.append(el)
         return el
 
     def _chain(self, *els) -> None:
@@ -204,6 +204,9 @@ class MediaSession(GObject.Object):
         self._built = True
         Gst = gst()[0]
         pts = pts or {}
+        # the other side's video, made here on the main thread (gtk4paintablesink must be) and linked when their
+        # video arrives; a sink waiting unlinked is fine, it never holds the pipeline back (async=False)
+        self._remote_sink, self._remote_video = self._video_sink()
         if self.audio:
             if self.sources == "test":
                 src = self._make("audiotestsrc", is_live=True, wave=0, volume=0.2)
@@ -328,21 +331,27 @@ class MediaSession(GObject.Object):
             els = [q, conv, res, sink]
         elif name.startswith("video"):
             kind = "video"
+            sink, self._remote_sink = self._remote_sink, None
+            if sink is None:
+                return          # a second video stream: we show one
             q = Gst.ElementFactory.make("queue")
             conv = Gst.ElementFactory.make("videoconvert")
             self.pipe.add(q)
             self.pipe.add(conv)
-            sink, paintable = self._video_sink()
             q.link(conv)
             conv.link(sink)
             for el in (q, conv):
                 el.sync_state_with_parent()
-            self._start_new()
             pad.link(q.get_static_pad("sink"))
             self._count(pad, kind)
-            if paintable is not None:
-                GLib.idle_add(lambda: (self.emit("remote-video", paintable), False)[1])
-            self.remote_paintable = paintable
+            paintable = self._remote_video
+
+            def shown() -> bool:
+                self.remote_paintable = paintable
+                if paintable is not None:
+                    self.emit("remote-video", paintable)
+                return False
+            GLib.idle_add(shown)
             return
         else:
             return
@@ -353,12 +362,6 @@ class MediaSession(GObject.Object):
             el.sync_state_with_parent()
         pad.link(q.get_static_pad("sink"))
         self._count(pad, kind)
-
-    def _start_new(self) -> None:
-        """Bring elements added to the running pipeline to its state."""
-        new, self._new = self._new, []
-        for el in new:
-            el.sync_state_with_parent()
 
     def _count(self, pad, kind: str) -> None:
         Gst = gst()[0]
