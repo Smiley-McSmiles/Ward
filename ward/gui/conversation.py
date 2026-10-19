@@ -56,6 +56,7 @@ class ConversationView(Gtk.Box):
         self.settings = self.core.settings
         self.chat: ChatItem | None = None
         self.ml = None
+        self._resizing = False      # set_narrow() is moving the members panel, not the user
         self.first_unread_id = 0
         self.highlight_id = 0
         self.rows: dict[int, MessageRow] = {}
@@ -124,6 +125,10 @@ class ConversationView(Gtk.Box):
         self.members_button = Gtk.ToggleButton(icon_name="ward-members-symbolic", tooltip_text=_("Members"))
         self.members_button.connect("toggled", self._on_members_toggled)
         self.header.pack_end(self.members_button)
+        # adding people to a group: in the top bar beside its members (and in the chat menu on narrow windows)
+        self.invite_button = Gtk.Button(icon_name="contact-new-symbolic", tooltip_text=_("Invite to this group…"),
+                                        action_name="chat.invite", visible=False)
+        self.header.pack_end(self.invite_button)
         self.search_button = Gtk.ToggleButton(icon_name="system-search-symbolic", tooltip_text=_("Search (Ctrl+F)"))
         self.header.pack_end(self.search_button)
         self.enc_button = Gtk.MenuButton(tooltip_text=_("Encryption"))
@@ -346,6 +351,7 @@ class ConversationView(Gtk.Box):
         self._update_call_buttons()
         is_group = chat.type == "groupchat"
         self.members_button.set_visible(is_group)
+        self.invite_button.set_visible(is_group and not self.window.narrow)
         self.split.set_show_sidebar(is_group and self.settings["ui.members_panel"] and not self.window.narrow)
         self.members.set_chat(chat if is_group else None)
         self.composer.set_chat(chat)
@@ -1062,14 +1068,23 @@ class ConversationView(Gtk.Box):
         active = btn.get_active()
         if self.split.get_show_sidebar() != active:
             self.split.set_show_sidebar(active)
-        if not self.window.narrow and self.chat is not None and self.chat.type == "groupchat":
+        if not self._resizing and not self.window.narrow and self.chat is not None and \
+                self.chat.type == "groupchat":
             self.settings["ui.members_panel"] = active
 
     def set_narrow(self, narrow: bool) -> None:
-        self.split.set_collapsed(narrow)
+        group = self.chat is not None and self.chat.type == "groupchat"
+        # Adw.OverlaySplitView shows its sidebar whenever it stops being collapsed: widening the window opened an
+        # empty members panel beside one-to-one chats.  Put back what this chat shows, and do not take the change
+        # for the user's choice.
+        self._resizing = True
+        try:
+            self.split.set_collapsed(narrow)
+            self.split.set_show_sidebar(not narrow and group and bool(self.settings["ui.members_panel"]))
+        finally:
+            self._resizing = False
         self.search_button.set_visible(not narrow)      # still in the chat menu and on Ctrl+F
-        if narrow:
-            self.split.set_show_sidebar(False)
+        self.invite_button.set_visible(group and not narrow)    # likewise
 
     def _on_search_mode(self, *_a) -> None:
         if not self.search_bar.get_search_mode():
