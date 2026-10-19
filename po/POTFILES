@@ -49,6 +49,8 @@ ward/core/session.py
 ward/core/stanzas.py
 ward/core/storage/__init__.py
 ward/core/storage/db.py
+ward/core/stun.py
+ward/core/turn.py
 ward/core/uri.py
 ward/deps.py
 ward/extras.py

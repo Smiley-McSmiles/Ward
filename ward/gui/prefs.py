@@ -366,7 +366,7 @@ class Preferences:
             cache.set_subtitle(util.human_size(usage))
             db.set_subtitle(util.human_size(size))
 
-        widgets.run(self.window, sizes())
+        widgets.run(cache, sizes(), loads=True)
 
         async def do_clear():
             await self.core.files.clear_cache()
@@ -541,7 +541,8 @@ class AccountPage:
         imp = compat.button_row(_("Import a key file (.asc from GPGMan)…"), "document-open-symbolic")
         compat.row_activated(imp, self._import)
         g.add(imp)
-        widgets.run(self.prefs.d, self._load_keys(), on_error=lambda e: self.key_row.set_subtitle(str(e)))
+        widgets.run(self.key_row, self._load_keys(), on_error=lambda e: self.key_row.set_subtitle(str(e)),
+                    loads=True)
 
     async def _load_keys(self) -> None:
         pgp = self.core.pgp

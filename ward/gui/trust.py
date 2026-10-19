@@ -131,7 +131,8 @@ class DevicesDialog(BaseDialog):
 
     # ------------------------------------------------------------------ loading
     def refresh(self) -> None:
-        widgets.run(self.toasts, self._load(), on_error=lambda e: self.omemo_group.set_description(str(e)))
+        widgets.run(self.toasts, self._load(), on_error=lambda e: self.omemo_group.set_description(str(e)),
+                    loads=True)
 
     async def _load(self) -> None:
         for r in self.omemo_rows:

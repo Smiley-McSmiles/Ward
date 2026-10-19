@@ -21,8 +21,10 @@ log = logging.getLogger("ward.gui")
 
 # ------------------------------------------------------------------------------------------------ async
 def run(widget: Gtk.Widget | None, coro: Coroutine, done: Callable | None = None, error: str = "",
-        on_error: Callable | None = None):
-    """Run a core coroutine from a GTK callback; errors become a toast on the widget's window."""
+        on_error: Callable | None = None, loads: bool = False):
+    """Run a core coroutine from a GTK callback; errors become a toast on the widget's window.  loads=True: it only
+    fills the widget, so it stops when the widget leaves its window (a closed dialog is not kept waiting on the
+    network)."""
     async def wrapper():
         try:
             res = await coro
@@ -36,7 +38,12 @@ def run(widget: Gtk.Widget | None, coro: Coroutine, done: Callable | None = None
         if done is not None:
             done(res)
         return res
-    return aio.spawn(wrapper())
+    task = aio.spawn(wrapper())
+    if loads and widget is not None:
+        from . import lifetime
+
+        lifetime.when_unrooted(widget, lambda: task.done() or task.cancel())
+    return task
 
 
 # ------------------------------------------------------------------------------------------------ avatars

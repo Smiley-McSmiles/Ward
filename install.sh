@@ -128,17 +128,17 @@ pyver() {   # py311 style prefix for FreeBSD and NetBSD package names
 packages() {
     case "$(pm_name)" in
         apt-get) REQ="python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-slixmpp python3-markdown-it python3-cryptography"
-                 OPT="gir1.2-gtksource-5 gir1.2-spelling-1 gir1.2-secret-1 python3-pil python3-linkify-it python3-mdit-py-plugins python3-pip gnupg libgtk-4-media-gstreamer desktop-file-utils gstreamer1.0-plugins-bad gir1.2-gst-plugins-bad-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-nice gstreamer1.0-gtk4" ;;
+                 OPT="gir1.2-gtksource-5 gir1.2-spelling-1 gir1.2-secret-1 python3-pil python3-linkify-it python3-mdit-py-plugins python3-pip gnupg libgtk-4-media-gstreamer desktop-file-utils" ;;
         dnf) REQ="python3 python3-gobject gobject-introspection cairo-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
-             OPT="gtksourceview5 libspelling libsecret python3-pillow python3-linkify-it-py python3-mdit-py-plugins python3-pip gnupg2 gstreamer1-plugins-good desktop-file-utils gstreamer1-plugins-bad-free libnice-gstreamer1 gstreamer1-plugin-gtk4" ;;
+             OPT="gtksourceview5 libspelling libsecret python3-pillow python3-linkify-it-py python3-mdit-py-plugins python3-pip gnupg2 gstreamer1-plugins-good desktop-file-utils" ;;
         zypper) REQ="python3 python3-gobject typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 python3-slixmpp python3-markdown-it-py python3-cryptography"
-                OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-linkify-it-py python3-pip gpg2 desktop-file-utils gstreamer-plugins-bad typelib-1_0-GstWebRTC-1_0 gstreamer-plugins-libnice gstreamer-plugins-good" ;;
+                OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-linkify-it-py python3-pip gpg2 desktop-file-utils" ;;
         pacman) REQ="python python-gobject gtk4 libadwaita python-slixmpp python-markdown-it-py python-cryptography"
-                OPT="gtksourceview5 libspelling libsecret python-pillow python-linkify-it-py python-mdit_py_plugins python-pip gnupg gst-plugins-good desktop-file-utils gst-plugins-bad libnice gst-plugin-gtk4" ;;
+                OPT="gtksourceview5 libspelling libsecret python-pillow python-linkify-it-py python-mdit_py_plugins python-pip gnupg gst-plugins-good desktop-file-utils" ;;
         xbps-install) REQ="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
-                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-linkify-it-py python3-pip gnupg gst-plugins-good1 desktop-file-utils gtk-update-icon-cache gst-plugins-bad1 libnice" ;;
+                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-linkify-it-py python3-pip gnupg gst-plugins-good1 desktop-file-utils gtk-update-icon-cache" ;;
         apk) REQ="python3 py3-gobject3 gtk4.0 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
-             OPT="gtksourceview5 libspelling libsecret py3-pillow py3-linkify-it-py py3-pip gnupg gst-plugins-good desktop-file-utils gst-plugins-bad libnice-gstreamer" ;;
+             OPT="gtksourceview5 libspelling libsecret py3-pillow py3-linkify-it-py py3-pip gnupg gst-plugins-good desktop-file-utils" ;;
         emerge) REQ="dev-lang/python dev-python/pygobject gui-libs/gtk gui-libs/libadwaita dev-python/slixmpp dev-python/markdown-it-py dev-python/cryptography"
                 OPT="x11-libs/gtksourceview:5 app-crypt/libsecret dev-python/pillow dev-python/linkify-it-py dev-python/pip app-crypt/gnupg" ;;
         pkg) P=$(pyver)
@@ -157,13 +157,13 @@ packages() {
                OPT="gtksourceview5 libsecret $P-Pillow $P-pip gnupg2 desktop-file-utils" ;;
         *) REQ=""; OPT="" ;;
     esac
-    # optional: GStreamer WebRTC (webrtcbin) and libnice's ICE plugin for voice/video/screen-sharing calls
+    # optional: GStreamer WebRTC (webrtcbin) and libnice's ICE plugin for audio and video calls
     CALLS=""
     case "$(pm_name)" in
-        apt-get) CALLS="gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0" ;;
-        dnf) CALLS="libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free" ;;
+        apt-get) CALLS="gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0 gstreamer1.0-gtk4" ;;
+        dnf) CALLS="libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-gtk4" ;;
         zypper) CALLS="libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad" ;;
-        pacman) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
+        pacman) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugin-gtk4" ;;
         xbps-install) CALLS="libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1" ;;
         apk) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
         emerge) CALLS="media-libs/libnice media-plugins/gst-plugins-webrtc" ;;
@@ -310,13 +310,7 @@ missing_deps() {
             MISSING_SYS=1; gap "GStreamer WebRTC calls (webrtcbin and libnice-gstreamer, optional)"
         fi
     fi
-    if [ -n "$PY" ] && ! "$PY" -c "
-import gi, sys
-gi.require_version('Gst', '1.0'); gi.require_version('GstWebRTC', '1.0'); gi.require_version('GstSdp', '1.0')
-from gi.repository import Gst
-Gst.init(None)
-sys.exit(0 if all(Gst.ElementFactory.find(e) for e in ('webrtcbin', 'nicesrc', 'vp8enc', 'opusenc')) else 1)
-" 2>/dev/null; then
+    if [ -n "$PY" ] && ! calls_available; then
         MISSING_SYS=1; gap "GStreamer WebRTC (audio and video calls)"
     fi
     have gpg || have gpg2 || { MISSING_SYS=1; gap "GnuPG (OpenPGP encryption, optional)"; }

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Calls work with Conversations. Ward's calls used a `<jingle-message>` wrapper around the call invitations that no
+other app sends or understands, so Conversations never saw Ward's calls and Ward never saw theirs. They are rebuilt
+on the standard Jingle Message Initiation (XEP-0353), with the Jingle-to-SDP translation Conversations uses, and are
+tested end to end: Opus and VP8 both ways, answering on one of two devices, declining, cancelling, busy. The STUN and
+TURN settings (server discovery, manual servers, shared-secret credentials, relay only) and the Preferences test stay.
+
+Screen sharing is not in the rebuilt calls yet.
+
 ## v1.0.1 (2026-10-19)
 
 Sent messages now sync between devices on the same account, Wayland screen sharing works through the ScreenCast portal, calls leave a history line in their chat, and incoming calls ring.

@@ -54,6 +54,8 @@ class CallUI:
         win = CallWindow(self, call)
         self.windows[(call.account_id, call.sid)] = win
         if call.outgoing:
+            call.connect("notify::state", lambda c, _p: self._outgoing_state(c))
+            self._outgoing_state(call)
             win.present()
 
     def _incoming(self, call) -> None:
@@ -77,23 +79,30 @@ class CallUI:
 
     def _ended(self, call) -> None:
         self.app.withdraw_notification("call-" + self.key(call))
-        if not any(c.state == "incoming" for c in self.core.calls.calls.values()):
+        if not any(c.state in ("incoming", "proposing", "ringing") for c in self.core.calls.calls.values()):
             self._ring(False)
         win = self.windows.pop((call.account_id, call.sid), None)
         if win is not None:
             win.ended()
 
-    def _ring(self, on: bool) -> None:
+    def _ring(self, on: bool, outgoing: bool = False) -> None:
+        """The ringtone while a call rings here, the calling tone while ours rings there."""
         if on and not self._ring_source:
+            key, default = ("calls.ringback", "phone-outgoing-calling") if outgoing else (
+                "calls.ringtone", "phone-incoming-call")
+
             def ring() -> bool:
                 if self.core.settings["notify.sounds"]:
-                    self.app.play_sound(self.core.settings["notify.sound_call"] or "phone-incoming-call")
+                    self.app.play_sound(self.core.settings[key] or default)
                 return True
             ring()
             self._ring_source = GLib.timeout_add_seconds(3, ring)
         elif not on and self._ring_source:
             GLib.source_remove(self._ring_source)
             self._ring_source = 0
+
+    def _outgoing_state(self, call) -> None:
+        self._ring(call.state in ("proposing", "ringing"), outgoing=True)
 
     # ------------------------------------------------------------------ answering
     def _accept(self, call, video: bool = False) -> None:

@@ -159,22 +159,6 @@ class Feature:
         return "" if self.available else install_hint(*self.components)
 
 
-def calls_available() -> bool:
-    """GStreamer's webrtcbin plus libnice's ICE elements, which calls need."""
-    try:
-        import gi
-
-        gi.require_version("Gst", "1.0")
-        gi.require_version("GstWebRTC", "1.0")
-        gi.require_version("GstSdp", "1.0")
-        from gi.repository import Gst
-
-        Gst.init(None)
-        return bool(Gst.ElementFactory.find("webrtcbin") and Gst.ElementFactory.find("nicesrc"))
-    except (ImportError, ValueError, AttributeError):
-        return False
-
-
 def _module(name: str) -> bool:
     try:
         return importlib.util.find_spec(name) is not None
@@ -307,8 +291,6 @@ def features() -> list[Feature]:
         Feature("pillow", N_("Image resizing and metadata stripping (Pillow)"), have("pillow"),
                 N_("GdkPixbuf is used without it"), ("pillow",)),
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
-        Feature("calls", N_("Voice, video and screen-sharing calls (GStreamer WebRTC)"), calls_available(), "",
-                ("calls",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
         Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), _calls_available(),
                 ", ".join(_calls_missing()), ("calls",)),

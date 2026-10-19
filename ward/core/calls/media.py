@@ -10,7 +10,6 @@ import asyncio
 import itertools
 import logging
 import os
-import urllib.parse
 
 from gi.repository import GLib, GObject
 
@@ -57,27 +56,6 @@ def available() -> bool:
 def _have(name: str) -> bool:
     g = gst()
     return g is not None and g[0].ElementFactory.find(name) is not None
-
-
-def ice_server_urls(servers: list[dict]) -> tuple[str, list[str]]:
-    """XEP-0215 services -> (webrtcbin's one stun-server, its turn servers)."""
-    stun = ""
-    turn = []
-    for s in servers:
-        host, port, kind = s.get("host", ""), s.get("port") or "", s.get("type", "")
-        if not host:
-            continue
-        hostport = "%s:%s" % ("[%s]" % host if ":" in host else host, port or ("5349" if kind == "turns" else "3478"))
-        if kind == "stun" and not stun:
-            stun = "stun://" + hostport
-        elif kind in ("turn", "turns") and (s.get("transport") or "udp") in ("udp", "tcp"):
-            user = urllib.parse.quote(s.get("username", ""), safe="")
-            pw = urllib.parse.quote(s.get("password", ""), safe="")
-            url = "%s://%s:%s@%s" % (kind, user, pw, hostport)
-            if s.get("transport") == "tcp":
-                url += "?transport=tcp"
-            turn.append(url)
-    return stun, turn
 
 
 def payload_types(sdp_text: str) -> dict[str, int]:
@@ -150,7 +128,9 @@ class MediaSession(GObject.Object):
         "error": (GObject.SignalFlags.RUN_LAST, None, (str,)),
     }
 
-    def __init__(self, audio: bool, video: bool, ice_servers: list[dict] | None = None, sources: str = ""):
+    def __init__(self, audio: bool, video: bool, stun: str = "", turns: tuple[str, ...] | list[str] = (),
+                 relay_only: bool = False, sources: str = ""):
+        """stun and turns: webrtcbin URIs (core.turn makes them); relay_only: never connect directly."""
         super().__init__()
         Gst, _GstWebRTC, _GstSdp = gst()
         self.audio, self.video = audio, video
@@ -162,7 +142,8 @@ class MediaSession(GObject.Object):
         self.pipe = Gst.Pipeline.new("call")
         self.webrtc = Gst.ElementFactory.make("webrtcbin", "webrtc")
         self.webrtc.set_property("bundle-policy", 3)        # max-bundle
-        stun, turns = ice_server_urls(ice_servers or [])
+        if relay_only:
+            self.webrtc.set_property("ice-transport-policy", 1)     # relay
         if stun:
             self.webrtc.set_property("stun-server", stun)
         self.pipe.add(self.webrtc)

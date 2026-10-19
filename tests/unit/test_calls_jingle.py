@@ -137,18 +137,6 @@ def test_jmi_and_reasons():
     assert t.get("action") == "transport-info" and t.find(".//{%s}candidate" % jingle.NS_ICE_UDP) is not None
 
 
-def test_ice_servers():
-    stun, turn = media.ice_server_urls([
-        {"type": "stun", "host": "turn.example.org", "port": "3478"},
-        {"type": "turn", "host": "turn.example.org", "port": "3478", "transport": "udp", "username": "1700:alice",
-         "password": "a/b+c="},
-        {"type": "turns", "host": "turn.example.org", "port": "5349", "transport": "tcp", "username": "u",
-         "password": "p"}])
-    assert stun == "stun://turn.example.org:3478"
-    assert turn == ["turn://1700%3Aalice:a%2Fb%2Bc%3D@turn.example.org:3478",
-                    "turns://u:p@turn.example.org:5349?transport=tcp"]
-
-
 @pytest.mark.skipif(not media.available(), reason="GStreamer WebRTC is missing")
 def test_answering_a_conversations_offer(monkeypatch):
     """webrtcbin picks Opus and VP8 from everything libwebrtc offers, with the offer's payload types."""

@@ -226,7 +226,9 @@ class MessageRow(Gtk.Box):
         icon = "camera-video-symbolic" if video else ("call-missed-symbolic" if missed else (
             "call-outgoing-symbolic" if c.get("outgoing") else "call-incoming-symbolic"))
         box.append(Gtk.Image(icon_name=icon))
-        box.append(Gtk.Label(label=self.view.core.calls.summary(m.extra)))
+        # lines from before calls were rebuilt carry their summary as the body, with no "end"
+        text = self.view.core.calls.summary(m.extra) if c.get("end") or not m.body else m.body
+        box.append(Gtk.Label(label=text))
         box.append(Gtk.Label(label=widgets.clock(m.timestamp, self.view.settings), css_classes=["message-time"]))
         if self.view.core.calls.available() and self.view.chat is not None and self.view.chat.type == "chat":
             back = Gtk.Button(icon_name="call-start-symbolic" if not video else "camera-video-symbolic",

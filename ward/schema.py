@@ -164,6 +164,8 @@ SPECS: dict[str, Spec] = {
     "chats.voice_quality": S("choice", "standard", N_("Voice message quality"), page="chats",
                              group=N_("Media"), choices=(("standard", N_("Standard")), ("high", N_("High")))),
     # ------------------------------------------------------------------ Calls
+    "calls.enabled": S("bool", True, N_("Audio and video calls"),
+                        N_("Contacts can call you, and you them, on this device"), page="calls", group=N_("Calls")),
     "calls.discover": S("bool", True, N_("Discover STUN/TURN from the server"),
                         N_("Use XEP-0215 external service discovery for call relay servers"),
                         page="calls", group=N_("Network")),
@@ -189,8 +191,6 @@ SPECS: dict[str, Spec] = {
     "calls.ringback": S("sound", "phone-outgoing-calling", N_("Calling tone"),
                         N_("Played while an outgoing call is ringing"), page="calls", group=N_("Sounds")),
     # ------------------------------------------------------------------ Notifications
-    "calls.enabled": S("bool", True, N_("Audio and video calls"),
-                        N_("Contacts can call you, and you them, on this device"), page="chats", group=N_("Calls")),
     "notify.enabled": S("bool", True, N_("Notifications"), page="notifications", group=N_("Notifications")),
     "notify.content": S("choice", "full", N_("Show in notification"), page="notifications",
                         group=N_("Notifications"),
@@ -215,8 +215,6 @@ SPECS: dict[str, Spec] = {
                               group=N_("Sounds"), advanced=True),
     "notify.sound_request": S("sound", "dialog-information", N_("Contact request"), page="notifications",
                               group=N_("Sounds"), advanced=True),
-    "notify.sound_call": S("sound", "phone-incoming-call", N_("Incoming call"), page="notifications",
-                           group=N_("Sounds"), advanced=True),
     # ------------------------------------------------------------------ Encryption and privacy
     "encryption.default": S("choice", "always", N_("Default encryption"),
                             N_("Each account and chat can override this"), page="encryption",
