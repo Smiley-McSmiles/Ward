@@ -24,10 +24,6 @@ class MembersPanel(Gtk.Box):
         head = Gtk.Box(spacing=6, margin_start=12, margin_end=6, margin_top=8, margin_bottom=4)
         self.count = Gtk.Label(xalign=0, hexpand=True, css_classes=["heading"])
         head.append(self.count)
-        self.invite_button = Gtk.Button(icon_name="contact-new-symbolic", css_classes=["flat"],
-                                        tooltip_text=_("Invite…"))
-        self.invite_button.connect("clicked", lambda *_: self.view._invite())
-        head.append(self.invite_button)
         self.append(head)
         self.filter = Gtk.SearchEntry(placeholder_text=_("Filter"), margin_start=8, margin_end=8, margin_bottom=4)
         self.filter.connect("search-changed", lambda *_: self.refresh())

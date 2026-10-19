@@ -111,8 +111,9 @@ plugins (video and audio) and GStreamer's WebRTC with libnice (calls; on Fedora 
 libnice-gstreamer1 gstreamer1-plugin-gtk4`). `ward --check` lists what you have, and `install.sh` offers to
 install them.
 
-Calls cross the internet when your server offers STUN and TURN (XEP-0215, as Prosody and ejabberd do with coturn);
-without them they work between devices that can reach each other directly.
+Calls cross the internet when your server offers STUN and TURN (XEP-0215, as Prosody and ejabberd do with coturn),
+or with the servers set in Preferences > Calls; without them they work between devices that can reach each other
+directly.
 
 ## Running in the background, systemd and runit
 

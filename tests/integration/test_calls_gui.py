@@ -45,7 +45,7 @@ def test_incoming_video_call_in_the_window(app, prosody, run, tmp_path, monkeypa
             w.show_chat(chat)
             view = w.conversation
             await wait_for(lambda: view.call_button.get_visible() and view.call_button.get_sensitive()
-                           and view.video_button.get_sensitive(), 20, "call buttons")
+                           and view.video_call_button.get_sensitive(), 20, "call buttons")
 
             call = await peer.calls.start(pacc, acc.jid, video=True)
             key = (acc.id, call.sid)

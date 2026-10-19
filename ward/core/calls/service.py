@@ -3,7 +3,8 @@
 Calls start with Jingle Message Initiation (XEP-0353): the caller proposes to the contact's bare JID so all their
 devices ring; the one that answers sends proceed (and accept to its own account, so the others stop ringing); the
 caller then sends the Jingle session-initiate (XEP-0166/0167) to that device and it answers with session-accept.
-Candidates trickle in transport-info.  STUN and TURN servers come from our server (XEP-0215).  A call leaves a line
+Candidates trickle in transport-info.  STUN and TURN servers come from core.turn (the server's, XEP-0215, and
+those set in Preferences).  A call leaves a line
 in the chat: missed, declined, or how long it lasted."""
 
 from __future__ import annotations
@@ -25,7 +26,6 @@ from .jingle import NS_JINGLE, NS_JMI, q
 
 log = logging.getLogger(__name__)
 
-NS_EXTDISCO = ("urn:xmpp:extdisco:2", "urn:xmpp:extdisco:1")
 RING_TIMEOUT = 60           # seconds an unanswered call rings
 CONNECT_TIMEOUT = 40        # seconds from answering to media flowing
 
@@ -101,6 +101,15 @@ class CallService(GObject.Object):
         if self.available() and self.core.settings["calls.enabled"]:
             for ns in jingle.FEATURES:
                 session.add_feature(ns)
+
+    def account_offline(self, account_id: int) -> None:
+        """The account lost its connection: its calls cannot be signalled any more."""
+        for call in [c for c in self.calls.values() if c.account_id == account_id]:
+            end = FAILED if call.state in ("connecting", "active") else (CANCELLED if call.outgoing else MISSED)
+            aio.spawn(self._end(call, end))
+
+    def detach(self, account_id: int) -> None:
+        self.account_offline(account_id)
 
     async def can_call(self, account_id: int, jid: str) -> set[str]:
         """What the contact's devices online can take: {'audio', 'video'}, empty when none can."""
@@ -387,7 +396,8 @@ class CallService(GObject.Object):
     async def _media(self, session, call: Call):
         from . import media
 
-        ms = media.MediaSession(True, call.video, await self._ice_servers(session))
+        stun, turns = await self.core.turn.uris(session)
+        ms = media.MediaSession(True, call.video, stun, turns, bool(self.core.settings["calls.relay_only"]))
         ms.set_muted(call.muted)
         ms.connect("local-candidate", lambda _m, mline, cand: self._local_candidate(session, call, mline, cand))
         ms.connect("state-changed", lambda _m, state: self._media_state(call, state))
@@ -504,20 +514,6 @@ class CallService(GObject.Object):
             self._set(call, "active")
         elif state == "failed" and call.active:
             aio.spawn(self._fail(call, "connectivity-error"))
-
-    async def _ice_servers(self, session) -> list[dict]:
-        """STUN and TURN from our server (XEP-0215); none when it offers none."""
-        for ns in NS_EXTDISCO:
-            try:
-                res = await session.iq("get", session.domain, ET.Element(q(ns, "services")), timeout=8)
-            except Exception:
-                continue
-            out = []
-            for s in res.iter(q(ns, "service")):
-                out.append({k: s.get(k, "") for k in ("type", "host", "port", "transport", "username", "password")})
-            if out:
-                return out
-        return []
 
     # ================================================================== ending
     async def _fail(self, call: Call, reason: str, send: bool = True) -> None:

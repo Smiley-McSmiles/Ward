@@ -56,6 +56,7 @@ class ConversationView(Gtk.Box):
         self.settings = self.core.settings
         self.chat: ChatItem | None = None
         self.ml = None
+        self._resizing = False      # set_narrow() is moving the members panel, not the user
         self.first_unread_id = 0
         self.highlight_id = 0
         self.rows: dict[int, MessageRow] = {}
@@ -124,6 +125,10 @@ class ConversationView(Gtk.Box):
         self.members_button = Gtk.ToggleButton(icon_name="ward-members-symbolic", tooltip_text=_("Members"))
         self.members_button.connect("toggled", self._on_members_toggled)
         self.header.pack_end(self.members_button)
+        # adding people to a group: in the top bar beside its members (and in the chat menu on narrow windows)
+        self.invite_button = Gtk.Button(icon_name="contact-new-symbolic", tooltip_text=_("Invite to this group…"),
+                                        action_name="chat.invite", visible=False)
+        self.header.pack_end(self.invite_button)
         self.search_button = Gtk.ToggleButton(icon_name="system-search-symbolic", tooltip_text=_("Search (Ctrl+F)"))
         self.header.pack_end(self.search_button)
         self.enc_button = Gtk.MenuButton(tooltip_text=_("Encryption"))
@@ -131,14 +136,61 @@ class ConversationView(Gtk.Box):
         self.enc_popover.connect("show", lambda *_: self._fill_encryption_popover())
         self.enc_button.set_popover(self.enc_popover)
         self.header.pack_end(self.enc_button)
-        # calls, in one-to-one chats when GStreamer's WebRTC is installed
-        self.video_button = Gtk.Button(icon_name="camera-video-symbolic", tooltip_text=_("Video call"),
-                                       visible=False)
-        self.video_button.connect("clicked", lambda *_: self.start_call(True))
-        self.header.pack_end(self.video_button)
-        self.call_button = Gtk.Button(icon_name="call-start-symbolic", tooltip_text=_("Call"), visible=False)
-        self.call_button.connect("clicked", lambda *_: self.start_call(False))
+        self.video_call_button = Gtk.Button(icon_name="camera-video-symbolic", css_classes=["flat"],
+                                            tooltip_text=_("Start a video call"), visible=False)
+        self.video_call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, True))
+        self.header.pack_end(self.video_call_button)
+        self.call_button = Gtk.Button(icon_name="call-start-symbolic", css_classes=["flat"],
+                                      tooltip_text=_("Start an audio call"), visible=False)
+        self.call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, False))
         self.header.pack_end(self.call_button)
+
+    def start_call(self, video: bool) -> None:
+        self.window.start_call(self.chat, video)
+
+    def _update_call_buttons(self) -> None:
+        """Shown in one-to-one chats; usable when one of the contact's devices online can take the call."""
+        chat = self.chat
+        show = chat is not None and chat.type == "chat" and self.core.calls.available() and \
+            self.settings["calls.enabled"] and self.core.contacts.get(chat.account_id, chat.jid) is not None
+        self.call_button.set_visible(show)
+        self.video_call_button.set_visible(show)
+        if not show:
+            return
+
+        async def check():
+            media = await self.core.calls.can_call(chat.account_id, chat.jid)
+            if chat is not self.chat:
+                return
+            contact = self.core.contacts.get(chat.account_id, chat.jid)
+            offline = contact is None or contact.show == "offline"
+            why = _("%s is offline") % (chat.name or chat.jid) if offline else \
+                _("%s's app can't take calls") % (chat.name or chat.jid)
+            self.call_button.set_sensitive("audio" in media)
+            self.video_call_button.set_sensitive("video" in media)
+            self.call_button.set_tooltip_text(_("Start an audio call") if "audio" in media else why)
+            self.video_call_button.set_tooltip_text(_("Start a video call") if "video" in media else why)
+        widgets.run(self, check())
+
+    def _resync_history(self) -> None:
+        chat = self.chat
+        if chat is None:
+            return
+        session = self.core.sessions.get(chat.account_id)
+        if session is None or not session.online:
+            compat.toast(self, _("Not connected"))
+            return
+        archive = chat.jid if chat.type == "groupchat" else None
+        if not self.core.history.supported(session, archive):
+            compat.toast(self, _("This server has no message archive"))
+            return
+        widgets.run(self, self.core.history.resync_chat(session, chat),
+                    done=lambda _pages: compat.toast(self, _("History re-synced")),
+                    error=_("Could not re-sync history"))
+
+    def _update_sidebar_button(self) -> None:
+        hidden = not self.window.split.get_show_sidebar()
+        self.sidebar_button.set_tooltip_text(_("Show chat list") if hidden else _("Hide chat list"))
 
     def _build_banner(self) -> None:
         self.banner = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
@@ -299,6 +351,7 @@ class ConversationView(Gtk.Box):
         self._update_call_buttons()
         is_group = chat.type == "groupchat"
         self.members_button.set_visible(is_group)
+        self.invite_button.set_visible(is_group and not self.window.narrow)
         self.split.set_show_sidebar(is_group and self.settings["ui.members_panel"] and not self.window.narrow)
         self.members.set_chat(chat if is_group else None)
         self.composer.set_chat(chat)
@@ -480,40 +533,24 @@ class ConversationView(Gtk.Box):
             self._loading_older = False
 
     # ================================================================== header, banner, menu
-    def _on_chat_changed(self, _obj=None, pspec=None) -> None:
-        self._update_header()
-        self._update_banner()
-        self._update_menu()
-        if pspec is not None and pspec.name == "show":
+    HEADER_PROPS = {"name", "show", "typing", "subject", "member-count", "avatar", "encryption-state",
+                    "encryption-reason", "joined", "join-error"}
+    BANNER_PROPS = {"is-request", "encryption-state", "encryption-reason", "joined", "join-error", "new-devices",
+                    "encryptable", "state"}          # "state" is the account's connection state
+    MENU_PROPS = {"pinned", "muted-until", "name", "type", "our-role"}
+
+    def _on_chat_changed(self, _obj, pspec=None) -> None:
+        """Update only what the property that changed feeds.  Rebuilding the banner and the menu on every chat
+        state (someone typing, presence) made the message list move under the pointer."""
+        name = pspec.name if pspec is not None else ""
+        if not name or name in self.HEADER_PROPS:
+            self._update_header()
+        if name == "show":
             self._update_call_buttons()        # a device came or went: maybe one that takes calls
-
-    def start_call(self, video: bool) -> None:
-        if self.chat is not None:
-            self.window.app.calls_ui.start(self.chat, video)
-
-    def _update_call_buttons(self) -> None:
-        """Shown in one-to-one chats; usable when one of the contact's devices online can take the call."""
-        chat = self.chat
-        show = chat is not None and chat.type == "chat" and self.core.calls.available() and \
-            self.settings["calls.enabled"] and self.core.contacts.get(chat.account_id, chat.jid) is not None
-        self.call_button.set_visible(show)
-        self.video_button.set_visible(show)
-        if not show:
-            return
-
-        async def check():
-            media = await self.core.calls.can_call(chat.account_id, chat.jid)
-            if chat is not self.chat:
-                return
-            contact = self.core.contacts.get(chat.account_id, chat.jid)
-            offline = contact is None or contact.show == "offline"
-            why = _("%s is offline") % (chat.name or chat.jid) if offline else \
-                _("%s's app can't take calls") % (chat.name or chat.jid)
-            self.call_button.set_sensitive("audio" in media)
-            self.video_button.set_sensitive("video" in media)
-            self.call_button.set_tooltip_text(_("Call") if "audio" in media else why)
-            self.video_button.set_tooltip_text(_("Video call") if "video" in media else why)
-        widgets.run(self, check())
+        if not name or name in self.BANNER_PROPS:
+            self._update_banner()
+        if not name or name in self.MENU_PROPS:
+            self._update_menu()
 
     def _update_header(self) -> None:
         chat = self.chat
@@ -554,8 +591,6 @@ class ConversationView(Gtk.Box):
         title = _(ENC_TITLES.get(chat.encryption_state or "omemo", "Encryption"))
         self.enc_button.set_tooltip_text("%s%s" % (title, ("\n" + chat.encryption_reason)
                                                    if chat.encryption_reason else ""))
-        for button in (self.call_button, self.video_call_button):
-            button.set_visible(not group)
         self.resync_button.set_sensitive(chat is not None)
 
     def _update_banner(self) -> None:
@@ -1033,14 +1068,23 @@ class ConversationView(Gtk.Box):
         active = btn.get_active()
         if self.split.get_show_sidebar() != active:
             self.split.set_show_sidebar(active)
-        if not self.window.narrow and self.chat is not None and self.chat.type == "groupchat":
+        if not self._resizing and not self.window.narrow and self.chat is not None and \
+                self.chat.type == "groupchat":
             self.settings["ui.members_panel"] = active
 
     def set_narrow(self, narrow: bool) -> None:
-        self.split.set_collapsed(narrow)
+        group = self.chat is not None and self.chat.type == "groupchat"
+        # Adw.OverlaySplitView shows its sidebar whenever it stops being collapsed: widening the window opened an
+        # empty members panel beside one-to-one chats.  Put back what this chat shows, and do not take the change
+        # for the user's choice.
+        self._resizing = True
+        try:
+            self.split.set_collapsed(narrow)
+            self.split.set_show_sidebar(not narrow and group and bool(self.settings["ui.members_panel"]))
+        finally:
+            self._resizing = False
         self.search_button.set_visible(not narrow)      # still in the chat menu and on Ctrl+F
-        if narrow:
-            self.split.set_show_sidebar(False)
+        self.invite_button.set_visible(group and not narrow)    # likewise
 
     def _on_search_mode(self, *_a) -> None:
         if not self.search_bar.get_search_mode():
