@@ -99,6 +99,9 @@ class Calls(GObject.Object):
             return False
         return True
 
+    def busy(self) -> bool:
+        return self._busy()
+
     async def place_call(self, account: AccountItem, peer: str, video: bool = False) -> CallItem:
         session = self._session_for(account.id)
         if session is None or not getattr(session, "online", False):

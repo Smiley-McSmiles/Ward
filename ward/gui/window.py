@@ -136,7 +136,7 @@ class MainWindow(Adw.ApplicationWindow):
         if self._call_window is None:
             return
         active = self.core.calls.active
-        if active is None or active is not self._call_window.call:
+        if active is None or active is not self._call_window.call or self._call_window.call.state == "ended":
             self._call_window.destroy()
             self._call_window = None
 
@@ -144,7 +144,7 @@ class MainWindow(Adw.ApplicationWindow):
         if chat is None or chat.type != "chat":
             return
         self._drop_stale_call_window()
-        if self._call_window is not None or self.core.calls.active is not None:
+        if self._call_window is not None or self.core.calls.busy():
             compat.toast(self, _("You are already in a call"))
             return
         account = self.core.accounts.get(chat.account_id)
