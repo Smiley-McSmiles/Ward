@@ -285,3 +285,26 @@ def test_register_group_and_dialogs(app, prosody, run, errors):
 
     run(scenario(), timeout=180)
     assert not errors, errors
+
+
+def test_chat_actions_and_sidebar_toggle(app, run):
+    """The chat overflow actions are installed without touching an attachment, and the header button toggles
+    the main split view."""
+    import asyncio
+
+    async def scenario():
+        await wait_for(lambda: app.core.started, 20, "core start")
+        w = app.window
+        w.set_default_size(1100, 700)
+        await asyncio.sleep(0.3)
+        view = w.conversation
+        assert view.menu_button.activate_action("chat.details", None)
+        assert view.menu_button.activate_action("chat.clear", None)
+        assert not w.split.get_collapsed()
+        view.sidebar_button.emit("clicked")
+        assert w.split.get_collapsed()
+        view.sidebar_button.emit("clicked")
+        assert not w.split.get_collapsed()
+        await app.core.shutdown()
+
+    run(scenario(), timeout=30)
