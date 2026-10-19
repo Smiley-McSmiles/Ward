@@ -172,7 +172,7 @@ packages() {
                  else CALLS="libnice gstreamer1-plugins-bad"; fi ;;
         pkgin) CALLS="libnice gst-plugins1-bad" ;;
     esac
-    [ -n "$CALLS" ] && OPT="$OPT $CALLS"
+    if [ -n "$CALLS" ]; then OPT="$OPT $CALLS"; fi
 }
 
 deps_hint() {
@@ -375,7 +375,7 @@ preflight() {
         say "Calls: available (GStreamer WebRTC)"
     else
         say "Calls: not available - needs GStreamer webrtcbin and libnice-gstreamer (optional)"
-        [ -n "$CALLS" ] && say "       install with: $(deps_hint)"
+        if [ -n "$CALLS" ]; then say "       install with: $(deps_hint)"; fi
     fi
     have gpg || have gpg2 || say "OpenPGP: gpg not found (optional)"
 }
