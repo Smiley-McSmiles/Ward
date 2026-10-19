@@ -131,34 +131,14 @@ class ConversationView(Gtk.Box):
         self.enc_popover.connect("show", lambda *_: self._fill_encryption_popover())
         self.enc_button.set_popover(self.enc_popover)
         self.header.pack_end(self.enc_button)
-        self.video_call_button = Gtk.Button(icon_name="camera-video-symbolic", css_classes=["flat"],
-                                            tooltip_text=_("Start a video call"), visible=False)
-        self.video_call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, True))
-        self.header.pack_end(self.video_call_button)
-        self.call_button = Gtk.Button(icon_name="call-start-symbolic", css_classes=["flat"],
-                                      tooltip_text=_("Start an audio call"), visible=False)
-        self.call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, False))
+        # calls, in one-to-one chats when GStreamer's WebRTC is installed
+        self.video_button = Gtk.Button(icon_name="camera-video-symbolic", tooltip_text=_("Video call"),
+                                       visible=False)
+        self.video_button.connect("clicked", lambda *_: self.start_call(True))
+        self.header.pack_end(self.video_button)
+        self.call_button = Gtk.Button(icon_name="call-start-symbolic", tooltip_text=_("Call"), visible=False)
+        self.call_button.connect("clicked", lambda *_: self.start_call(False))
         self.header.pack_end(self.call_button)
-
-    def _resync_history(self) -> None:
-        chat = self.chat
-        if chat is None:
-            return
-        session = self.core.sessions.get(chat.account_id)
-        if session is None or not session.online:
-            compat.toast(self, _("Not connected"))
-            return
-        archive = chat.jid if chat.type == "groupchat" else None
-        if not self.core.history.supported(session, archive):
-            compat.toast(self, _("This server has no message archive"))
-            return
-        widgets.run(self, self.core.history.resync_chat(session, chat),
-                    done=lambda _pages: compat.toast(self, _("History re-synced")),
-                    error=_("Could not re-sync history"))
-
-    def _update_sidebar_button(self) -> None:
-        hidden = not self.window.split.get_show_sidebar()
-        self.sidebar_button.set_tooltip_text(_("Show chat list") if hidden else _("Hide chat list"))
 
     def _build_banner(self) -> None:
         self.banner = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
@@ -316,6 +296,7 @@ class ConversationView(Gtk.Box):
         self._update_header()
         self._update_banner()
         self._update_menu()
+        self._update_call_buttons()
         is_group = chat.type == "groupchat"
         self.members_button.set_visible(is_group)
         self.split.set_show_sidebar(is_group and self.settings["ui.members_panel"] and not self.window.narrow)
@@ -499,22 +480,40 @@ class ConversationView(Gtk.Box):
             self._loading_older = False
 
     # ================================================================== header, banner, menu
-    HEADER_PROPS = {"name", "show", "typing", "subject", "member-count", "avatar", "encryption-state",
-                    "encryption-reason", "joined", "join-error"}
-    BANNER_PROPS = {"is-request", "encryption-state", "encryption-reason", "joined", "join-error", "new-devices",
-                    "encryptable", "state"}          # "state" is the account's connection state
-    MENU_PROPS = {"pinned", "muted-until", "name", "type", "our-role"}
+    def _on_chat_changed(self, _obj=None, pspec=None) -> None:
+        self._update_header()
+        self._update_banner()
+        self._update_menu()
+        if pspec is not None and pspec.name == "show":
+            self._update_call_buttons()        # a device came or went: maybe one that takes calls
 
-    def _on_chat_changed(self, _obj, pspec=None) -> None:
-        """Update only what the property that changed feeds.  Rebuilding the banner and the menu on every chat
-        state (someone typing, presence) made the message list move under the pointer."""
-        name = pspec.name if pspec is not None else ""
-        if not name or name in self.HEADER_PROPS:
-            self._update_header()
-        if not name or name in self.BANNER_PROPS:
-            self._update_banner()
-        if not name or name in self.MENU_PROPS:
-            self._update_menu()
+    def start_call(self, video: bool) -> None:
+        if self.chat is not None:
+            self.window.app.calls_ui.start(self.chat, video)
+
+    def _update_call_buttons(self) -> None:
+        """Shown in one-to-one chats; usable when one of the contact's devices online can take the call."""
+        chat = self.chat
+        show = chat is not None and chat.type == "chat" and self.core.calls.available() and \
+            self.settings["calls.enabled"] and self.core.contacts.get(chat.account_id, chat.jid) is not None
+        self.call_button.set_visible(show)
+        self.video_button.set_visible(show)
+        if not show:
+            return
+
+        async def check():
+            media = await self.core.calls.can_call(chat.account_id, chat.jid)
+            if chat is not self.chat:
+                return
+            contact = self.core.contacts.get(chat.account_id, chat.jid)
+            offline = contact is None or contact.show == "offline"
+            why = _("%s is offline") % (chat.name or chat.jid) if offline else \
+                _("%s's app can't take calls") % (chat.name or chat.jid)
+            self.call_button.set_sensitive("audio" in media)
+            self.video_button.set_sensitive("video" in media)
+            self.call_button.set_tooltip_text(_("Call") if "audio" in media else why)
+            self.video_button.set_tooltip_text(_("Video call") if "video" in media else why)
+        widgets.run(self, check())
 
     def _update_header(self) -> None:
         chat = self.chat

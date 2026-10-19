@@ -97,6 +97,9 @@ class WardApplication(Adw.Application):
         self.core = Core(settings, connect=not os.environ.get("WARD_OFFLINE"))
         self.core.notifier.connect("show-notification", self._on_notification)
         self.core.notifier.connect("withdraw-notification", lambda _n, nid: self.withdraw_notification(nid))
+        from .call import CallUI
+
+        self.calls_ui = CallUI(self)
         self.core.chats.connect("unread-changed", lambda *_: self._update_badge())
         self.core.chats.connect("activity", lambda *_: self._update_badge())
         self.core.accounts.store.connect("items-changed", lambda *_: self._watch_accounts())

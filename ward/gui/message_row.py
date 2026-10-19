@@ -152,8 +152,7 @@ class MessageRow(Gtk.Box):
             self.row.append(Gtk.Label(label=m.body, css_classes=["status-line"], hexpand=True, wrap=True))
             return
         if m.kind == "call":
-            self.row.append(Gtk.Label(label=m.body, css_classes=["status-line", "call-history"], hexpand=True,
-                                      xalign=0.5, wrap=True))
+            self.row.append(self._call_line(m))
             return
         cont = continues(prev, m)
         if not cont:
@@ -216,6 +215,25 @@ class MessageRow(Gtk.Box):
             self._meta_icons(meta, m)
             col.append(meta)
         self._add_hover_bar(m)
+
+    def _call_line(self, m: MessageItem) -> Gtk.Widget:
+        """A call: who called, how it ended or how long it lasted, and a button to call back."""
+        c = m.extra.get("call") or {}
+        video = "video" in (c.get("media") or [])
+        missed = c.get("end") in ("missed",) and not c.get("outgoing")
+        box = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER, hexpand=True, css_classes=["call-line"] + (
+            ["missed"] if missed else []))
+        icon = "camera-video-symbolic" if video else ("call-missed-symbolic" if missed else (
+            "call-outgoing-symbolic" if c.get("outgoing") else "call-incoming-symbolic"))
+        box.append(Gtk.Image(icon_name=icon))
+        box.append(Gtk.Label(label=self.view.core.calls.summary(m.extra)))
+        box.append(Gtk.Label(label=widgets.clock(m.timestamp, self.view.settings), css_classes=["message-time"]))
+        if self.view.core.calls.available() and self.view.chat is not None and self.view.chat.type == "chat":
+            back = Gtk.Button(icon_name="call-start-symbolic" if not video else "camera-video-symbolic",
+                              css_classes=["flat", "circular"], tooltip_text=_("Call back"))
+            back.connect("clicked", lambda *_: self.view.start_call(video))
+            box.append(back)
+        return box
 
     def _build_compact(self, m: MessageItem) -> None:
         line = Gtk.Box(spacing=6, hexpand=True)

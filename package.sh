@@ -113,8 +113,8 @@ build_tar() {
 
 # ---------------------------------------------------------------------------------------------- Debian
 DEB_DEPENDS="python3 (>= 3.11), python3-gi, gir1.2-gtk-4.0 (>= 4.12), gir1.2-adw-1 (>= 1.4), python3-slixmpp (>= 1.8), python3-markdown-it, python3-cryptography"
-DEB_RECOMMENDS="python3-pip, gir1.2-gtksource-5, gir1.2-secret-1, gnupg, python3-pil, python3-linkify-it, python3-mdit-py-plugins, libgtk-4-media-gstreamer, desktop-file-utils"
-DEB_SUGGESTS="gir1.2-spelling-1, zbar-tools"
+DEB_RECOMMENDS="python3-pip, gir1.2-gtksource-5, gir1.2-secret-1, gnupg, python3-pil, python3-linkify-it, python3-mdit-py-plugins, libgtk-4-media-gstreamer, desktop-file-utils, gstreamer1.0-plugins-bad, gir1.2-gst-plugins-bad-1.0, gir1.2-gst-plugins-base-1.0, gstreamer1.0-nice, gstreamer1.0-plugins-good"
+DEB_SUGGESTS="gir1.2-spelling-1, zbar-tools, gstreamer1.0-gtk4"
 
 build_deb() {
     have python3 || skip "python3 not found, cannot build the deb"
@@ -181,7 +181,11 @@ Recommends:     (libsecret or typelib-1_0-Secret-1)
 Recommends:     (gnupg2 or gpg2)
 Recommends:     (python3-pillow or python3-Pillow)
 Recommends:     python3-linkify-it-py
+Recommends:     (gstreamer1-plugins-bad-free or gstreamer-plugins-bad)
+Recommends:     (libnice-gstreamer1 or gstreamer-plugins-libnice)
+Recommends:     (gstreamer1-plugins-good or gstreamer-plugins-good)
 Suggests:       libspelling
+Suggests:       gstreamer1-plugin-gtk4
 
 %description
 $LONGDESC
@@ -248,7 +252,8 @@ build_rpm() {
 ARCH_DEPENDS=(python python-gobject gtk4 libadwaita python-slixmpp python-markdown-it-py python-cryptography)
 ARCH_OPTDEPENDS=('python-pip: let Ward install the OMEMO libraries' 'gtksourceview5: code highlighting'
                  'libsecret: keep passwords in the keyring' 'gnupg: OpenPGP encryption'
-                 'python-pillow: smaller images' 'libspelling: spell check' 'python-linkify-it-py: link detection')
+                 'python-pillow: smaller images' 'libspelling: spell check' 'python-linkify-it-py: link detection'
+                 'gst-plugins-bad: calls' 'libnice: calls' 'gst-plugins-good: calls' 'gst-plugin-gtk4: calls')
 
 recipe_arch() {
     mkdir -p "$DIST/recipes/arch"

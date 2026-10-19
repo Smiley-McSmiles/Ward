@@ -1,0 +1,623 @@
+"""One-to-one audio and video calls, compatible with Conversations, Dino and Gajim.
+
+Calls start with Jingle Message Initiation (XEP-0353): the caller proposes to the contact's bare JID so all their
+devices ring; the one that answers sends proceed (and accept to its own account, so the others stop ringing); the
+caller then sends the Jingle session-initiate (XEP-0166/0167) to that device and it answers with session-accept.
+Candidates trickle in transport-info.  STUN and TURN servers come from our server (XEP-0215).  A call leaves a line
+in the chat: missed, declined, or how long it lasted."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import time
+from typing import Any
+from xml.etree import ElementTree as ET
+
+from gi.repository import GObject
+
+from ... import aio, util
+from ..chats import find_message_job, insert_message_job
+from ..stanzas import NS_HINTS, NS_RECEIPTS
+from . import jingle
+from .jingle import NS_JINGLE, NS_JMI, q
+
+log = logging.getLogger(__name__)
+
+NS_EXTDISCO = ("urn:xmpp:extdisco:2", "urn:xmpp:extdisco:1")
+RING_TIMEOUT = 60           # seconds an unanswered call rings
+CONNECT_TIMEOUT = 40        # seconds from answering to media flowing
+
+# a call's end, as kept in its chat line
+MISSED, DECLINED, BUSY, CANCELLED, FAILED, ENDED, ELSEWHERE = (
+    "missed", "declined", "busy", "cancelled", "failed", "ended", "elsewhere")
+
+
+class Call(GObject.Object):
+    """One call.  state: proposing | ringing (theirs) | incoming (ours) | connecting | active | ended."""
+
+    __gtype_name__ = "WardCall"
+    __gsignals__ = {"media": (GObject.SignalFlags.RUN_LAST, None, ())}    # call.ms is there: its video to show
+    state = GObject.Property(type=str, default="")
+    muted = GObject.Property(type=bool, default=False)
+    camera = GObject.Property(type=bool, default=True)
+
+    def __init__(self, account_id: int, sid: str, peer: str, outgoing: bool, media: set[str]):
+        super().__init__()
+        self.account_id = account_id
+        self.sid = sid
+        self.peer = util.bare(peer)          # the contact
+        self.remote = peer if util.resource(peer) else ""   # their device, once known
+        self.outgoing = outgoing
+        self.media = set(media) or {"audio"}
+        self.video = "video" in self.media
+        self.started_at = 0.0                # when media started flowing
+        self.created_at = time.time()
+        self.end = ""                        # missed, declined... (see above)
+        self.ms: Any = None                  # media.MediaSession
+        self.offer: ET.Element | None = None     # a received session-initiate we have not answered yet
+        self.local_names: list[str] = []     # content names in our SDP order (= m-line indexes)
+        self.remote_names: list[str] = []
+        self.local_ice: dict[str, tuple[str, str]] = {}      # content -> (ufrag, pwd)
+        self.pending_local: list[tuple[int, str]] = []       # our candidates before the peer knows the session
+        self.pending_remote: list[tuple[str, str]] = []      # theirs before we have their description
+        self.signalled = False               # session-initiate / session-accept sent: candidates can go
+        self.described = False               # their description set: their candidates can go in
+        self.timer: asyncio.TimerHandle | None = None
+
+    @property
+    def duration(self) -> int:
+        return int(time.time() - self.started_at) if self.started_at else 0
+
+    @property
+    def active(self) -> bool:
+        return self.state not in ("", "ended")
+
+
+class CallService(GObject.Object):
+    __gsignals__ = {
+        "incoming": (GObject.SignalFlags.RUN_LAST, None, (object,)),     # a call ringing here
+        "added": (GObject.SignalFlags.RUN_LAST, None, (object,)),        # any new call (ours or theirs)
+        "ended": (GObject.SignalFlags.RUN_LAST, None, (object,)),
+    }
+    iq_handlers = {(NS_JINGLE, "jingle"): "_on_jingle"}
+
+    def __init__(self, core):
+        super().__init__()
+        self.core = core
+        self.calls: dict[tuple[int, str], Call] = {}
+        self._available: bool | None = None
+
+    # ================================================================== availability
+    def available(self) -> bool:
+        if self._available is None:
+            from . import media
+
+            self._available = media.available()
+        return self._available
+
+    def attach(self, session) -> None:
+        if self.available() and self.core.settings["calls.enabled"]:
+            for ns in jingle.FEATURES:
+                session.add_feature(ns)
+
+    async def can_call(self, account_id: int, jid: str) -> set[str]:
+        """What the contact's devices online can take: {'audio', 'video'}, empty when none can."""
+        session = self.core.sessions.get(account_id)
+        contact = self.core.roster.contacts.get(account_id, util.bare(jid))
+        if session is None or not session.online or contact is None or not self.available():
+            return set()
+        out: set[str] = set()
+        for res, info in list(contact.resources.items()):
+            node = info.get("caps") or ""
+            full = "%s/%s" % (contact.jid, res)
+            try:
+                di = await self.core.disco.caps_info(session, full, node) if node else \
+                    await self.core.disco.info(session, full)
+            except Exception:
+                continue
+            f = di.features if di is not None else set()
+            if {jingle.NS_JINGLE, jingle.NS_RTP, jingle.NS_ICE_UDP, jingle.NS_DTLS} <= f:
+                if jingle.NS_RTP_AUDIO in f:
+                    out.add("audio")
+                if jingle.NS_RTP_VIDEO in f and jingle.NS_RTP_AUDIO in f:
+                    out.add("video")
+        return out
+
+    def active_call(self) -> Call | None:
+        return next((c for c in self.calls.values() if c.state in ("connecting", "active")), None)
+
+    def find(self, account_id: int, sid: str) -> Call | None:
+        return self.calls.get((account_id, sid))
+
+    # ================================================================== starting and answering
+    async def start(self, acc, jid: str, video: bool) -> Call:
+        """Call a contact: all their devices ring until one answers."""
+        session = self.core.sessions[acc.id]
+        sid = util.random_id(16)
+        call = Call(acc.id, sid, util.bare(jid), True, {"audio", "video"} if video else {"audio"})
+        self.calls[(acc.id, sid)] = call
+        msg = session.new_message(call.peer, "chat", "jm-propose-" + sid)
+        msg.append(jingle.jmi("propose", sid, call.media))
+        ET.SubElement(msg, q(NS_RECEIPTS, "request"))
+        ET.SubElement(msg, q(NS_HINTS, "store"))
+        session.send(msg)
+        self._set(call, "proposing")
+        self.emit("added", call)
+        self._timeout(call, RING_TIMEOUT, lambda: self.hang_up(call))
+        await self._record(call)
+        return call
+
+    async def accept(self, call: Call, video: bool | None = None) -> None:
+        """Answer a ringing call (with our camera when video is True and they proposed video)."""
+        if call.state != "incoming":
+            return
+        session = self.core.sessions.get(call.account_id)
+        if session is None:
+            return
+        if video is not None:
+            call.video = video and "video" in call.media
+        other = self.active_call()
+        if other is not None and other is not call:
+            await self.hang_up(other)
+        self._set(call, "connecting")
+        self._timeout(call, CONNECT_TIMEOUT, lambda: self._fail(call, "connectivity-error"))
+        if call.offer is None:
+            # Jingle Message Initiation: tell our other devices, then the caller's device
+            own = session.new_message(util.bare(session.jid), "chat")
+            own.append(jingle.jmi("accept", call.sid))
+            ET.SubElement(own, q(NS_HINTS, "store"))
+            session.send(own)
+            msg = session.new_message(call.remote, "chat", "jm-proceed-" + call.sid)
+            msg.append(jingle.jmi("proceed", call.sid))
+            ET.SubElement(msg, q(NS_HINTS, "store"))
+            session.send(msg)
+        else:
+            await self._answer(session, call)
+
+    async def decline(self, call: Call) -> None:
+        session = self.core.sessions.get(call.account_id)
+        if session is not None and call.state == "incoming":
+            if call.offer is not None:
+                self._terminate(session, call, "decline")
+            else:
+                msg = session.new_message(call.remote or call.peer, "chat")
+                msg.append(jingle.jmi("reject", call.sid, reason="decline"))
+                ET.SubElement(msg, q(NS_HINTS, "store"))
+                session.send(msg)
+        await self._end(call, DECLINED)
+
+    async def hang_up(self, call: Call) -> None:
+        if not call.active:
+            return
+        session = self.core.sessions.get(call.account_id)
+        if call.state == "incoming":
+            await self.decline(call)
+            return
+        if session is not None and session.online:
+            if call.state in ("proposing", "ringing"):
+                msg = session.new_message(call.peer, "chat")
+                msg.append(jingle.jmi("retract", call.sid, reason="cancel"))
+                ET.SubElement(msg, q(NS_HINTS, "store"))
+                session.send(msg)
+            else:
+                self._terminate(session, call, "success" if call.state == "active" else "cancel")
+                if call.remote:
+                    fin = session.new_message(call.remote, "chat")
+                    fin.append(jingle.jmi("finish", call.sid,
+                                          reason="success" if call.state == "active" else "cancel"))
+                    ET.SubElement(fin, q(NS_HINTS, "store"))
+                    session.send(fin)
+        await self._end(call, ENDED if call.state == "active" else CANCELLED)
+
+    def set_muted(self, call: Call, muted: bool) -> None:
+        call.muted = muted
+        if call.ms is not None:
+            call.ms.set_muted(muted)
+
+    def set_camera(self, call: Call, on: bool) -> None:
+        call.camera = on
+        if call.ms is not None:
+            call.ms.set_camera(on)
+
+    # ================================================================== Jingle Message Initiation
+    async def handle_message(self, session, pm, inner: ET.Element, archived: bool, outgoing: bool) -> bool:
+        """A message carrying a JMI element: handled here (True), or not one (False)."""
+        el = next((c for c in inner if c.tag.startswith("{%s}" % NS_JMI)), None)
+        if el is None:
+            return False
+        kind = el.tag.split("}")[1]
+        sid = el.get("id", "")
+        if not sid or pm.type == "groupchat":
+            return True
+        acc = session.account
+        frm = pm.from_jid or session.jid
+        own = util.bare(session.jid)
+        if not archived and pm.delay and time.time() - pm.delay > RING_TIMEOUT:
+            archived = True         # stored while we were offline: too late to ring
+        if archived:
+            await self._archived(session, kind, sid, pm, outgoing, el)
+            return True
+        call = self.find(acc.id, sid)
+        from_self = util.bare(frm) == own
+        if kind == "propose":
+            if from_self or outgoing:
+                return True             # we called from another device
+            if call is not None:
+                return True
+            media = jingle.media_of(el)
+            if not self.available() or not self.core.settings["calls.enabled"] or not media:
+                self._jmi(session, frm, "reject", sid, "unsupported-applications" if media else "")
+                return True
+            contact = self.core.roster.contacts.get(acc.id, util.bare(frm))
+            if contact is not None and contact.blocked:
+                return True
+            busy = self.active_call()
+            call = Call(acc.id, sid, frm, False, media)
+            if busy is not None:
+                self._jmi(session, frm, "reject", sid, "busy")
+                call.end = BUSY
+                await self._record(call)
+                return True
+            self.calls[(acc.id, sid)] = call
+            self._jmi(session, frm, "ringing", sid)
+            self._set(call, "incoming")
+            self._timeout(call, RING_TIMEOUT, lambda: self._end(call, MISSED))
+            await self._record(call)
+            self.emit("added", call)
+            self.emit("incoming", call)
+            return True
+        if call is None:
+            return True
+        if kind == "retract" and not call.outgoing and util.bare(frm) == call.peer:
+            await self._end(call, MISSED)
+        elif kind == "ringing" and call.outgoing and util.bare(frm) == call.peer and call.state == "proposing":
+            self._set(call, "ringing")
+        elif kind == "proceed" and call.outgoing and util.bare(frm) == call.peer and not outgoing:
+            if call.state in ("proposing", "ringing"):
+                call.remote = frm
+                self._set(call, "connecting")
+                self._timeout(call, CONNECT_TIMEOUT, lambda: self._fail(call, "connectivity-error"))
+                aio.spawn(self._initiate(session, call))
+        elif kind in ("proceed", "accept") and not call.outgoing and (from_self or outgoing):
+            if call.state == "incoming":
+                await self._end(call, ELSEWHERE)            # answered on another of our devices
+        elif kind == "reject":
+            if call.outgoing and util.bare(frm) == call.peer and not outgoing:
+                await self._end(call, BUSY if jingle.reason_of(el) == "busy" else DECLINED)
+            elif not call.outgoing and (from_self or outgoing) and call.state == "incoming":
+                await self._end(call, DECLINED)            # declined on another of our devices
+        elif kind == "finish" and util.bare(frm) == call.peer and call.active:
+            await self._end(call, ENDED if call.started_at else CANCELLED)
+        return True
+
+    async def _archived(self, session, kind: str, sid: str, pm, outgoing: bool, el: ET.Element) -> None:
+        """Calls we were offline for: a line in the chat."""
+        acc = session.account
+        if kind != "propose" or self.find(acc.id, sid) is not None:
+            return
+        peer = pm.to_jid if outgoing else pm.from_jid
+        if not peer:
+            return
+        call = Call(acc.id, sid, peer, outgoing, jingle.media_of(el))
+        call.end = CANCELLED if outgoing else MISSED
+        call.created_at = pm.delay or time.time()
+        await self._record(call, only_new=True)
+
+    def _jmi(self, session, to: str, kind: str, sid: str, reason: str = "") -> None:
+        msg = session.new_message(to, "chat")
+        msg.append(jingle.jmi(kind, sid, reason=reason))
+        ET.SubElement(msg, q(NS_HINTS, "store"))
+        session.send(msg)
+
+    # ================================================================== Jingle
+    def _on_jingle(self, session, stanza) -> None:
+        el = stanza.xml
+        j = el.find(q(NS_JINGLE, "jingle"))
+        frm = el.get("from", "")
+        if j is None:
+            session.reply_iq(stanza, error="bad-request")
+            return
+        action, sid = j.get("action", ""), j.get("sid", "")
+        call = self.find(session.account.id, sid)
+        if action == "session-initiate":
+            if call is None:
+                # a call without Jingle Message Initiation (some clients start with Jingle directly)
+                media = jingle.media_of(j)
+                if not media or not self.available() or not self.core.settings["calls.enabled"]:
+                    session.reply_iq(stanza, error="feature-not-implemented")
+                    return
+                if self.active_call() is not None:
+                    session.reply_iq(stanza)
+                    call = Call(session.account.id, sid, frm, False, media)
+                    self._terminate(session, call, "busy")
+                    return
+                call = Call(session.account.id, sid, frm, False, media)
+                call.offer = j
+                self.calls[(session.account.id, sid)] = call
+                session.reply_iq(stanza)
+                self._set(call, "incoming")
+                self._timeout(call, RING_TIMEOUT, lambda: self._end(call, MISSED))
+                aio.spawn(self._record(call))
+                self.emit("added", call)
+                self.emit("incoming", call)
+                return
+            if call.outgoing or frm != call.remote:
+                session.reply_iq(stanza, error="item-not-found")
+                return
+            session.reply_iq(stanza)
+            call.offer = j
+            if call.state == "connecting":
+                aio.spawn(self._answer(session, call))
+            return
+        if call is None or (call.remote and frm != call.remote):
+            session.reply_iq(stanza, error="item-not-found")
+            return
+        session.reply_iq(stanza)
+        if action == "session-accept" and call.outgoing:
+            aio.spawn(self._accepted(call, j))
+        elif action == "transport-info":
+            self._remote_candidates(call, j)
+        elif action == "session-terminate":
+            reason = jingle.reason_of(j)
+            end = {"decline": DECLINED, "busy": BUSY, "success": ENDED, "cancel": CANCELLED}.get(reason, FAILED)
+            if end == CANCELLED and call.state == "incoming":
+                end = MISSED
+            aio.spawn(self._end(call, ENDED if call.started_at and end in (CANCELLED, ENDED) else end))
+        # session-info (ringing, mute...) and anything else: acknowledged, nothing to do
+
+    def _terminate(self, session, call: Call, reason: str) -> None:
+        if not call.remote:
+            return
+        j = jingle.jingle_element("session-terminate", call.sid)
+        j.append(jingle.reason_element(reason))
+        aio.spawn(self._send_jingle(session, call, j, quiet=True))
+
+    async def _send_jingle(self, session, call: Call, j: ET.Element, quiet: bool = False) -> bool:
+        try:
+            await session.iq("set", call.remote, j, timeout=20)
+            return True
+        except Exception as e:
+            if not quiet:
+                log.info("jingle %s to %s failed: %s", j.get("action"), call.remote, e)
+            return False
+
+    # ------------------------------------------------------------------ negotiation
+    async def _media(self, session, call: Call):
+        from . import media
+
+        ms = media.MediaSession(True, call.video, await self._ice_servers(session))
+        ms.set_muted(call.muted)
+        ms.connect("local-candidate", lambda _m, mline, cand: self._local_candidate(session, call, mline, cand))
+        ms.connect("state-changed", lambda _m, state: self._media_state(call, state))
+        call.ms = ms
+        call.emit("media")
+        return ms
+
+    async def _initiate(self, session, call: Call) -> None:
+        """We called and they answered: the session-initiate, to the device that answered."""
+        try:
+            ms = await self._media(session, call)
+            offer = await ms.create_offer()
+        except Exception as e:
+            log.warning("cannot start the call: %s", e)
+            await self._fail(call, "failed-application")
+            return
+        if not call.active:
+            return
+        self._learn_local(call, offer)
+        j = jingle.jingle_element("session-initiate", call.sid, initiator=session.bound_jid or session.jid)
+        for el in jingle.sdp_to_jingle(offer, True, with_candidates=False):
+            j.append(el)
+        if not await self._send_jingle(session, call, j):
+            await self._fail(call, "connectivity-error", send=False)
+            return
+        self._flush_local(session, call)
+
+    async def _accepted(self, call: Call, j: ET.Element) -> None:
+        if call.ms is None:
+            return
+        call.remote_names = [c.get("name", "") for c in j.findall(q(NS_JINGLE, "content"))]
+        try:
+            await call.ms.set_answer(jingle.jingle_to_sdp(j, False))
+        except Exception as e:
+            log.warning("cannot use the answer: %s", e)
+            await self._fail(call, "failed-application")
+            return
+        call.described = True
+        self._flush_remote(call)
+
+    async def _answer(self, session, call: Call) -> None:
+        """They sent the session-initiate: our session-accept."""
+        j = call.offer
+        if j is None or call.ms is not None:
+            return
+        call.remote_names = [c.get("name", "") for c in j.findall(q(NS_JINGLE, "content"))]
+        try:
+            ms = await self._media(session, call)
+            answer = await ms.accept_offer(jingle.jingle_to_sdp(j, True))
+        except Exception as e:
+            log.warning("cannot answer the call: %s", e)
+            await self._fail(call, "failed-application")
+            return
+        if not call.active:
+            return
+        call.described = True
+        self._learn_local(call, answer)
+        acc = jingle.jingle_element("session-accept", call.sid, responder=session.bound_jid or session.jid)
+        for el in jingle.sdp_to_jingle(answer, False, with_candidates=False):
+            acc.append(el)
+        if not await self._send_jingle(session, call, acc):
+            await self._fail(call, "connectivity-error", send=False)
+            return
+        self._flush_local(session, call)
+        self._flush_remote(call)
+
+    def _learn_local(self, call: Call, sdp_text: str) -> None:
+        sdp = jingle.parse_sdp(sdp_text)
+        call.local_names = [m.mid for m in sdp.media]
+        for m in sdp.media:
+            call.local_ice[m.mid] = (m.get("ice-ufrag") or sdp.get("ice-ufrag") or "",
+                                     m.get("ice-pwd") or sdp.get("ice-pwd") or "")
+
+    def _local_candidate(self, session, call: Call, mline: int, cand: str) -> None:
+        call.pending_local.append((mline, cand))
+        if call.signalled:
+            self._flush_local(session, call)
+
+    def _flush_local(self, session, call: Call) -> None:
+        call.signalled = True
+        pending, call.pending_local = call.pending_local, []
+        for mline, cand in pending:
+            c = jingle.Candidate.from_sdp(cand)
+            if c is None or c.protocol != "udp" or not (0 <= mline < len(call.local_names)):
+                continue
+            name = call.local_names[mline]
+            ufrag, pwd = call.local_ice.get(name, ("", ""))
+            aio.spawn(self._send_jingle(session, call, jingle.transport_info(call.sid, name, ufrag, pwd, c),
+                                        quiet=True))
+
+    def _remote_candidates(self, call: Call, j: ET.Element) -> None:
+        for content in j.findall(q(NS_JINGLE, "content")):
+            tr = content.find(q(jingle.NS_ICE_UDP, "transport"))
+            if tr is None:
+                continue
+            for c in tr.findall(q(jingle.NS_ICE_UDP, "candidate")):
+                cand = jingle.Candidate.from_xml(c)
+                if cand is not None:
+                    call.pending_remote.append((content.get("name", ""), cand.to_sdp()))
+        if call.described:
+            self._flush_remote(call)
+
+    def _flush_remote(self, call: Call) -> None:
+        pending, call.pending_remote = call.pending_remote, []
+        names = call.local_names or call.remote_names
+        for name, cand in pending:
+            if call.ms is not None and name in names:
+                call.ms.add_remote_candidate(names.index(name), cand)
+
+    def _media_state(self, call: Call, state: str) -> None:
+        if state == "connected" and call.state == "connecting":
+            call.started_at = time.time()
+            self._cancel_timer(call)
+            self._set(call, "active")
+        elif state == "failed" and call.active:
+            aio.spawn(self._fail(call, "connectivity-error"))
+
+    async def _ice_servers(self, session) -> list[dict]:
+        """STUN and TURN from our server (XEP-0215); none when it offers none."""
+        for ns in NS_EXTDISCO:
+            try:
+                res = await session.iq("get", session.domain, ET.Element(q(ns, "services")), timeout=8)
+            except Exception:
+                continue
+            out = []
+            for s in res.iter(q(ns, "service")):
+                out.append({k: s.get(k, "") for k in ("type", "host", "port", "transport", "username", "password")})
+            if out:
+                return out
+        return []
+
+    # ================================================================== ending
+    async def _fail(self, call: Call, reason: str, send: bool = True) -> None:
+        if not call.active:
+            return
+        session = self.core.sessions.get(call.account_id)
+        if send and session is not None and call.state in ("connecting", "active"):
+            self._terminate(session, call, reason)
+        await self._end(call, FAILED)
+
+    async def _end(self, call: Call, end: str) -> None:
+        if call.state == "ended":
+            return
+        self._cancel_timer(call)
+        if call.ms is not None:
+            with contextlib.suppress(Exception):
+                call.ms.close()
+            call.ms = None
+        call.end = end
+        self._set(call, "ended")
+        self.calls.pop((call.account_id, call.sid), None)
+        await self._record(call)
+        self.emit("ended", call)
+
+    def _set(self, call: Call, state: str) -> None:
+        if call.state != state:
+            call.state = state
+
+    def _timeout(self, call: Call, seconds: float, action) -> None:
+        self._cancel_timer(call)
+
+        def fire():
+            call.timer = None
+            if call.active:
+                aio.spawn(action())
+        call.timer = asyncio.get_event_loop().call_later(seconds, fire)
+
+    def _cancel_timer(self, call: Call) -> None:
+        if call.timer is not None:
+            call.timer.cancel()
+            call.timer = None
+
+    # ================================================================== the line in the chat
+    async def _record(self, call: Call, only_new: bool = False) -> None:
+        acc = self.core.accounts.get(call.account_id)
+        if acc is None:
+            return
+        chat = await self.core.open_chat(acc, call.peer)
+        extra = {"call": {"sid": call.sid, "media": sorted(call.media), "end": call.end,
+                          "duration": call.duration if call.end == ENDED else 0, "outgoing": call.outgoing}}
+        values = {"chat_id": chat.id, "msg_id": call.sid, "sender": acc.jid if call.outgoing else call.peer,
+                  "sender_jid": "", "direction": 1 if call.outgoing else 0,
+                  "timestamp": int(call.created_at * 1000), "body": "", "kind": "call", "status": 0,
+                  "extra": extra}
+
+        def job(conn):
+            row = find_message_job(conn, chat.id, call.sid)
+            if row is not None and row["kind"] == "call":
+                if only_new:
+                    return None, False
+                import json
+
+                conn.execute("UPDATE messages SET extra = ? WHERE id = ?",
+                             (json.dumps(extra, ensure_ascii=False), row["id"]))
+                return row["id"], False
+            return insert_message_job(conn, values), True
+
+        mid, new = await self.core.db.run(job)
+        if mid is None:
+            return
+        msg = await self.core.chats.reload_message(chat, mid)
+        if msg is None:
+            return
+        if new:
+            self.core.chats.show_message(chat, msg)
+        if call.end == MISSED and not call.outgoing:
+            chat.unread += 1
+            self.core.chats.emit("unread-changed")
+            await self.core.chats.save(chat, "unread")
+
+    def summary(self, extra: dict) -> str:
+        from ...i18n import _
+
+        c = extra.get("call") or {}
+        video = "video" in (c.get("media") or [])
+        end = c.get("end", "")
+        if not end:
+            return _("Video call") if video else _("Call")
+        if end == MISSED:
+            return _("Missed video call") if video else _("Missed call")
+        if end in (DECLINED, BUSY) and c.get("outgoing"):
+            return _("Busy") if end == BUSY else _("Call declined")
+        if end == DECLINED:
+            return _("Declined call")
+        if end == ENDED and c.get("duration"):
+            d = int(c["duration"])
+            length = "%d:%02d:%02d" % (d // 3600, d // 60 % 60, d % 60) if d >= 3600 else "%d:%02d" % (d // 60, d % 60)
+            return (_("Video call, %s") if video else _("Call, %s")) % length
+        if end == ELSEWHERE:
+            return _("Answered on another device")
+        if end == FAILED:
+            return _("Call failed")
+        return _("Cancelled call") if c.get("outgoing") else _("Missed call")
