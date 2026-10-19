@@ -65,6 +65,7 @@ class ConversationView(Gtk.Box):
         self._loading_older = False
         self._menu_msg: MessageItem | None = None
         self._menu_selection = ""
+        self._code_toast: Adw.Toast | None = None
         self._last_value = 0.0          # the adjustment, to tell the user scrolling from the list relaying out
         self._auto_until = 0            # a programmatic scroll: its layout settling is not the user scrolling
         self._layout_until = 0          # rows being rebuilt: their measurement moves the view too
@@ -691,6 +692,14 @@ class ConversationView(Gtk.Box):
             return []
         room = self.core.muc.room_of(chat)
         return list(room.by_nick) if room is not None else []
+
+    def on_code_copy(self, _text: str) -> None:
+        if self._code_toast is not None:
+            self._code_toast.dismiss()
+        toast = Adw.Toast(title=_("Code Copied!"), timeout=2)
+        toast.add_css_class("code-copied")
+        self._code_toast = toast
+        self.window.toasts.add_toast(toast)
 
     def on_link(self, uri: str, text: str) -> bool:
         if uri.lower().startswith("xmpp:"):

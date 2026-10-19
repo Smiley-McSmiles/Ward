@@ -75,6 +75,7 @@
 .reply-preview .text { font-size: 0.9em; opacity: 0.8; }
 button.message-meta { padding: 0 4px; min-height: 0; min-width: 0; font-weight: normal; }
 .code-block { border-radius: 8px; background-color: alpha(@window_fg_color, 0.06); }
+toast.code-copied { border-radius: 999px; }
 .code-block .code-header { font-size: 0.8em; padding: 2px 4px 2px 10px; opacity: 0.8; }
 .code-block textview, .code-block .message-code { background: none; padding: 6px 10px; font-family: monospace; }
 .message-table { border: 1px solid alpha(@window_fg_color, 0.15); border-radius: 6px; }

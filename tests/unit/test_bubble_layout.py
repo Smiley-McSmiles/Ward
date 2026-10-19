@@ -39,6 +39,9 @@ class FakeView:
     def on_link(self, *_a):
         pass
 
+    def on_code_copy(self, *_a):
+        pass
+
     def message_menu(self, *_a):
         pass
 
