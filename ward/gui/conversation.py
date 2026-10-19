@@ -59,11 +59,16 @@ class ConversationView(Gtk.Box):
         self.first_unread_id = 0
         self.highlight_id = 0
         self.rows: dict[int, MessageRow] = {}
+        self._animate_ids: set[int] = set()      # messages that arrived while at the bottom, to slide in
         self._chat_handlers: list[tuple[object, int]] = []
         self._stick = True
         self._loading_older = False
         self._menu_msg: MessageItem | None = None
         self._menu_selection = ""
+        self._code_toast: Adw.Toast | None = None
+        self._last_value = 0.0          # the adjustment, to tell the user scrolling from the list relaying out
+        self._auto_until = 0            # a programmatic scroll: its layout settling is not the user scrolling
+        self._layout_until = 0          # rows being rebuilt: their measurement moves the view too
 
         self.toolbar = Adw.ToolbarView()
         self.append(self.toolbar)
@@ -72,8 +77,10 @@ class ConversationView(Gtk.Box):
         self._build_banner()
         self._build_search()
         self._build_list()
+        # not Adw.ToolbarView.add_bottom_bar(): it wraps the bar in a Gtk.WindowHandle, and dragging in the
+        # composer then moved the window instead of selecting text
         self.composer = Composer(self)
-        self.toolbar.add_bottom_bar(self.composer)
+        self.append(self.composer)
         self._build_actions()
 
         drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
@@ -86,6 +93,16 @@ class ConversationView(Gtk.Box):
     def _build_header(self) -> None:
         self.header = Adw.HeaderBar()
         self.toolbar.add_top_bar(self.header)
+        self.sidebar_button = Gtk.Button(icon_name="sidebar-show-symbolic", css_classes=["flat"])
+        self.sidebar_button.connect("clicked", lambda *_: self.window.toggle_sidebar())
+        self.header.pack_start(self.sidebar_button)
+        self.resync_button = Gtk.Button(icon_name="view-refresh-symbolic", css_classes=["flat"],
+                                        tooltip_text=_("Re-sync chat history from the server"),
+                                        sensitive=False)
+        self.resync_button.connect("clicked", lambda *_: self._resync_history())
+        self.header.pack_start(self.resync_button)
+        self.window.split.connect("notify::show-sidebar", lambda *_: self._update_sidebar_button())
+        self._update_sidebar_button()
         self.title_button = Gtk.Button(css_classes=["flat"])
         tb = Gtk.Box(spacing=8)
         self.title_avatar = widgets.Avatar(28)
@@ -100,6 +117,7 @@ class ConversationView(Gtk.Box):
         self.title_button.set_tooltip_text(_("Details"))
         self.title_button.connect("clicked", lambda *_: self.show_details())
         self.header.set_title_widget(self.title_button)
+        self._update_sidebar_button()
 
         self.menu_button = Gtk.MenuButton(icon_name="view-more-symbolic", tooltip_text=_("Chat menu"))
         self.header.pack_end(self.menu_button)
@@ -193,10 +211,15 @@ class ConversationView(Gtk.Box):
         self.stack.add_named(overlay, "messages")
         self.stack.add_named(self.empty, "empty")
         self.stack.add_named(results_sc, "results")
+        # the message area slides in from the bottom when a chat is opened (appearance.chat_animations)
+        self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE,
+                                   transition_duration=220, overflow=Gtk.Overflow.HIDDEN)
+        self.reveal.set_child(self.stack)
+        self.reveal.set_reveal_child(True)
 
         self.split = Adw.OverlaySplitView(sidebar_position=Gtk.PackType.END, show_sidebar=False,
                                           max_sidebar_width=300, min_sidebar_width=220)
-        self.split.set_content(self.stack)
+        self.split.set_content(self.reveal)
         self.members = MembersPanel(self)
         self.split.set_sidebar(self.members)
         self.split.connect("notify::show-sidebar", lambda *_: self.members_button.set_active(
@@ -225,11 +248,6 @@ class ConversationView(Gtk.Box):
             a.connect("activate", lambda _a, p, cb=cb: self._attachment_action(p.get_int32(), cb))
             group.add_action(a)
         self.insert_action_group("msg", group)
-
-    def _attachment_action(self, i: int, cb) -> None:
-        m = self._menu_msg
-        if m is not None and 0 <= i < len(m.attachments):
-            cb(m, m.attachments[i])
         chat_group = Gio.SimpleActionGroup()
         for name, cb in (("details", self.show_details), ("search", lambda: self.search_button.set_active(True)),
                          ("pin", lambda: self._toggle_flag("pinned")),
@@ -243,6 +261,11 @@ class ConversationView(Gtk.Box):
             chat_group.add_action(a)
         self.insert_action_group("chat", chat_group)
 
+    def _attachment_action(self, i: int, cb) -> None:
+        m = self._menu_msg
+        if m is not None and 0 <= i < len(m.attachments):
+            cb(m, m.attachments[i])
+
     # ================================================================== showing a chat
     def show_chat(self, chat: ChatItem | None) -> None:
         if chat is self.chat:
@@ -253,7 +276,11 @@ class ConversationView(Gtk.Box):
             GLib.idle_add(lambda ml=self.ml: ml is not self.ml and ml.trim(KEEP_MESSAGES) and False)
         self.chat = chat
         self.rows.clear()
+        self._animate_ids.clear()
         self.highlight_id = 0
+        self._last_value = 0.0
+        self._auto_until = 0
+        self._layout_until = 0
         if chat is None:
             self.list.set_model(None)
             self.ml = None
@@ -261,7 +288,7 @@ class ConversationView(Gtk.Box):
             return
         for prop in ("name", "show", "typing", "subject", "member-count", "encryption-state", "encryption-reason",
                      "avatar", "joined", "join-error", "is-request", "new-devices", "muted-until", "pinned",
-                     "our-role"):
+                     "encryptable", "our-role"):
             self._chat_handlers.append((chat, chat.connect("notify::" + prop, self._on_chat_changed)))
         acc = self.core.accounts.get(chat.account_id)
         if acc is not None:
@@ -277,6 +304,7 @@ class ConversationView(Gtk.Box):
         self.composer.set_chat(chat)
         self.search_button.set_active(False)
         self.stack.set_visible_child_name("messages")
+        self._animate_in()
         widgets.run(self, self._open(chat), error=_("Could not load messages"))
 
     async def _open(self, chat: ChatItem) -> None:
@@ -290,8 +318,10 @@ class ConversationView(Gtk.Box):
                 if m.id > chat.last_read_id and not m.outgoing and m.kind != "status":
                     self.first_unread_id = m.id
                     break
-        model = Gtk.NoSelection.new(ml.store)
+        # connect before set_model: the list view's own items-changed handler binds the row, and it must find
+        # the new id in _animate_ids already
         self._chat_handlers.append((ml.store, ml.store.connect("items-changed", self._on_items_changed)))
+        model = Gtk.NoSelection.new(ml.store)
         self._chat_handlers.append((ml, ml.connect("notify::loading", lambda *_: self.loading_spinner.set_visible(
             ml.loading))))
         self.list.set_model(model)
@@ -329,6 +359,9 @@ class ConversationView(Gtk.Box):
         msg: MessageItem = item.get_item()
         row.bind(msg, self.previous(msg))
         self.rows[msg.id] = row
+        if msg.id in self._animate_ids:
+            self._animate_ids.discard(msg.id)
+            row.animate_in()
 
     def _unbind_row(self, _f, item: Gtk.ListItem) -> None:
         row: MessageRow = item.get_child()
@@ -347,6 +380,13 @@ class ConversationView(Gtk.Box):
             if newest is not None and newest.outgoing:
                 self._stick = True
             if self._stick:
+                # a message sent or received while the list follows the bottom slides up into place
+                if newest is not None and self.settings["appearance.message_animations"]:
+                    row = self.rows.get(newest.id)
+                    if row is not None:          # the list view already bound it
+                        row.animate_in()
+                    else:
+                        self._animate_ids.add(newest.id)
                 GLib.idle_add(self.scroll_to_bottom)
             else:
                 self.jump_button.set_visible(True)
@@ -361,21 +401,41 @@ class ConversationView(Gtk.Box):
     def _at_bottom(self) -> bool:
         return self.vadj.get_value() + self.vadj.get_page_size() >= self.vadj.get_upper() - 40
 
+    def _layout_changing(self) -> None:
+        """A message row is being rebuilt.  Clearing and refilling it changes its measured height, and the list
+        moves the view while it re-measures; that must not count as the user scrolling away from the bottom."""
+        self._layout_until = GLib.get_monotonic_time() + 250_000
+
     def _on_scrolled(self, adj) -> None:
-        # Only the user scrolling up lets go of the bottom.  The list moves the view by itself too, while it measures
-        # a new message (its estimated height first, then the real one), and that must not unstick it.
+        # Only the user scrolling up lets go of the bottom.  The list moves the view by itself too, while it
+        # measures a message (its estimated height first, then the real one), or a row is rebuilt (a receipt, a
+        # reaction): that must not unstick it.  So a move up is only believed after it has settled, and the list
+        # is put back at the bottom if the move came from a re-measure.
         value = adj.get_value()
-        moved_up = value < getattr(self, "_last_value", value) - 1
+        previous = self._last_value
         self._last_value = value
+        now = GLib.get_monotonic_time()
         if self._at_bottom():
             self._stick = True
-        elif moved_up and GLib.get_monotonic_time() > getattr(self, "_auto_until", 0):
-            self._stick = False
+        elif value < previous - 1 and now > self._auto_until:
+            GLib.timeout_add(120, self._maybe_unstick)
+        if self._stick and (now <= self._layout_until or now <= self._auto_until) and not self._at_bottom():
+            self._settle_bottom()
         self.jump_button.set_visible(not self._stick)
         if self._stick and self.chat is not None and self.chat.unread and self.core.window_focused:
             self.core.set_active_chat(self.chat)
         if adj.get_value() < adj.get_page_size() * 0.6 and self.ml is not None and self.ml.has_older:
             widgets.run(self, self._load_older())
+
+    def _maybe_unstick(self) -> bool:
+        """The view stayed above the bottom: the user scrolled there.  Not while a row is being measured, though."""
+        if self.get_root() is None:         # the window was let go while the check was pending
+            return False
+        now = GLib.get_monotonic_time()
+        if not self._at_bottom() and now > self._auto_until and now > self._layout_until:
+            self._stick = False
+            self.jump_button.set_visible(True)
+        return False
 
     def _on_upper(self, *_a) -> None:
         if self._stick:
@@ -385,7 +445,7 @@ class ConversationView(Gtk.Box):
 
     def scroll_to_bottom(self) -> bool:
         self._stick = True
-        self._auto_until = GLib.get_monotonic_time() + 600_000     # the list settles within this
+        self._auto_until = GLib.get_monotonic_time() + 400_000     # the list settles within this
         n = self.ml.store.get_n_items() if self.ml is not None else 0
         if n:
             self.list.scroll_to(n - 1, Gtk.ListScrollFlags.NONE, None)
@@ -494,6 +554,9 @@ class ConversationView(Gtk.Box):
         title = _(ENC_TITLES.get(chat.encryption_state or "omemo", "Encryption"))
         self.enc_button.set_tooltip_text("%s%s" % (title, ("\n" + chat.encryption_reason)
                                                    if chat.encryption_reason else ""))
+        for button in (self.call_button, self.video_call_button):
+            button.set_visible(not group)
+        self.resync_button.set_sensitive(chat is not None)
 
     def _update_banner(self) -> None:
         chat = self.chat
@@ -660,6 +723,13 @@ class ConversationView(Gtk.Box):
             return []
         room = self.core.muc.room_of(chat)
         return list(room.by_nick) if room is not None else []
+
+    def on_code_copy(self, _text: str) -> None:
+        if self._code_toast is not None:
+            self._code_toast.dismiss()
+        toast = Adw.Toast(title=_("Code Copied!"), timeout=2)
+        self._code_toast = toast
+        self.window.toasts.add_toast(toast)
 
     def on_link(self, uri: str, text: str) -> bool:
         if uri.lower().startswith("xmpp:"):
@@ -1027,9 +1097,32 @@ class ConversationView(Gtk.Box):
             self.list.remove_css_class(c)
         self.list.add_css_class(self.settings["appearance.layout"])
 
+    def _animate_in(self) -> None:
+        """Slide the chat up into the message area, unless the user turned animations off (here or in GTK)."""
+        enabled = bool(self.settings["appearance.chat_animations"])
+        gtk_settings = Gtk.Settings.get_default()
+        if gtk_settings is not None and not gtk_settings.get_property("gtk-enable-animations"):
+            enabled = False
+        if not enabled:
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+            self.reveal.set_reveal_child(True)
+            return
+        # collapse without animating that, then reveal in the next frame, so the slide starts at the bottom even
+        # when another chat was already on screen
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+        self.reveal.set_reveal_child(False)
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        GLib.idle_add(self._reveal_chat)
+
+    def _reveal_chat(self) -> bool:
+        self.reveal.set_reveal_child(True)
+        return False
+
     def _on_setting(self, _s, key: str) -> None:
         if key == "appearance.layout":
             self._apply_layout()
+        if key in ("appearance.chat_animations", "appearance.message_animations"):
+            return
         if key.startswith("appearance.") or key in ("chats.collapse_after", "chats.markdown_others",
                                                     "chats.quick_reactions"):
             for row in list(self.rows.values()):

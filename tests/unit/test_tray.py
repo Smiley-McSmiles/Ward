@@ -46,6 +46,35 @@ class FakeApp:
         self.presence.append(show)
 
 
+def test_sni_properties_answer_one_at_a_time():
+    """A tray host asks for every property in turn (GetAll).  Answering must not rasterize and pack the icons for
+    the ones that have nothing to do with pixels, and the packed pixels must be reused."""
+    from gi.repository import GLib
+
+    from ward.gui import tray
+
+    t = tray.Tray.__new__(tray.Tray)
+    t.state, t.show, t.unread, t.icon_path = "offline", "available", 0, ""
+    t._pixmaps, t._pixmap_variants = {}, {}
+
+    def no_pixels(_name):
+        raise AssertionError("the icons were built for a property that does not need them")
+
+    t._pixmap = no_pixels
+    for prop in ("Category", "Id", "Title", "Status", "IconName", "AttentionIconName", "OverlayIconName",
+                 "WindowId", "IconThemePath", "ItemIsMenu", "Menu", "ToolTip"):
+        assert t._sni_prop(None, None, None, None, prop) is not None, prop
+    assert t._sni_prop(None, None, None, None, "NoSuchProperty") is None
+    del t._pixmap
+
+    name = t._icon_name()
+    t._pixmaps[name] = [(22, 22, bytes(range(256)) * 2), (32, 32, b"\x00\x01\x02\x03")]
+    first = t._sni_prop(None, None, None, None, "IconPixmap")
+    assert first is t._sni_prop(None, None, None, None, "IconPixmap"), "the packed pixels are cached"
+    assert first.get_type_string() == "a(iiay)"
+    assert first.equal(GLib.Variant("a(iiay)", t._pixmaps[name]))
+
+
 def test_tray_registers_and_follows_state(bus):
     from gi.repository import Gio, GLib
 
@@ -86,6 +115,9 @@ def test_tray_registers_and_follows_state(bus):
         assert props()["IconName"].endswith("-connecting")
         t.set_state("online")
         assert props()["IconName"] == "io.github.smiley_mcsmiles.Ward"
+        t.set_state("online", "dnd")
+        assert props()["IconName"].endswith("-dnd")
+        t.set_state("online", "available")
         t.set_unread(3)
         p = props()
         assert p["Status"] == "NeedsAttention" and p["AttentionIconName"].endswith("-unread")
@@ -104,3 +136,16 @@ def test_tray_registers_and_follows_state(bus):
     finally:
         Gio.bus_unown_name(owner)
         bus.unregister_object(oid)
+
+
+def test_status_icons_follow_presence():
+    from ward.gui import tray
+
+    t = tray.Tray.__new__(tray.Tray)
+    t.state, t.unread = "online", 0
+    expected = {"available": "", "away": "-away", "dnd": "-dnd", "xa": "-xa", "offline": "-offline"}
+    for show, suffix in expected.items():
+        t.show = show
+        assert t._icon_name() == tray.APP_ID + suffix
+    t.show, t.unread = "dnd", 2
+    assert t._icon_name() == tray.APP_ID + "-dnd-unread"

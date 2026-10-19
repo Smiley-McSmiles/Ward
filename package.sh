@@ -446,6 +446,7 @@ LICENSE=	MIT
 LICENSE_FILE=	\${WRKSRC}/LICENSE
 
 RUN_DEPENDS=	\${PYTHON_PKGNAMEPREFIX}slixmpp>=1.8:net-im/py-slixmpp@\${PY_FLAVOR} \\
+		\${PYTHON_PKGNAMEPREFIX}sqlite3>0:databases/py-sqlite3@\${PY_FLAVOR} \\
 		\${PYTHON_PKGNAMEPREFIX}markdown-it-py>0:textproc/py-markdown-it-py@\${PY_FLAVOR} \\
 		\${PYTHON_PKGNAMEPREFIX}cryptography>0:security/py-cryptography@\${PY_FLAVOR} \\
 		\${PYTHON_PKGNAMEPREFIX}pillow>0:graphics/py-pillow@\${PY_FLAVOR} \\
@@ -502,7 +503,7 @@ build_freebsd() {
         echo "licenselogic: single"
         echo "licenses: [MIT]"
         echo "deps: {"
-        for d in python3 "$py-gobject3" gtk4 libadwaita "$py-slixmpp" "$py-markdown-it-py" "$py-cryptography"; do
+        for d in python3 "$py-pygobject" "$py-sqlite3" gtk4 libadwaita "$py-slixmpp" "$py-markdown-it-py" "$py-cryptography"; do
             echo "  $d: { origin: \"$(pkg query '%o' "$d" 2>/dev/null || echo unknown)\", version: \"$(pkg query '%v' "$d" 2>/dev/null || echo 0)\" },"
         done
         echo "}"

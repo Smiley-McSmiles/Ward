@@ -29,7 +29,7 @@ ENC_NAMES = {"omemo2": "OMEMO 2", "omemo": "OMEMO", "pgp": "OpenPGP"}
 
 
 def continues(prev: MessageItem | None, m: MessageItem) -> bool:
-    if prev is None or prev.kind in ("status", "system") or m.kind in ("status", "system"):
+    if prev is None or prev.kind in ("status", "system", "call") or m.kind in ("status", "system", "call"):
         return False
     return (prev.direction == m.direction and prev.sender == m.sender and
             0 <= m.timestamp - prev.timestamp < GROUP_WINDOW and widgets.same_day(prev.timestamp, m.timestamp)
@@ -45,12 +45,27 @@ class MessageRow(Gtk.Box):
         self.msg: MessageItem | None = None
         self._handlers: list[int] = []
         self._att_handlers: list[tuple[AttachmentItem, int]] = []
+        # the content is wrapped so a newly sent or received message can slide up into its place
+        self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE, transition_duration=200,
+                                   overflow=Gtk.Overflow.HIDDEN)
+        self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.reveal.set_child(self.content)
+        self.reveal.set_reveal_child(True)
+        self.append(self.reveal)
         self.separator = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.append(self.separator)
+        self.content.append(self.separator)
         self.overlay = Gtk.Overlay()
-        self.append(self.overlay)
+        self.content.append(self.overlay)
         self.row = Gtk.Box(spacing=10, css_classes=["message-row"])
         self.overlay.set_child(self.row)
+        # quick reactions and reply: a floating pill over the top-right corner, as in Discord, so showing it
+        # never takes room from the message or moves the rows below
+        # Keep the pill visible and fade it instead of toggling visibility: toggling a descendant's visibility
+        # makes GtkListView reset the scroll position.  It is not measured either, so it takes no row space.
+        self.actions = Gtk.Box(spacing=0, css_classes=["hover-bar"], opacity=0, sensitive=False,
+                               halign=Gtk.Align.END, valign=Gtk.Align.START, margin_top=2, margin_end=12)
+        self.overlay.add_overlay(self.actions)
+        self.overlay.set_measure_overlay(self.actions, False)
         self.hover = None
         motion = Gtk.EventControllerMotion()
         motion.connect("enter", lambda *_: self._hover(True))
@@ -67,6 +82,9 @@ class MessageRow(Gtk.Box):
     # ------------------------------------------------------------------ binding
     def bind(self, msg: MessageItem, prev: MessageItem | None) -> None:
         self.unbind()
+        # rows are recycled: always start visible and without a transition from the previous message
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+        self.reveal.set_reveal_child(True)
         self.msg = msg
         for prop in ("body", "edited", "retracted", "status", "error", "reactions-rev", "attachments-rev",
                      "trust", "selected", "reply-preview"):
@@ -87,16 +105,36 @@ class MessageRow(Gtk.Box):
         if self.msg is not None:
             self._build(self.view.previous(self.msg))
 
+    def animate_in(self) -> None:
+        """Slide this message up into its place when it is sent or received."""
+        gtk_settings = Gtk.Settings.get_default()
+        enabled = bool(self.view.settings["appearance.message_animations"])
+        if gtk_settings is not None and not gtk_settings.get_property("gtk-enable-animations"):
+            enabled = False
+        if not enabled:
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+            self.reveal.set_reveal_child(True)
+            return
+        # collapse without animating that, then reveal in the next frame so the slide starts at the bottom
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+        self.reveal.set_reveal_child(False)
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        GLib.idle_add(self._reveal_content)
+
+    def _reveal_content(self) -> bool:
+        self.reveal.set_reveal_child(True)
+        return False
+
     # ------------------------------------------------------------------ building
     def _build(self, prev: MessageItem | None) -> None:
         m = self.msg
+        self.view._layout_changing()
         widgets.clear(self.separator)
         widgets.clear(self.row)
-        if self.hover is not None:
-            if self.hover.get_parent() is self.overlay:
-                self.overlay.remove_overlay(self.hover)
-            self.hover = None
-        self.bubble_wrap = None
+        widgets.clear(self.actions)
+        self.actions.set_opacity(0)
+        self.actions.set_sensitive(False)
+        self.hover = None
         settings = self.view.settings
         layout = settings["appearance.layout"]
         for c in ("first", "outgoing", "selected", "highlight", "mention"):
@@ -152,9 +190,10 @@ class MessageRow(Gtk.Box):
             col.set_hexpand(False)
             col.set_halign(Gtk.Align.END if m.outgoing else Gtk.Align.START)
             self.row.set_halign(Gtk.Align.FILL)
-            wrap = Gtk.Box(hexpand=True, halign=Gtk.Align.END if m.outgoing else Gtk.Align.START, spacing=6)
+            # A Gtk.Box packs its children along the main axis and ignores their halign there: give the bubble an
+            # expanding box that fills the row, so the box can align it left or right.
+            wrap = Gtk.Box(hexpand=True, halign=Gtk.Align.END if m.outgoing else Gtk.Align.START)
             wrap.append(col)
-            self.bubble_wrap = wrap
             self.row.append(wrap)
         else:
             self.row.append(col)
@@ -298,7 +337,8 @@ class MessageRow(Gtk.Box):
             return lbl
         nicks = self.view.mention_names()
         doc = render.parsed(m.id, body, m.is_markdown, nicks, settings["chats.markdown_others"])
-        r = render.Renderer(on_link=self.view.on_link, dark=style.is_dark(), action=action)
+        r = render.Renderer(on_link=self.view.on_link, dark=style.is_dark(), action=action,
+                            on_code_copy=self.view.on_code_copy)
         w = r.build(doc)
         if m.extra.get("unencrypted"):
             w.add_css_class("message-unencrypted")
@@ -424,8 +464,7 @@ class MessageRow(Gtk.Box):
     def _add_hover_bar(self, m: MessageItem) -> None:
         if m.retracted or m.kind == "status":
             return
-        bar = Gtk.Box(spacing=0, css_classes=["hover-bar"], halign=Gtk.Align.END, valign=Gtk.Align.START,
-                      margin_end=12, margin_top=0, visible=False)
+        bar = self.actions
         for e in self.view.settings["chats.quick_reactions"][:3]:
             b = Gtk.Button(label=e, css_classes=["flat"], tooltip_text=_("React with %s") % e)
             b.connect("clicked", lambda _b, e=e: self.view.react(m, e))
@@ -439,24 +478,13 @@ class MessageRow(Gtk.Box):
         reply.connect("clicked", lambda *_: self.view.start_reply(m))
         bar.append(reply)
         self.hover = bar
-        wrap = getattr(self, "bubble_wrap", None)
-        if wrap is not None:
-            # bubbles: beside the bubble, in the empty side of the row, so it never covers text to select
-            bar.set_halign(Gtk.Align.CENTER)
-            bar.set_valign(Gtk.Align.CENTER)
-            bar.set_margin_end(0)
-            if m.outgoing:
-                wrap.prepend(bar)
-            else:
-                wrap.append(bar)
-        else:
-            self.overlay.add_overlay(bar)
 
     def _hover(self, inside: bool) -> None:
         if self.hover is not None:
             if not inside and getattr(self, "react_button", None) is not None and self.react_button.get_active():
                 return
-            self.hover.set_visible(inside)
+            self.hover.set_opacity(1 if inside else 0)
+            self.hover.set_sensitive(inside)
         if self.time_hover is not None and self.view.settings["appearance.timestamps"] == "hover":
             self.time_hover.set_opacity(1 if inside else 0)
 

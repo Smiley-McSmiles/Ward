@@ -36,7 +36,6 @@ log = logging.getLogger("ward.omemo")
 
 import omemo
 import twomemo
-import twomemo.etree
 from omemo.session_manager import (
     MessageNotForUs,
     NoEligibleDevices,
@@ -49,12 +48,18 @@ from omemo.types import TrustLevel
 
 try:
     import oldmemo
-    import oldmemo.etree
-    HAVE_OLDMEMO = True
+    HAVE_OLDMEMO = deps.legacy_omemo_available()
 except Exception as _e:  # optional: OMEMO 2 only (missing, or broken by an incompatible dependency)
     logging.getLogger("ward.omemo").info("legacy OMEMO unavailable: %s", _e)
     oldmemo = None  # type: ignore[assignment]
     HAVE_OLDMEMO = False
+
+
+def _load_etree() -> None:
+    """twomemo.etree compiles three XML schemas with xmlschema on import (about 100 ms).  Do that in the worker
+    pool when the first OMEMO manager starts, not on the main thread while the window is opening."""
+    import twomemo.etree  # noqa: F401
+
 
 NS2 = twomemo.twomemo.NAMESPACE
 NS1 = oldmemo.oldmemo.NAMESPACE if HAVE_OLDMEMO else "eu.siacs.conversations.axolotl"
@@ -232,6 +237,7 @@ class OmemoService(GObject.Object):
                 self._creating.pop(aid, None)
 
     async def _create(self, session) -> SessionManager:
+        await aio.run_in_thread(_load_etree)
         acc = session.account
         storage = WardStorage(self.core.db, acc.id)
         # the internal option _omemo_backends (legacy | omemo2) lets the test-suite play an older client
@@ -320,14 +326,19 @@ class OmemoService(GObject.Object):
         verified = any(d.trust_level_name == trust.VERIFIED for d in devices)
         undecided = []
         now = int(time.time() * 1000)
+        own_id = (await m.get_own_device_information())[0].device_id
         for d in devices:
             await self.core.db.execute("INSERT OR IGNORE INTO omemo_devices (account_id, jid, device_id, first_seen) "
                                        "VALUES (?, ?, ?, ?)", (acc.id, jid, d.device_id, now))
             if d.trust_level_name != trust.UNDECIDED:
                 continue
-            if self.btbv(acc.id) and not verified:
+            if jid == acc.jid and d.device_id != own_id and self.btbv(acc.id):
+                # Linked devices of the same account are trusted like the account itself; otherwise a verified
+                # laptop would silently stop encrypting copies for a newly linked phone.
                 await m.set_trust(jid, d.identity_key, trust.BLIND)
-            elif not (jid == acc.jid and d.device_id == (await m.get_own_device_information())[0].device_id):
+            elif self.btbv(acc.id) and not verified:
+                await m.set_trust(jid, d.identity_key, trust.BLIND)
+            elif not (jid == acc.jid and d.device_id == own_id):
                 undecided.append(d)
         devices = await m.get_device_information(jid)
         self._devices[(acc.id, jid)] = devices
@@ -563,7 +574,12 @@ class OmemoService(GObject.Object):
         recipients = self._recipients(chat)
         if not recipients and chat.type != "groupchat":
             raise EncryptionBlocked(_("Private messages in groups cannot be encrypted"))
-        for jid in recipients | {acc.jid}:
+        # Our other devices must be able to decrypt the carbon copy of what we send.  The server reflects our own
+        # messages to every resource of this account, so include our own bare JID in the OMEMO recipients.
+        targets = set(recipients)
+        if chat.type != "pm" and targets:
+            targets.add(acc.jid)
+        for jid in targets | {acc.jid}:
             await self.refresh(session, jid)
             await self.review(session, jid)
         inside, outside = stanzas.split_content(el)
@@ -576,10 +592,10 @@ class OmemoService(GObject.Object):
             order.append(NS1)
         token = _encrypting.set(True)
         try:
-            messages, errors = await m.encrypt(frozenset(recipients), plaintexts, backend_priority_order=order,
+            messages, errors = await m.encrypt(frozenset(targets), plaintexts, backend_priority_order=order,
                                                identifier=str(chat.id))
         except NoEligibleDevices as e:
-            if recipients == {acc.jid}:
+            if targets == {acc.jid}:
                 raise OnlyThisDevice() from None
             if body is None and self.legacy_enabled:
                 return el, ""       # a reaction for legacy OMEMO users: see below
@@ -604,7 +620,7 @@ class OmemoService(GObject.Object):
                 out.append(oldmemo.etree.serialize_message(msg))
             namespaces.add(msg.namespace)
         if not namespaces:
-            if recipients == {acc.jid}:
+            if targets == {acc.jid}:
                 raise OnlyThisDevice()
             if body is None:
                 # a reaction (or other body-less update) for people on legacy OMEMO, which can only encrypt a body:

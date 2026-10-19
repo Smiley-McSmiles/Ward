@@ -91,7 +91,9 @@ class Tray:
         self.app = app
         self.unread = 0
         self.state = "offline"         # online | connecting | offline
+        self.show = "available"        # available | away | dnd | xa | offline
         self._pixmaps: dict[str, list] = {}
+        self._pixmap_variants: dict[str, GLib.Variant] = {}
         self._registered = False
         from .. import paths
 
@@ -136,7 +138,11 @@ class Tray:
             return APP_ID + "-offline"
         if self.state == "connecting":
             return APP_ID + "-connecting"
-        return APP_ID + "-unread" if attention or self.unread else APP_ID
+        show = self.show if self.show in ("away", "dnd", "xa", "offline") else "available"
+        base = APP_ID if show == "available" else APP_ID + "-" + show
+        if (attention or self.unread) and show != "offline":
+            return base + "-unread"
+        return base
 
     def _pixmap(self, name: str) -> list:
         """The icon as ARGB32 pixels too: hosts that can't find our icon theme (GNOME's extension, Flatpak,
@@ -173,9 +179,30 @@ class Tray:
         self._pixmaps[name] = out
         return out
 
-    def set_state(self, state: str) -> None:
-        if state != self.state:
+    def _pixmap_variant(self, name: str) -> GLib.Variant:
+        """The icon pixels as a(iiay), built once per icon.  GLib.Variant('a(iiay)', ...) wraps every byte in a
+        Python object (about 60 ms for our four sizes), and a tray host asks for this property at every state
+        change; new_from_bytes keeps the bytes as they are."""
+        v = self._pixmap_variants.get(name)
+        if v is None:
+            ay_type = GLib.VariantType.new("ay")
+            children = [
+                GLib.Variant.new_tuple(
+                    GLib.Variant.new_int32(w),
+                    GLib.Variant.new_int32(h),
+                    GLib.Variant.new_from_bytes(ay_type, GLib.Bytes.new(buf), True),
+                )
+                for w, h, buf in self._pixmap(name)
+            ]
+            v = GLib.Variant.new_array(GLib.VariantType.new("(iiay)"), children)
+            self._pixmap_variants[name] = v
+        return v
+
+    def set_state(self, state: str, show: str = "") -> None:
+        show = show or "available"
+        if state != self.state or show != self.show:
             self.state = state
+            self.show = show
             self._changed()
 
     def _changed(self) -> None:
@@ -211,22 +238,43 @@ class Tray:
             self.app.activate()
 
     # ------------------------------------------------------------------ StatusNotifierItem
+    # One property at a time: a tray host asks for all of them in a row (GetAll), and answering with one dictionary
+    # that rasterizes and packs both icons made every one of those calls pay for the pixels.
     def _sni_prop(self, _conn, _sender, _path, _iface, name):
-        state = {"online": _("Connected"), "connecting": _("Connecting…"), "offline": _("Offline")}[self.state]
-        tip = state + (" · " + _("%d unread") % self.unread if self.unread else "")
-        icon = self._icon_name()
-        values = {
-            "Category": GLib.Variant("s", "Communications"), "Id": GLib.Variant("s", APP_ID),
-            "Title": GLib.Variant("s", APP_NAME), "Status": GLib.Variant("s", self._status()),
-            "IconName": GLib.Variant("s", icon), "AttentionIconName": GLib.Variant("s", self._icon_name(True)),
-            "IconPixmap": GLib.Variant("a(iiay)", self._pixmap(icon)),
-            "AttentionIconPixmap": GLib.Variant("a(iiay)", self._pixmap(self._icon_name(True))),
-            "OverlayIconName": GLib.Variant("s", ""), "WindowId": GLib.Variant("i", 0),
-            "IconThemePath": GLib.Variant("s", self.icon_path), "ItemIsMenu": GLib.Variant("b", False),
-            "Menu": GLib.Variant("o", "/MenuBar"),
-            "ToolTip": GLib.Variant("(sa(iiay)ss)", (icon, [], APP_NAME, tip)),
-        }
-        return values.get(name)
+        if name == "Category":
+            return GLib.Variant("s", "Communications")
+        if name == "Id":
+            return GLib.Variant("s", APP_ID)
+        if name == "Title":
+            return GLib.Variant("s", APP_NAME)
+        if name == "Status":
+            return GLib.Variant("s", self._status())
+        if name == "IconName":
+            return GLib.Variant("s", self._icon_name())
+        if name == "AttentionIconName":
+            return GLib.Variant("s", self._icon_name(True))
+        if name == "IconPixmap":
+            return self._pixmap_variant(self._icon_name())
+        if name == "AttentionIconPixmap":
+            return self._pixmap_variant(self._icon_name(True))
+        if name == "OverlayIconName":
+            return GLib.Variant("s", "")
+        if name == "WindowId":
+            return GLib.Variant("i", 0)
+        if name == "IconThemePath":
+            return GLib.Variant("s", self.icon_path)
+        if name == "ItemIsMenu":
+            return GLib.Variant("b", False)
+        if name == "Menu":
+            return GLib.Variant("o", "/MenuBar")
+        if name == "ToolTip":
+            state = {"online": _("Connected"), "connecting": _("Connecting…"), "offline": _("Offline")}[self.state]
+            if self.state == "online" and self.show in ("away", "dnd", "xa", "offline"):
+                state = {"away": _("Away"), "dnd": _("Busy"), "xa": _("Away for a while"),
+                         "offline": _("Offline")}[self.show]
+            tip = state + (" · " + _("%d unread") % self.unread if self.unread else "")
+            return GLib.Variant("(sa(iiay)ss)", (self._icon_name(), [], APP_NAME, tip))
+        return None
 
     def _sni_call(self, _conn, _sender, _path, _iface, method, _params, invocation) -> None:
         if method in ("Activate", "SecondaryActivate"):

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1 (2026-10-19)
+
+Sent messages now sync between devices on the same account, Wayland screen sharing works through the ScreenCast portal, calls leave a history line in their chat, and incoming calls ring.
+
 ## v1.0.0 (2026-10-18)
 
 The first release.

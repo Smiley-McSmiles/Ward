@@ -8,7 +8,7 @@ from gi.repository import Gtk
 from ward.gui.conversation import selected_text
 
 
-def test_selected_text_walks_the_message():
+def test_selected_text_walks_the_message(display):
     box = Gtk.Box()
     a = Gtk.Label(label="hello world", selectable=True)
     b = Gtk.Label(label="second line", selectable=True)

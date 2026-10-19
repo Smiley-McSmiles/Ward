@@ -221,6 +221,51 @@ class Preferences:
             compat.toast(self.d, str(e))
 
     # ------------------------------------------------------------------ extra rows per page
+    def _page_calls(self, page, groups) -> None:
+        g = groups.get("Network")
+        if g is None:
+            return
+        row = Adw.ActionRow(title=_("Test TURN relay"),
+                            subtitle=_("Ask the TURN server for an allocation and check the credentials"))
+        button = Gtk.Button(label=_("Test"), valign=Gtk.Align.CENTER)
+        button.connect("clicked", lambda *_: self._test_turn(button))
+        row.add_suffix(button)
+        g.add(row)
+
+    def _test_turn(self, widget: Gtk.Widget) -> None:
+        async def go():
+            from ..core import stun, turn
+
+            session = next((s for s in self.core.sessions.values() if s.online), None)
+            services = await self.core.turn.for_session(session) if session is not None \
+                else self.core.turn.manual()
+            candidates = [s for s in services if s.type == "turn"] or \
+                [s for s in services if s.type == "stun"]
+            if not candidates:
+                compat.toast(widget, _("Configure a TURN or STUN server first"))
+                return
+            chosen = candidates[0]
+            result = await turn.test_service(chosen, self.settings)
+            if isinstance(result, stun.Binding):
+                body = result.message
+                if result.address:
+                    body = _("STUN works; the server sees you at %s") % result.address
+            elif result.ok:
+                body = _("TURN allocation succeeded through %(server)s.\nRealm: %(realm)s\nRelay: %(relay)s") % {
+                    "server": turn.describe(chosen), "realm": result.realm or _("none"),
+                    "relay": result.relay or _("none")}
+                if not result.auth:
+                    body += "\n\n" + _("The server answered without authentication: no realm or nonce. "
+                                          "Enable lt-cred-mech and a realm in coturn, or enable_turn and a "
+                                          "secret in eturnal.")
+            else:
+                body = result.message
+                if result.realm:
+                    body += "\n\n" + _("Realm: %s") % result.realm
+            compat.alert(self.d, _("TURN test"), body, [("close", _("Close"), "")], default="close")
+
+        widgets.run(widget, go(), error=_("TURN test failed"))
+
     def _page_general(self, page, groups) -> None:
         if paths.in_flatpak():
             return

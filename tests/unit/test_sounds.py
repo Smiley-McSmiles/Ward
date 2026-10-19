@@ -15,6 +15,16 @@ def test_bundled_sound_is_found():
     assert app.bundled_sound("no-such-sound") == "" and app.bundled_sound("../etc/passwd") == ""
 
 
+def test_bundled_call_sounds_are_found():
+    for name in ("phone-incoming-call", "phone-outgoing-calling"):
+        path = app.bundled_sound(name)
+        assert path.endswith(name + ".oga") and os.path.isfile(path)
+        with open(path, "rb") as fh:
+            assert fh.read(4) == b"OggS"
+    with open(path, "rb") as fh:
+        assert fh.read(4) == b"OggS"
+
+
 def test_sound_theme_lookup(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_DATA_DIRS", str(tmp_path / "system"))
@@ -52,7 +62,7 @@ def test_play_sound_plays_a_chosen_file(tmp_path):
     assert played == [str(ding)]
 
 
-def test_sound_row_shows_default_or_file_name():
+def test_sound_row_shows_default_or_file_name(display):
     import gi
 
     gi.require_version("Adw", "1")

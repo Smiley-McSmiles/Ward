@@ -43,3 +43,19 @@ def run(loop):
         return loop.run_until_complete(asyncio.wait_for(coro, timeout))
 
     return _run
+
+
+@pytest.fixture
+def display():
+    """A real display, or skip.  Gtk.init_check() returns True even when Gdk has no display (CI containers), and
+    creating widgets then segfaults, so both have to be checked."""
+    try:
+        import gi
+
+        gi.require_version("Gtk", "4.0")
+        from gi.repository import Gdk, Gtk
+    except (ImportError, ValueError):
+        pytest.skip("GTK 4 is not available")
+    if not Gtk.init_check() or Gdk.Display.get_default() is None:
+        pytest.skip("no display")
+    return Gdk.Display.get_default()

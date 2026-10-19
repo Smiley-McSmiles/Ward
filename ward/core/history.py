@@ -144,6 +144,38 @@ class HistoryService:
             self.core.e2e.history_sync(session, False)
         return pages
 
+    async def resync_chat(self, session, chat) -> int:
+        """Fetch this chat's whole server archive from newest to oldest, independent of mam_state.
+
+        A normal catch-up only asks for messages newer than the last archive id.  If a device's state is ahead of
+        its local rows, or a previous catch-up stopped early, there is no way to fill the gap through the normal
+        path.  This explicit resync walks the archive backwards for one chat; message ids still deduplicate.
+        """
+        group = chat.type == "groupchat"
+        archive = chat.jid if group else None
+        if not self.supported(session, archive):
+            raise RuntimeError("the server does not archive messages")
+        key = archive or session.jid
+        marker = (session.account.id, key)
+        if marker in self._catching_up:
+            return 0
+        self._catching_up.add(marker)
+        pages = 0
+        before = ""
+        self.core.e2e.history_sync(session, True)
+        try:
+            while True:
+                page = await self._page(session, archive, "scrollback", muc=group,
+                                        with_="" if group else chat.jid, before=before, max_=PAGE)
+                pages += 1
+                if page.complete or not page.first or page.count == 0 or pages > 200:
+                    break
+                before = page.first
+        finally:
+            self._catching_up.discard(marker)
+            self.core.e2e.history_sync(session, False)
+        return pages
+
     async def fetch_older(self, chat) -> bool:
         """One page of older messages for a chat, from the server archive.  False when there is nothing more."""
         if chat.options.get("history_complete"):

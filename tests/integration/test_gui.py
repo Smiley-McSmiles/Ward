@@ -18,9 +18,9 @@ def _gtk():
 
     gi.require_version("Gtk", "4.0")
     gi.require_version("Adw", "1")
-    from gi.repository import Gtk
+    from gi.repository import Gdk, Gtk
 
-    if not Gtk.init_check():
+    if not Gtk.init_check() or Gdk.Display.get_default() is None:
         pytest.skip("GTK cannot open the display")
 
 
@@ -285,3 +285,26 @@ def test_register_group_and_dialogs(app, prosody, run, errors):
 
     run(scenario(), timeout=180)
     assert not errors, errors
+
+
+def test_chat_actions_and_sidebar_toggle(app, run):
+    """The chat overflow actions are installed without touching an attachment, and the header button toggles
+    the main split view."""
+    import asyncio
+
+    async def scenario():
+        await wait_for(lambda: app.core.started, 20, "core start")
+        w = app.window
+        w.set_default_size(1100, 700)
+        await asyncio.sleep(0.3)
+        view = w.conversation
+        assert view.menu_button.activate_action("chat.details", None)
+        assert view.menu_button.activate_action("chat.clear", None)
+        assert w.split.get_show_sidebar()
+        view.sidebar_button.emit("clicked")
+        assert not w.split.get_show_sidebar()
+        view.sidebar_button.emit("clicked")
+        assert w.split.get_show_sidebar()
+        await app.core.shutdown()
+
+    run(scenario(), timeout=30)

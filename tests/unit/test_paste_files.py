@@ -12,9 +12,7 @@ from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 from ward.gui import composer as composer_mod
 
 
-def test_pasted_file_list_is_offered_for_sending(tmp_path):
-    if not Gtk.init_check():
-        pytest.skip("no display")
+def test_pasted_file_list_is_offered_for_sending(tmp_path, display):
     f = tmp_path / "notes.txt"
     f.write_text("hi")
     files = Gdk.FileList.new_from_list([Gio.File.new_for_path(str(f))])

@@ -181,6 +181,8 @@ def test_message_rows_are_light(app, prosody, run, tmp_path):  # noqa: F811
             row = next(r for r in w.conversation.rows.values() if getattr(r, "react_button", None) is not None)
             reacted = []
             row.view.react = lambda m, e: reacted.append(e)
+            # the hover bar is shown when the pointer is over the row, as it is for a real click
+            row._hover(True)
             assert row.react_button.get_popover() is None
             row.react_button.popup()
             chooser = row.react_button.get_popover()

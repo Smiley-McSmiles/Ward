@@ -11,6 +11,7 @@ from .. import APP_NAME
 from ..core.models import AccountItem, ChatItem
 from ..i18n import _
 from . import compat, lifetime, widgets
+from .call import CallWindow, IncomingCallWindow
 from .conversation import ConversationView
 from .sidebar import Sidebar
 
@@ -67,7 +68,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.settings = self.core.settings
         self.current_chat: ChatItem | None = None
         self.narrow = False
+        self._call_window: CallWindow | None = None
+        self._incoming_window: IncomingCallWindow | None = None
         self._asked_password: set[int] = set()
+        self._omemo_watched = False
 
         self.set_default_size(self.settings["window.width"], self.settings["window.height"])
         if self.settings["window.maximized"]:
@@ -83,9 +87,10 @@ class MainWindow(Adw.ApplicationWindow):
         loading.set_child(compat.spinner())
         self.top.add_named(loading, "loading")
 
-        self.split = Adw.NavigationSplitView(min_sidebar_width=280, max_sidebar_width=380, sidebar_width_fraction=0.3)
+        self.split = Adw.OverlaySplitView(min_sidebar_width=280, max_sidebar_width=380,
+                                          sidebar_width_fraction=0.3, show_sidebar=True)
         self.sidebar = Sidebar(self)
-        self.split.set_sidebar(Adw.NavigationPage(title=_("Chats"), child=self.sidebar, tag="sidebar"))
+        self.split.set_sidebar(self.sidebar)
         self.content_stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         empty_view = Adw.ToolbarView()
         empty_view.add_top_bar(Adw.HeaderBar(show_title=False))
@@ -98,9 +103,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.content_stack.add_named(empty_view, "empty")
         self.conversation = ConversationView(self)
         self.content_stack.add_named(self.conversation, "chat")
-        self.content_page = Adw.NavigationPage(title=_("Chat"), child=self.content_stack, tag="content")
-        self.split.set_content(self.content_page)
-        self.split.connect("notify::show-content", self._on_show_content)
+        self.split.set_content(self.content_stack)
+        self.split.connect("notify::show-sidebar", self._on_show_sidebar)
         self.top.add_named(self.split, "main")
         self.welcome = None
 
@@ -110,6 +114,7 @@ class MainWindow(Adw.ApplicationWindow):
         bp.connect("unapply", lambda *_: self._set_narrow(False))
         self.add_breakpoint(bp)
 
+        self.core.calls.connect("incoming", self._on_incoming_call)
         self._install_actions()
         self.connect("close-request", self._on_close)
         self.connect("notify::is-active", self._on_focus)
@@ -121,14 +126,77 @@ class MainWindow(Adw.ApplicationWindow):
                        lambda _c, s: lifetime.watch(s.account, "notify::state", self._on_account_state))
         for s in self.core.sessions.values():
             lifetime.watch(s.account, "notify::state", self._on_account_state)
-        if self.core.omemo is not None:
-            lifetime.watch(self.core.omemo, "new-devices", self._on_new_devices)
+        lifetime.watch(self.core, "omemo-ready", lambda _c: self._watch_omemo())
+        self._watch_omemo()
         if self.core.started:
             self.ready()
+
+    # ================================================================== calls
+    def _drop_stale_call_window(self) -> None:
+        if self._call_window is None:
+            return
+        active = self.core.calls.active
+        if active is None or active is not self._call_window.call or self._call_window.call.state == "ended":
+            self._call_window.destroy()
+            self._call_window = None
+
+    def start_call(self, chat: ChatItem | None, video: bool = False) -> None:
+        if chat is None or chat.type != "chat":
+            return
+        self._drop_stale_call_window()
+        if self._call_window is not None or self.core.calls.busy():
+            compat.toast(self, _("You are already in a call"))
+            return
+        account = self.core.accounts.get(chat.account_id)
+        if account is None:
+            return
+
+        async def go():
+            call = await self.core.calls.place_call(account, chat.jid, video)
+            self._show_call(call)
+
+        widgets.run(self, go(), error=_("Could not start the call"))
+
+    def _on_incoming_call(self, _calls, call) -> None:
+        self._drop_stale_call_window()
+        if self._call_window is not None or self.core.calls.active is not call:
+            return
+        call.connect("notify::state", lambda *_: self._call_state(call))
+        incoming = IncomingCallWindow(self.app, call)
+        self._incoming_window = incoming
+        incoming.set_transient_for(self)
+        incoming.connect("destroy", lambda w: self._incoming_window is w and
+                         setattr(self, "_incoming_window", None))
+        incoming.present()
+
+    def _call_state(self, call) -> None:
+        if call.state in ("connecting", "active") and self._call_window is None:
+            self._show_call(call)
+        if call.state == "ended" and self._incoming_window is not None:
+            self._incoming_window.destroy()
+
+    def _show_call(self, call) -> None:
+        self._drop_stale_call_window()
+        if self._call_window is not None:
+            return
+        window = CallWindow(self.app, call)
+        self._call_window = window
+        window.set_transient_for(self)
+        window.connect("destroy", lambda w: self._call_window is w and setattr(self, "_call_window", None))
+        window.present()
+
+    def _watch_omemo(self) -> None:
+        """Connect to the encryption service whenever it is there: at startup it is created while the window is
+        built (Core.load_omemo), so it may come after us."""
+        if self._omemo_watched or self.core.omemo is None:
+            return
+        self._omemo_watched = True
+        lifetime.watch(self.core.omemo, "new-devices", self._on_new_devices)
 
     # ================================================================== startup
     def ready(self) -> None:
         """The core has loaded the database."""
+        self._watch_omemo()
         self._accounts_changed()
         last = self.settings["ui.last_chat"]
         if last and self.core.accounts.list():
@@ -170,8 +238,8 @@ class MainWindow(Adw.ApplicationWindow):
     # ================================================================== chats
     def show_chat(self, chat: ChatItem | None, force: bool = False) -> None:
         if chat is self.current_chat and not force:
-            if chat is not None:
-                self.split.set_show_content(True)
+            if chat is not None and self.narrow:
+                self.split.set_show_sidebar(False)
             return
         if chat is not None and not chat.open:
             widgets.run(self, self.core.chats.set_flags(chat, open=True))
@@ -180,31 +248,36 @@ class MainWindow(Adw.ApplicationWindow):
         if chat is None:
             self.conversation.show_chat(None)
             self.content_stack.set_visible_child_name("empty")
-            self.content_page.set_title(_("Chat"))
             self.core.set_active_chat(None)
-            if self.narrow:
-                self.split.set_show_content(False)
+            self.split.set_show_sidebar(True)
             return
         # the conversation sets up its members panel before it becomes visible (libadwaita 1.5 mis-sizes a split
         # view that starts showing its sidebar while it is being mapped)
         self.conversation.show_chat(chat)
         self.content_stack.set_visible_child_name("chat")
-        self.content_page.set_title(chat.name or chat.jid)
-        self.split.set_show_content(True)
+        if self.narrow:
+            self.split.set_show_sidebar(False)
         self.settings["ui.last_chat"] = str(chat.id)
         self.sidebar._refilter()
 
-    def _on_show_content(self, *_a) -> None:
-        if self.narrow and not self.split.get_show_content():
-            # back to the list on a phone: the chat is no longer being read
+    def _on_show_sidebar(self, *_a) -> None:
+        if self.narrow and self.split.get_show_sidebar():
+            # The sidebar covers the chat on a phone; it is no longer being read, but keep its rows so sliding it
+            # back is instant.
             self.core.set_active_chat(None)
-            self.current_chat = None
-            self.conversation.show_chat(None)
-            self.sidebar.select(None)
 
     def _set_narrow(self, narrow: bool) -> None:
         self.narrow = narrow
         self.conversation.set_narrow(narrow)
+        self.split.set_collapsed(narrow)
+        if narrow:
+            self.split.set_show_sidebar(self.current_chat is None)
+        else:
+            self.split.set_show_sidebar(True)
+
+    def toggle_sidebar(self) -> None:
+        """Collapse or show the chat list; OverlaySplitView animates the sidebar."""
+        self.split.set_show_sidebar(not self.split.get_show_sidebar())
 
     def open_chat_id(self, chat_id: int) -> None:
         chat = self.core.chats.by_id.get(chat_id)
@@ -281,8 +354,8 @@ class MainWindow(Adw.ApplicationWindow):
         if conv.search_button.get_active():
             conv.search_button.set_active(False)
             return True
-        if self.narrow and self.split.get_show_content():
-            self.split.set_show_content(False)
+        if self.narrow and not self.split.get_show_sidebar():
+            self.split.set_show_sidebar(True)
             return True
         return False
 

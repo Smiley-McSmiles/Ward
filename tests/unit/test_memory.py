@@ -58,11 +58,7 @@ def _show_list() -> list:
     return alive
 
 
-def test_list_view_rows_are_freed():
-    if not Gtk.init_check():
-        import pytest
-
-        pytest.skip("no display")
+def test_list_view_rows_are_freed(display):
     alive = _show_list()
     _settle()
     assert not [r for r in alive if r() is not None]

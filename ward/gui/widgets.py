@@ -54,6 +54,23 @@ def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
         try:
             return Gdk.Texture.new_from_filename(path)
         except GLib.Error:
+            pass
+        try:
+            from gi.repository import GdkPixbuf
+
+            return Gdk.Texture.new_for_pixbuf(GdkPixbuf.Pixbuf.new_from_file(path))
+        except (GLib.Error, ImportError, ValueError):
+            pass
+        try:
+            # Last resort for formats GTK/GdkPixbuf does not load (for example JPEG XL when Pillow has a plugin).
+            from PIL import Image, ImageOps
+
+            with Image.open(path) as im:
+                im = ImageOps.exif_transpose(im).convert("RGBA")
+                data = im.tobytes()
+                return Gdk.MemoryTexture.new(im.width, im.height, Gdk.MemoryFormat.R8G8B8A8,
+                                             GLib.Bytes.new(data), im.width * 4)
+        except (ImportError, OSError, ValueError):
             return None
     key = (path, max_side)
     t = _textures.get(key)

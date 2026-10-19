@@ -23,6 +23,7 @@ from ..settings import Settings
 from . import secrets
 from .accounts import Accounts
 from .admin import AdminService
+from .calls import Calls
 from .chat import ChatService
 from .chats import Chats
 from .disco import DiscoService
@@ -38,6 +39,7 @@ from .requests import Requests
 from .roster import RosterService
 from .session import AccountSession
 from .storage.db import Database
+from .turn import TurnService
 
 log = logging.getLogger("ward.core")
 
@@ -61,6 +63,7 @@ class Core(GObject.Object):
         "session-added": (GObject.SignalFlags.RUN_LAST, None, (object,)),
         "cert-problem": (GObject.SignalFlags.RUN_LAST, None, (object, object)),   # account, CertInfo
         "online": (GObject.SignalFlags.RUN_LAST, None, (object, bool)),           # account, resumed
+        "omemo-ready": (GObject.SignalFlags.RUN_LAST, None, ()),                  # Core.omemo is set (or failed)
     }
 
     def __init__(self, settings: Settings | None = None, db: Database | None = None, connect: bool = True):
@@ -77,11 +80,13 @@ class Core(GObject.Object):
         self.started = False
 
         self.accounts = Accounts(self.db)
+        self.turn = TurnService(self)
         self.pep = Pep(self)
         self.roster = RosterService(self)
         self.chats = Chats(self)
         self.requests = Requests(self)
         self.names = Names(self)
+        self.calls = Calls(self)
         self.messaging = ChatService(self)
         self.history = HistoryService(self)
         self.disco = DiscoService(self)
@@ -95,17 +100,8 @@ class Core(GObject.Object):
         self.calls = CallService(self)
         self.omemo = None
         self.omemo_error = ""
+        self._omemo_loaded = False
         self.pgp = None
-        try:
-            from .omemo.service import OmemoService
-
-            self.omemo = OmemoService(self)
-        except Exception as e:  # missing libraries: encryption shows as unavailable, everything else works
-            from .. import deps
-
-            self.omemo_error = "; ".join("%s: %s" % kv for kv in deps.IMPORT_ERRORS.items()) or \
-                "%s: %s" % (type(e).__name__, e)
-            log.warning("OMEMO unavailable: %s", self.omemo_error)
         try:
             from .pgp.service import PgpService
 
@@ -124,6 +120,7 @@ class Core(GObject.Object):
         if self.started:
             return
         await aio.run_in_thread(self.db.open)
+        await self.load_omemo()
         await self.accounts.load()
         await self.roster.contacts.load()
         await self.chats.load()
@@ -259,6 +256,7 @@ class Core(GObject.Object):
         self.emit("online", acc, resumed)
 
     def _on_offline(self, session: AccountSession) -> None:
+        self.calls.account_offline(session.account.id)
         self.muc.on_offline(session)
         for c in self.roster.contacts.for_account(session.account.id):
             if c.resources:
@@ -282,6 +280,7 @@ class Core(GObject.Object):
         if s is not None:
             await s.stop()
         self.messaging.detach(acc.id)
+        self.calls.detach(acc.id)
         await self.accounts.remove(acc)
 
     async def _account_removed(self, acc: AccountItem) -> None:

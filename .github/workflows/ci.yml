@@ -44,7 +44,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y prosody xvfb gnupg python3-pip python3-pytest python3-hypothesis python3-gi gir1.2-gtk-4.0 \
             gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1 python3-slixmpp python3-markdown-it \
-            python3-cryptography python3-pil python3-linkify-it python3-mdit-py-plugins dbus-x11
+            python3-cryptography python3-pil python3-linkify-it python3-mdit-py-plugins dbus-x11 \
+            gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+            gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0
           sudo systemctl stop prosody || true
           pip install --user --break-system-packages omemo "twomemo[xml]" "oldmemo[xml]" x3dh doubleratchet xeddsa
           if [ "${{ matrix.slixmpp }}" = latest ]; then pip install --user --break-system-packages --upgrade slixmpp; fi
@@ -112,7 +114,9 @@ jobs:
           run: |
             sh ./install.sh --install-deps
             ward --version && ward --check
-            pkg install -y py311-pytest || true
+            # FreeBSD's package is named for the Python the repository provides, not necessarily py311
+            pkg install -y "py$(python3 -c 'import sys; print("%d%d" % sys.version_info[:2])')-pytest" \
+              || pkg install -y py311-pytest || true
             python3 -m pytest tests/unit -v
       - name: OpenBSD
         if: matrix.os == 'openbsd'
@@ -127,7 +131,19 @@ jobs:
         uses: vmactions/netbsd-vm@v1
         with:
           usesh: true
+          prepare: |
+            # The VM image has no X11 sets.  GTK's packages need the X client libraries, and pkg_add refuses
+            # to install them without /usr/X11R7/lib/libX11.so.7.  The release sets are .tar.xz now.
+            rel=$(uname -r)
+            arch=$(uname -m)
+            ftp -o /tmp/xbase.tar.xz "https://ftp.netbsd.org/pub/NetBSD/NetBSD-$rel/$arch/binary/sets/xbase.tar.xz"
+            tar -xJf /tmp/xbase.tar.xz -C /
           run: |
+            # The image's pcre2/glib2 can be older than the repository's; pkg_add will not upgrade a
+            # dependency on its own when it is already installed.
+            pkg_add -u pcre2 glib2 || true
+            # pkgsrc has no slixmpp package, so install.sh vendors it with pip; pycares needs CMake to build.
+            pkg_add cmake || true
             sh ./install.sh --install-deps
             ward --version && ward --check
 
