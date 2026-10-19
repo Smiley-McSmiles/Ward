@@ -11,6 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from xml.etree import ElementTree as ET
 
 from gi.repository import Gio, GLib, GObject
 
@@ -55,6 +56,7 @@ class _Call:
     remote_candidates: list[tuple[str, Candidate]] = field(default_factory=list)
     timeout: int = 0
     answered: bool = False
+    starting: bool = False
 
 
 def _format_duration(seconds: int) -> str:
@@ -146,8 +148,11 @@ class Calls(GObject.Object):
         return False
 
     def _send_jmi(self, session, peer: str, sid: str, action: str, media: tuple[str, ...] = ()) -> None:
-        msg = session.new_message(peer, "chat")
+        msg = session.new_message(util.bare(peer), "chat")
         msg.append(jingle.build_jmi(sid, action, media))
+        if action == "propose":
+            ET.SubElement(msg, "{urn:xmpp:receipts}request")
+        ET.SubElement(msg, "{urn:xmpp:hints}store")
         session.send(msg)
 
     # ================================================================== incoming invites
@@ -177,34 +182,34 @@ class Calls(GObject.Object):
             self.active = call
             self.store.append(call)
             info.timeout = GLib.timeout_add_seconds(RING_SECONDS, self._ring_timeout, sid)
+            self._send_jmi(session, peer, sid, "ringing")
             self.emit("incoming", call)
             return
         if info is None:
             return
-        if action == "accept" and info.call.direction == 1:
+        if action in ("accept", "proceed") and info.call.direction == 1:
             self._clear_timeout(info)
             info.peer = peer or info.peer
             info.call.state = "connecting"
-            await self._start_offer(info)
+            await self._start_offer_once(info)
         elif action in ("reject", "retract"):
             self._finish(sid, _("Declined") if action == "reject" else _("Cancelled"), notify=True)
-        elif action == "proceed":
-            info.call.state = "connecting"
         elif action == "finish":
             self._finish(sid, "", notify=True)
 
     # ================================================================== accepting
     async def accept(self, call: CallItem) -> None:
         info = self._calls.get(call.sid)
-        if info is None or call.direction != 0:
+        if info is None or call.direction != 0 or info.answered:
             return
         self._clear_timeout(info)
         info.answered = True
         info.call.state = "connecting"
-        if not info.offer:
-            self._send_jmi(info.session, info.peer, call.sid, "accept")
-            return
-        await self._answer(info)
+        # XEP-0353/Conversations: proceed goes to the caller and triggers its Jingle session-initiate.  (Accept is
+        # a separate message to the account's other devices; Ward handles incoming calls on one device.)
+        self._send_jmi(info.session, info.peer, call.sid, "proceed")
+        if info.offer:
+            await self._answer(info)
 
     async def reject(self, call: CallItem) -> None:
         info = self._calls.get(call.sid)
@@ -237,6 +242,16 @@ class Calls(GObject.Object):
             await self._send_terminate(info, _("Call ended"))
 
     # ================================================================== Jingle session
+    async def _start_offer_once(self, info: _Call) -> None:
+        """proceed and accept can race; the first one creates the offer and the other must not duplicate it."""
+        if info.starting or info.media is not None or info.call.state == "ended":
+            return
+        info.starting = True
+        try:
+            await self._start_offer(info)
+        finally:
+            info.starting = False
+
     async def _start_offer(self, info: _Call) -> None:
         if not media_available():
             self._finish(info.call.sid, _("GStreamer WebRTC is not installed"), notify=True)
