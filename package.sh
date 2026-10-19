@@ -632,20 +632,67 @@ build_flatpak() {
 # One file that runs on any distribution as new as the build machine (build on Ubuntu 24.04: glibc 2.39, GTK 4.14,
 # GStreamer 1.24): Python, GTK, libadwaita, GStreamer's WebRTC with libnice and the OMEMO libraries are inside.
 # packaging/mkappimage.py fills the AppDir; the AppImage runtime (APPIMAGE_RUNTIME, or downloaded) and mksquashfs
-# make the file.
+# make the file.  Anywhere else (Void, Fedora, Arch...) it is built in an Ubuntu 24.04 container with podman or
+# docker; APPIMAGE_CONTAINER=1 does that on Ubuntu too.
 APPIMAGE_RUNTIME_URL=https://github.com/AppImage/type2-runtime/releases/download/continuous
-build_appimage() {
-    [ "$(uname -s)" = Linux ] || skip "AppImages are built on Linux"
-    have dpkg || skip "the AppImage is built on Debian or Ubuntu (Ubuntu 24.04 for the widest reach)"
-    have patchelf || skip "patchelf not found (apt install patchelf)"
-    have mksquashfs || skip "mksquashfs not found (apt install squashfs-tools)"
-    local py="" c
+# Ubuntu 24.04's packages the AppImage is made of (CI installs them with: ./package.sh appimage-deps)
+APPIMAGE_DEB_DEPS="patchelf squashfs-tools curl ca-certificates python3-pip python3-gi python3-gi-cairo
+python3-gst-1.0 gir1.2-girepository-2.0 gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1
+gir1.2-spelling-1 libspelling-1-1 libenchant-2-2 gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0
+gir1.2-gst-plugins-bad-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+gstreamer1.0-nice gstreamer1.0-libav gstreamer1.0-pipewire gstreamer1.0-alsa libgtk-4-media-gstreamer
+librsvg2-common adwaita-icon-theme shared-mime-info dconf-gsettings-backend"
+
+appimage_python() {  # the Python whose PyGObject, GTK and GStreamer go into the image
+    local c
     for c in ${APPIMAGE_PYTHON:-} python3 python3.13 python3.12 python3.11; do
         if have "$c" && "$c" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Adw','1');
-gi.require_version('Gst','1.0'); gi.require_version('GstWebRTC','1.0')" 2>/dev/null; then py=$c; break; fi
+gi.require_version('Gst','1.0'); gi.require_version('GstWebRTC','1.0')" 2>/dev/null; then echo "$c"; return 0; fi
     done
-    [ -n "$py" ] || skip "no Python with PyGObject, GTK 4, libadwaita and GStreamer WebRTC to bundle (apt install python3-gi gir1.2-adw-1 gir1.2-gst-plugins-bad-1.0 gstreamer1.0-nice)"
-    "$py" -m pip --version >/dev/null 2>&1 || skip "pip not found for $py (apt install python3-pip)"
+    return 1
+}
+
+appimage_blocker() {  # why this machine cannot build the AppImage itself (nothing when it can)
+    local py
+    if ! have dpkg; then echo "this is not Debian or Ubuntu"; return 0; fi
+    for t in patchelf mksquashfs curl; do
+        have "$t" || { echo "$t not found"; return 0; }
+    done
+    py=$(appimage_python) || { echo "no Python with PyGObject, GTK 4, libadwaita and GStreamer WebRTC"; return 0; }
+    "$py" -m pip --version >/dev/null 2>&1 || echo "pip not found for $py"
+    return 0
+}
+
+build_appimage_container() {
+    local engine image owner="" deps=${APPIMAGE_DEB_DEPS//$'\n'/ }
+    engine=$(command -v podman || command -v docker || true)
+    [ -n "$engine" ] || skip "AppImage: $1. It is built on Ubuntu 24.04 (apt install $deps), or anywhere with podman or docker, in a container"
+    image=${APPIMAGE_IMAGE:-docker.io/library/ubuntu:24.04}
+    log "appimage: $1, so in $image with $(basename "$engine")"
+    # rootful docker writes as root: hand the file back (rootless podman already writes as this user)
+    case "$engine" in */docker) owner="chown $(id -u):$(id -g) /src/dist/$NAME-$VERSION-*.AppImage" ;; esac
+    mkdir -p "$DIST"
+    "$engine" run --rm -v "$ROOT:/src:Z" "$image" bash -c "set -e
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends $deps >/dev/null
+        mkdir /tmp/ward
+        tar -C /src --exclude=./build --exclude=./dist --exclude=./.git -cf - . | tar -C /tmp/ward -xf -
+        cd /tmp/ward
+        APPIMAGE_CONTAINER= PKG_CHILD=1 ./package.sh appimage
+        cp dist/$NAME-$VERSION-*.AppImage /src/dist/
+        $owner" || exit 1
+}
+
+build_appimage() {
+    [ "$(uname -s)" = Linux ] || skip "AppImages are built on Linux"
+    local why py
+    why=$(appimage_blocker)
+    if [ -n "${APPIMAGE_CONTAINER:-}" ] || [ -n "$why" ]; then
+        build_appimage_container "${why:-APPIMAGE_CONTAINER is set}"
+        return 0
+    fi
+    py=$(appimage_python)
     local arch runtime
     arch=$(uname -m)
     log "appimage ($arch, $("$py" -c 'import platform; print("Python", platform.python_version())'))"
@@ -654,7 +701,6 @@ gi.require_version('Gst','1.0'); gi.require_version('GstWebRTC','1.0')" 2>/dev/n
     "$py" "$ROOT/packaging/mkappimage.py" "$appdir"
     runtime=${APPIMAGE_RUNTIME:-$BUILD/appimage/runtime-$arch}
     if [ ! -s "$runtime" ]; then
-        have curl || skip "curl not found to download the AppImage runtime (or set APPIMAGE_RUNTIME)"
         curl -fsSL -o "$runtime.part" "$APPIMAGE_RUNTIME_URL/runtime-$arch" && mv "$runtime.part" "$runtime"
     fi
     local out=$DIST/$NAME-$VERSION-$arch.AppImage
@@ -691,7 +737,8 @@ Usage: ./package.sh [options]
   --openbsd     OpenBSD port
   --netbsd      NetBSD pkgsrc package
   --flatpak     Flatpak bundle (needs flatpak-builder) and manifest
-  --appimage    AppImage with everything inside (on Debian/Ubuntu; needs patchelf, mksquashfs and pip)
+  --appimage    AppImage with everything inside: built on Ubuntu 24.04 (./package.sh appimage-deps lists what
+                to apt install), elsewhere in an Ubuntu container with podman or docker
   --recipes     only the recipes in dist/recipes/
   --container   build inside a Fedora container (podman/docker), e.g. --container --rpm
   --version V   set the version everywhere first (code, README, man page, metainfo, CHANGELOG), e.g.
@@ -813,6 +860,7 @@ for t in "${targets[@]}"; do
         netbsd) build_netbsd ;;
         flatpak) build_flatpak ;;
         appimage) build_appimage ;;
+        appimage-deps) echo "${APPIMAGE_DEB_DEPS//$'\n'/ }"; exit 0 ;;
         recipes) build_recipes ;;
         clean) rm -rf "$DIST" "$BUILD"; log "removed dist/ and build/" ;;
         *) echo "unknown target: $t (see ./package.sh --help)" >&2; exit 2 ;;
