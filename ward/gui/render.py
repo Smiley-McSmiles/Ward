@@ -189,7 +189,9 @@ class Renderer:
         if layout is None:
             return None
         ox, oy = label.get_layout_offsets()
-        found, index, _trailing = layout.xy_to_index(int(x - ox), int(y - oy))
+        # Gesture coordinates and the label offsets are pixels; Pango's hit test wants Pango units.
+        found, index, _trailing = layout.xy_to_index(int((x - ox) * Pango.SCALE),
+                                                     int((y - oy) * Pango.SCALE))
         if not found:
             return None
         text = label.get_text()
