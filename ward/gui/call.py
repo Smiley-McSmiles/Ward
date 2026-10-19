@@ -102,8 +102,10 @@ class CallWindow(Adw.Window):
     def __init__(self, app, call):
         super().__init__(application=app, title=call.name or _("Call"))
         self.call = call
+        self.app = app
         self.core = app.core
         self.calls = app.core.calls
+        self._ringback_timer = 0
         self.set_default_size(520, 600)
         self._handlers = [
             call.connect("notify::state", lambda *_: self._update()),
@@ -113,6 +115,7 @@ class CallWindow(Adw.Window):
             call.connect("notify::paintable", lambda *_: self._update()),
         ]
         self.connect("close-request", self._closed)
+        self.connect("destroy", lambda *_: self._stop_ringback())
         toolbar = Adw.ToolbarView()
         toolbar.add_top_bar(Adw.HeaderBar())
         self.set_content(toolbar)
@@ -149,8 +152,42 @@ class CallWindow(Adw.Window):
         content.append(controls)
         self._update()
 
+    def _sync_ringback(self) -> None:
+        if self.call.state == "ringing":
+            self._start_ringback()
+        else:
+            self._stop_ringback()
+
+    def _play_ringback(self) -> None:
+        if self.app is None or not self.app.core.settings["notify.sounds"]:
+            return
+        tone = self.app.core.settings["calls.ringback"]
+        if tone:
+            self.app.play_sound(tone)
+
+    def _start_ringback(self) -> None:
+        if self._ringback_timer or not self.app.core.settings["notify.sounds"]:
+            return
+        if not self.app.core.settings["calls.ringback"]:
+            return
+        self._play_ringback()
+        self._ringback_timer = GLib.timeout_add_seconds(3, self._ringback_again)
+
+    def _ringback_again(self) -> bool:
+        if self.call.state != "ringing":
+            self._ringback_timer = 0
+            return False
+        self._play_ringback()
+        return True
+
+    def _stop_ringback(self) -> None:
+        if self._ringback_timer:
+            GLib.source_remove(self._ringback_timer)
+            self._ringback_timer = 0
+
     def _update(self) -> None:
         call = self.call
+        self._sync_ringback()
         self.status.set_text(_state_text(call))
         self.mute.set_active(call.muted)
         self.video.set_active(call.video and call.media == "video")
@@ -168,6 +205,7 @@ class CallWindow(Adw.Window):
         return False
 
     def _closed(self, *_a) -> bool:
+        self._stop_ringback()
         for h in self._handlers:
             try:
                 self.call.disconnect(h)
