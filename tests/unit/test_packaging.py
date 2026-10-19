@@ -373,6 +373,7 @@ def test_appimage_has_no_package_manager(monkeypatch):
         deps.package_manager.cache_clear()
 
 
+@pytest.mark.skipif(not shutil.which("bash"), reason="package.sh is a bash script")
 def test_package_sh_builds_appimages():
     out = subprocess.run(["bash", os.path.join(ROOT, "package.sh"), "--help"], check=True, capture_output=True,
                          text=True).stdout
