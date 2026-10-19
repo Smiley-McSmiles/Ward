@@ -96,6 +96,11 @@ class ConversationView(Gtk.Box):
         self.sidebar_button = Gtk.Button(icon_name="sidebar-show-symbolic", css_classes=["flat"])
         self.sidebar_button.connect("clicked", lambda *_: self.window.toggle_sidebar())
         self.header.pack_start(self.sidebar_button)
+        self.resync_button = Gtk.Button(icon_name="view-refresh-symbolic", css_classes=["flat"],
+                                        tooltip_text=_("Re-sync chat history from the server"),
+                                        sensitive=False)
+        self.resync_button.connect("clicked", lambda *_: self._resync_history())
+        self.header.pack_start(self.resync_button)
         self.window.split.connect("notify::show-sidebar", lambda *_: self._update_sidebar_button())
         self._update_sidebar_button()
         self.title_button = Gtk.Button(css_classes=["flat"])
@@ -134,6 +139,22 @@ class ConversationView(Gtk.Box):
                                       tooltip_text=_("Start an audio call"), visible=False)
         self.call_button.connect("clicked", lambda *_: self.window.start_call(self.chat, False))
         self.header.pack_end(self.call_button)
+
+    def _resync_history(self) -> None:
+        chat = self.chat
+        if chat is None:
+            return
+        session = self.core.sessions.get(chat.account_id)
+        if session is None or not session.online:
+            compat.toast(self, _("Not connected"))
+            return
+        archive = chat.jid if chat.type == "groupchat" else None
+        if not self.core.history.supported(session, archive):
+            compat.toast(self, _("This server has no message archive"))
+            return
+        widgets.run(self, self.core.history.resync_chat(session, chat),
+                    done=lambda _pages: compat.toast(self, _("History re-synced")),
+                    error=_("Could not re-sync history"))
 
     def _update_sidebar_button(self) -> None:
         hidden = not self.window.split.get_show_sidebar()
@@ -536,6 +557,7 @@ class ConversationView(Gtk.Box):
                                                    if chat.encryption_reason else ""))
         for button in (self.call_button, self.video_call_button):
             button.set_visible(not group)
+        self.resync_button.set_sensitive(chat is not None)
 
     def _update_banner(self) -> None:
         chat = self.chat
