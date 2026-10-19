@@ -291,6 +291,7 @@ class Core(GObject.Object):
         if s is not None:
             await s.stop()
         self.messaging.detach(acc.id)
+        self.calls.detach(acc.id)
         await self.accounts.remove(acc)
 
     async def _account_removed(self, acc: AccountItem) -> None:

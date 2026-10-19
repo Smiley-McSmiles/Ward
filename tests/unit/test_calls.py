@@ -113,9 +113,10 @@ def test_outgoing_call(monkeypatch, run):
 
         await service._on_jmi(session, "bob@example.org/phone", call.sid, "accept", ("audio",))
         assert call.state == "connecting"
-        _type, _to, payload = session.iqs[-1]
+        _type, to, payload = session.iqs[-1]
         j = jingle.parse_jingle(payload[0])
         assert j.action == "session-initiate" and j.sid == call.sid
+        assert to == "bob@example.org/phone", "the Jingle offer must go to the accepting resource"
 
         accept = jingle.build_jingle("session-accept", call.sid, "", [content("responder", "answer")],
                                      responder="bob@example.org/phone")
@@ -258,5 +259,21 @@ def test_failed_place_call_does_not_leave_an_active_call(monkeypatch, run):
         else:
             raise AssertionError("the failed call should have raised")
         assert service.active is None and service.store.get_n_items() == 0
+
+    run(scenario(), timeout=20)
+
+
+def test_a_reconnect_keeps_the_call_session(monkeypatch, run):
+    monkeypatch.setattr(calls, "media_available", lambda: True)
+    monkeypatch.setattr(calls, "CallMedia", FakeMedia)
+
+    async def scenario():
+        service = calls.Calls(FakeCore())
+        session = FakeSession()
+        service.attach(session)
+        service.account_offline(1)
+        call = await service.place_call(session.account, "bob@example.org")
+        assert call.state == "ringing"
+        await service.hangup(call)
 
     run(scenario(), timeout=20)
