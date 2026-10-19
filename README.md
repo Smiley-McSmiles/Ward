@@ -1,6 +1,20 @@
-# Ward v1.0.0
+<h1 align="center">Ward</h1>
 
-**Private messaging on the open XMPP network, for Linux and the BSDs.**
+<p align="center">
+  <img src="data/icons/hicolor/scalable/apps/io.github.smiley_mcsmiles.Ward.svg" alt="Ward icon" width="128" height="128">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Smiley-McSmiles/Ward/releases"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square" alt="Version 1.0.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="MIT License"></a>
+  <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.11%2B-blue.svg?style=flat-square" alt="Python 3.11+"></a>
+  <a href="https://gtk.org"><img src="https://img.shields.io/badge/toolkit-GTK4%20%7C%20Libadwaita-red.svg?style=flat-square" alt="GTK4 Libadwaita"></a>
+  <a href="https://xmpp.org"><img src="https://img.shields.io/badge/protocol-XMPP%20%7C%20OMEMO-purple.svg?style=flat-square" alt="XMPP and OMEMO"></a>
+  <a href="https://github.com/Smiley-McSmiles/Ward"><img src="https://img.shields.io/badge/calls-Jingle%20%7C%20WebRTC-orange.svg?style=flat-square" alt="Calls: Jingle and WebRTC"></a>
+  <a href="https://github.com/Smiley-McSmiles/Ward"><img src="https://img.shields.io/badge/platform-Linux%20%7C%20BSD-lightgrey.svg?style=flat-square" alt="Linux and the BSDs"></a>
+</p>
+
+<p align="center"><strong>Private messaging on the open XMPP network, for Linux and the BSDs.</strong></p>
 
 Ward is a modern XMPP (Jabber) client built with GTK 4 and libadwaita. Chats are end-to-end encrypted with OMEMO
 by default, messages are written in Markdown, and it works with Conversations, Monal, Dino, Gajim and every other

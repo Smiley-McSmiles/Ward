@@ -165,6 +165,8 @@ def test_set_version_everywhere(tmp_path):
     subprocess.run([*run, "9.8.7-rc2", "--note", "Testing"], check=True, capture_output=True)
     subprocess.run([sys.executable, str(tmp_path / "tools/check_version.py"), "v9.8.7-rc2"], check=True,
                    capture_output=True)
-    assert (tmp_path / "README.md").read_text().startswith("# Ward v9.8.7-rc2")
+    readme = (tmp_path / "README.md").read_text()
+    assert "badge/version-9.8.7-rc2-blue.svg" in readme
+    assert 'alt="Version 9.8.7-rc2"' in readme
     assert "## v9.8.7-rc2" in (tmp_path / "CHANGELOG.md").read_text()
     assert subprocess.run([*run, "nonsense"], capture_output=True).returncode == 2
