@@ -40,10 +40,19 @@ def dirs() -> list[str]:
 def activate() -> None:
     """Make the private folders importable, ahead of the system's site-packages: pip resolved these libraries
     together, and an older system copy of one of their dependencies (protobuf, pydantic, cryptography...) would
-    break them.  Ward's own code and the GObject bindings are never in these folders."""
-    for d in reversed(dirs()):
+    break them.  Ward's own code and the GObject bindings are never in these folders.
+
+    In the AppImage the libraries are already inside the image, built for its Python.  A private folder left by a
+    distribution install belongs to a different Python (Void's 3.14, say) and its compiled modules must not shadow
+    the image's: it goes after the image's site-packages, not before them."""
+    private = dirs()
+    for d in reversed(private):
         if d in sys.path:
             sys.path.remove(d)
+    if paths.appimage():
+        sys.path.extend(d for d in private if d not in sys.path)
+        return
+    for d in reversed(private):
         sys.path.insert(1 if sys.path and sys.path[0] in ("", os.getcwd()) else 0, d)
 
 
