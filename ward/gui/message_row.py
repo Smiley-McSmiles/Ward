@@ -60,9 +60,12 @@ class MessageRow(Gtk.Box):
         self.overlay.set_child(self.row)
         # quick reactions and reply: a floating pill over the top-right corner, as in Discord, so showing it
         # never takes room from the message or moves the rows below
-        self.actions = Gtk.Box(spacing=0, css_classes=["hover-bar"], visible=False, halign=Gtk.Align.END,
-                               valign=Gtk.Align.START, margin_top=2, margin_end=12)
+        # Keep the pill visible and fade it instead of toggling visibility: toggling a descendant's visibility
+        # makes GtkListView reset the scroll position.  It is not measured either, so it takes no row space.
+        self.actions = Gtk.Box(spacing=0, css_classes=["hover-bar"], opacity=0, sensitive=False,
+                               halign=Gtk.Align.END, valign=Gtk.Align.START, margin_top=2, margin_end=12)
         self.overlay.add_overlay(self.actions)
+        self.overlay.set_measure_overlay(self.actions, False)
         self.hover = None
         motion = Gtk.EventControllerMotion()
         motion.connect("enter", lambda *_: self._hover(True))
@@ -129,7 +132,8 @@ class MessageRow(Gtk.Box):
         widgets.clear(self.separator)
         widgets.clear(self.row)
         widgets.clear(self.actions)
-        self.actions.set_visible(False)
+        self.actions.set_opacity(0)
+        self.actions.set_sensitive(False)
         self.hover = None
         settings = self.view.settings
         layout = settings["appearance.layout"]
@@ -456,7 +460,8 @@ class MessageRow(Gtk.Box):
         if self.hover is not None:
             if not inside and getattr(self, "react_button", None) is not None and self.react_button.get_active():
                 return
-            self.hover.set_visible(inside)
+            self.hover.set_opacity(1 if inside else 0)
+            self.hover.set_sensitive(inside)
         if self.time_hover is not None and self.view.settings["appearance.timestamps"] == "hover":
             self.time_hover.set_opacity(1 if inside else 0)
 
