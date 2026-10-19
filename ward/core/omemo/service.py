@@ -326,14 +326,19 @@ class OmemoService(GObject.Object):
         verified = any(d.trust_level_name == trust.VERIFIED for d in devices)
         undecided = []
         now = int(time.time() * 1000)
+        own_id = (await m.get_own_device_information())[0].device_id
         for d in devices:
             await self.core.db.execute("INSERT OR IGNORE INTO omemo_devices (account_id, jid, device_id, first_seen) "
                                        "VALUES (?, ?, ?, ?)", (acc.id, jid, d.device_id, now))
             if d.trust_level_name != trust.UNDECIDED:
                 continue
-            if self.btbv(acc.id) and not verified:
+            if jid == acc.jid and d.device_id != own_id and self.btbv(acc.id):
+                # Linked devices of the same account are trusted like the account itself; otherwise a verified
+                # laptop would silently stop encrypting copies for a newly linked phone.
                 await m.set_trust(jid, d.identity_key, trust.BLIND)
-            elif not (jid == acc.jid and d.device_id == (await m.get_own_device_information())[0].device_id):
+            elif self.btbv(acc.id) and not verified:
+                await m.set_trust(jid, d.identity_key, trust.BLIND)
+            elif not (jid == acc.jid and d.device_id == own_id):
                 undecided.append(d)
         devices = await m.get_device_information(jid)
         self._devices[(acc.id, jid)] = devices
