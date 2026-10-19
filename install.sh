@@ -135,8 +135,8 @@ packages() {
                 OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-linkify-it-py python3-pip gpg2 desktop-file-utils" ;;
         pacman) REQ="python python-gobject gtk4 libadwaita python-slixmpp python-markdown-it-py python-cryptography"
                 OPT="gtksourceview5 libspelling libsecret python-pillow python-linkify-it-py python-mdit_py_plugins python-pip gnupg gst-plugins-good desktop-file-utils" ;;
-        xbps-install) REQ="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
-                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-linkify-it-py python3-pip gnupg gst-plugins-good1 desktop-file-utils gtk-update-icon-cache" ;;
+        xbps-install) REQ="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it python3-cryptography"
+                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-mdit-py-plugins python3-pip gnupg gst-plugins-good1 desktop-file-utils gtk-update-icon-cache" ;;
         apk) REQ="python3 py3-gobject3 gtk4.0 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
              OPT="gtksourceview5 libspelling libsecret py3-pillow py3-linkify-it-py py3-pip gnupg gst-plugins-good desktop-file-utils" ;;
         emerge) REQ="dev-lang/python dev-python/pygobject gui-libs/gtk gui-libs/libadwaita dev-python/slixmpp dev-python/markdown-it-py dev-python/cryptography"
@@ -164,7 +164,7 @@ packages() {
         dnf) CALLS="libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-gtk4" ;;
         zypper) CALLS="libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad" ;;
         pacman) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugin-gtk4" ;;
-        xbps-install) CALLS="libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1" ;;
+        xbps-install) CALLS="libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1 gst-plugins-rs1" ;;
         apk) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
         emerge) CALLS="media-libs/libnice media-plugins/gst-plugins-webrtc" ;;
         pkg) CALLS="libnice gstreamer1-plugins-bad" ;;

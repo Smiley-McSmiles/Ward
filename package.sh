@@ -299,7 +299,7 @@ build_arch() {
 }
 
 # ---------------------------------------------------------------------------------------------- Void
-VOID_DEPENDS="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
+VOID_DEPENDS="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it python3-cryptography"
 
 recipe_void() {
     mkdir -p "$DIST/recipes/void"

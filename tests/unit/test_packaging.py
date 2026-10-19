@@ -170,3 +170,34 @@ def test_set_version_everywhere(tmp_path):
     assert 'alt="Version 9.8.7-rc2"' in readme
     assert "## v9.8.7-rc2" in (tmp_path / "CHANGELOG.md").read_text()
     assert subprocess.run([*run, "nonsense"], capture_output=True).returncode == 2
+
+
+# Every Void package name Ward asks for, checked against void-linux/void-packages (srcpkgs/) on 2026-10-19.
+# xbps-install refuses a whole install when one name is unknown: a name that is not in this list must be checked
+# there before it is added here.
+VOID_PACKAGES = {
+    "python3", "python3-gobject", "gtk4", "libadwaita", "python3-slixmpp", "python3-markdown-it",
+    "python3-cryptography", "gtksourceview5", "libspelling", "libsecret", "python3-Pillow", "python3-mdit-py-plugins",
+    "python3-pip", "gnupg", "gst-plugins-good1", "desktop-file-utils", "gtk-update-icon-cache", "zbar", "libnice",
+    "gst-plugins-base1", "gst-plugins-bad1", "gst-plugins-rs1",
+}
+
+
+def test_void_package_names():
+    """install.sh, ward --check and the package template asked Void for python3-markdown-it-py and
+    python3-linkify-it-py, which Void does not have (markdown-it-py is python3-markdown-it there)."""
+    import re
+
+    from ward import deps
+
+    names = set()
+    with open(os.path.join(ROOT, "install.sh")) as f:
+        text = f.read()
+    for m in re.finditer(r'xbps-install\) (?:REQ|CALLS)="([^"]*)"(?:\s*OPT="([^"]*)")?', text):
+        for group in m.groups():
+            names.update((group or "").split())
+    with open(os.path.join(ROOT, "package.sh")) as f:
+        names.update(re.search(r'VOID_DEPENDS="([^"]*)"', f.read()).group(1).split())
+    names.update(n for v in deps.PACKAGES["xbps"].values() for n in v.split() if n != "-")
+    assert "python3-markdown-it" in names and "gst-plugins-bad1" in names     # the parsing found them
+    assert names <= VOID_PACKAGES, "not Void package names (or not checked yet): %s" % sorted(names - VOID_PACKAGES)
