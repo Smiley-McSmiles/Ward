@@ -104,7 +104,9 @@ out, and talk OMEMO 2 only.
 
 GtkSourceView 5 (code highlighting), libspelling (spell check), libsecret (passwords in the system keyring), GnuPG
 (OpenPGP), Pillow (smaller images), linkify-it-py (better link detection) and the GStreamer media
-plugins (video and audio). `ward --check` lists what you have.
+plugins (video and audio). Calls additionally need GStreamer's `webrtcbin` and the libnice ICE plugin
+(`gstreamer1.0-nice` on Debian, `libnice-gstreamer1` on Fedora); `install.sh --install-deps` installs them where the
+distribution packages them. `ward --check` lists what you have.
 
 ## Running in the background, systemd and runit
 
