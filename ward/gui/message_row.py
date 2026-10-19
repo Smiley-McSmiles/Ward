@@ -29,7 +29,7 @@ ENC_NAMES = {"omemo2": "OMEMO 2", "omemo": "OMEMO", "pgp": "OpenPGP"}
 
 
 def continues(prev: MessageItem | None, m: MessageItem) -> bool:
-    if prev is None or prev.kind in ("status", "system") or m.kind in ("status", "system"):
+    if prev is None or prev.kind in ("status", "system", "call") or m.kind in ("status", "system", "call"):
         return False
     return (prev.direction == m.direction and prev.sender == m.sender and
             0 <= m.timestamp - prev.timestamp < GROUP_WINDOW and widgets.same_day(prev.timestamp, m.timestamp)
@@ -150,6 +150,10 @@ class MessageRow(Gtk.Box):
             self.separator.append(line)
         if m.kind == "status":
             self.row.append(Gtk.Label(label=m.body, css_classes=["status-line"], hexpand=True, wrap=True))
+            return
+        if m.kind == "call":
+            self.row.append(Gtk.Label(label=m.body, css_classes=["status-line", "call-history"], hexpand=True,
+                                      xalign=0.5, wrap=True))
             return
         cont = continues(prev, m)
         if not cont:

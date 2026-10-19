@@ -29,12 +29,15 @@ class IncomingCallWindow(Adw.Window):
     def __init__(self, app, call):
         super().__init__(application=app, title=_("Incoming call"), modal=True)
         self.call = call
+        self.app = app
         self.calls = app.core.calls
+        self._ring_timer = 0
         self.set_default_size(380, 300)
         self.set_resizable(False)
         self._accepting = False
         self._handler = call.connect("notify::state", lambda *_: self._changed())
         self.connect("close-request", self._closed)
+        self.connect("destroy", lambda *_: self._stop_ring())
         view = Adw.ToolbarView()
         view.add_top_bar(Adw.HeaderBar(show_title=False))
         self.set_content(view)
@@ -54,14 +57,35 @@ class IncomingCallWindow(Adw.Window):
         actions.append(accept)
         box.append(actions)
         view.set_content(box)
+        self._play_ring()
+        self._ring_timer = GLib.timeout_add_seconds(5, self._ring_again)
+
+    def _play_ring(self) -> None:
+        if self.call.state == "incoming" and self.app is not None and self.app.core.settings["notify.sounds"]:
+            ring = self.app.core.settings["calls.ringtone"]
+            if ring:
+                self.app.play_sound(ring)
+
+    def _ring_again(self) -> bool:
+        if self.call.state != "incoming":
+            return False
+        self._play_ring()
+        return True
+
+    def _stop_ring(self) -> None:
+        if self._ring_timer:
+            GLib.source_remove(self._ring_timer)
+            self._ring_timer = 0
 
     def _accept(self) -> None:
         self._accepting = True
+        self._stop_ring()
         self.destroy()
         widgets.run(self, self.calls.accept(self.call))
 
     def _changed(self) -> None:
         if self.call.state == "ended":
+            self._stop_ring()
             self.destroy()
 
     def _closed(self, *_a) -> bool:
