@@ -4,6 +4,7 @@ certificates, requests, invitations and the profile."""
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
@@ -579,7 +580,12 @@ class ImageViewer:
             b.connect("clicked", lambda *_a, cb=cb: cb())
             header.pack_start(b)
         tv.add_top_bar(header)
-        pic = Gtk.Picture.new_for_filename(att.local_path)
+        # JXL and some other formats have no GTK/GdkPixbuf loader on every system.  The chat already shows a
+        # decoded thumbnail in that case; use it rather than leaving the viewer blank.
+        tex = widgets.texture(att.local_path, 0)
+        if tex is None and att.thumbnail and os.path.exists(att.thumbnail):
+            tex = widgets.texture(att.thumbnail, 0)
+        pic = Gtk.Picture.new_for_paintable(tex) if tex is not None else Gtk.Picture.new_for_filename(att.local_path)
         pic.set_can_shrink(True)
         pic.set_vexpand(True)
         tv.set_content(pic)
@@ -587,6 +593,8 @@ class ImageViewer:
 
     def _copy(self) -> None:
         tex = widgets.texture(self.att.local_path, 0)      # the whole image
+        if tex is None and self.att.thumbnail and os.path.exists(self.att.thumbnail):
+            tex = widgets.texture(self.att.thumbnail, 0)
         if tex is not None:
             self.view.get_clipboard().set(tex)
             compat.toast(self.view, _("Copied"))
