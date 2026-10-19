@@ -173,3 +173,90 @@ def test_reject_incoming_call(monkeypatch, run):
         assert _jmi(session.messages[-1])[1] == "reject"
 
     run(scenario(), timeout=20)
+
+
+def test_cancel_before_answer_allows_the_next_call(monkeypatch, run):
+    monkeypatch.setattr(calls, "media_available", lambda: True)
+    monkeypatch.setattr(calls, "CallMedia", FakeMedia)
+
+    async def scenario():
+        service = calls.Calls(FakeCore())
+        session = FakeSession()
+        service.attach(session)
+        first = await service.place_call(session.account, "bob@example.org")
+        await service.hangup(first)
+        assert first.state == "ended" and service.active is None
+        second = await service.place_call(session.account, "bob@example.org")
+        assert second.state == "ringing" and service.active is second
+        await service.hangup(second)
+
+    run(scenario(), timeout=20)
+
+
+def test_failed_hangup_still_clears_the_call(monkeypatch, run):
+    monkeypatch.setattr(calls, "media_available", lambda: True)
+    monkeypatch.setattr(calls, "CallMedia", FakeMedia)
+
+    class OfflineSession(FakeSession):
+        fail_send = False
+
+        def send(self, el):
+            if self.fail_send:
+                raise RuntimeError("offline")
+            super().send(el)
+
+    async def scenario():
+        service = calls.Calls(FakeCore())
+        session = OfflineSession()
+        service.attach(session)
+        call = await service.place_call(session.account, "bob@example.org")
+        session.fail_send = True
+        await service.hangup(call)
+        assert call.state == "ended" and service.active is None
+        session.fail_send = False
+        second = await service.place_call(session.account, "bob@example.org")
+        assert second.state == "ringing"
+        await service.hangup(second)
+
+    run(scenario(), timeout=20)
+
+
+def test_an_ended_active_call_does_not_block_a_new_one(monkeypatch, run):
+    monkeypatch.setattr(calls, "media_available", lambda: True)
+    monkeypatch.setattr(calls, "CallMedia", FakeMedia)
+
+    async def scenario():
+        service = calls.Calls(FakeCore())
+        session = FakeSession()
+        service.attach(session)
+        first = await service.place_call(session.account, "bob@example.org")
+        # Simulate a stale UI/core hand-off: the call object says ended but the active reference is still there.
+        first.state = "ended"
+        second = await service.place_call(session.account, "bob@example.org")
+        assert service.active is second and second.state == "ringing"
+        await service.hangup(second)
+
+    run(scenario(), timeout=20)
+
+
+def test_failed_place_call_does_not_leave_an_active_call(monkeypatch, run):
+    monkeypatch.setattr(calls, "media_available", lambda: True)
+    monkeypatch.setattr(calls, "CallMedia", FakeMedia)
+
+    class OfflineSession(FakeSession):
+        def send(self, _el):
+            raise RuntimeError("offline")
+
+    async def scenario():
+        service = calls.Calls(FakeCore())
+        session = OfflineSession()
+        service.attach(session)
+        try:
+            await service.place_call(session.account, "bob@example.org")
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the failed call should have raised")
+        assert service.active is None and service.store.get_n_items() == 0
+
+    run(scenario(), timeout=20)

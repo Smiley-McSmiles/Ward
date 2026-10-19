@@ -186,6 +186,8 @@ SPECS: dict[str, Spec] = {
                           page="calls", group=N_("Network"), advanced=True),
     "calls.ringtone": S("sound", "phone-incoming-call", N_("Ringtone"),
                         N_("Played while an incoming call is ringing"), page="calls", group=N_("Sounds")),
+    "calls.ringback": S("sound", "phone-outgoing-calling", N_("Calling tone"),
+                        N_("Played while an outgoing call is ringing"), page="calls", group=N_("Sounds")),
     # ------------------------------------------------------------------ Notifications
     "notify.enabled": S("bool", True, N_("Notifications"), page="notifications", group=N_("Notifications")),
     "notify.content": S("choice", "full", N_("Show in notification"), page="notifications",

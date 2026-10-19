@@ -132,10 +132,19 @@ class MainWindow(Adw.ApplicationWindow):
             self.ready()
 
     # ================================================================== calls
+    def _drop_stale_call_window(self) -> None:
+        if self._call_window is None:
+            return
+        active = self.core.calls.active
+        if active is None or active is not self._call_window.call:
+            self._call_window.destroy()
+            self._call_window = None
+
     def start_call(self, chat: ChatItem | None, video: bool = False) -> None:
         if chat is None or chat.type != "chat":
             return
-        if self._call_window is not None:
+        self._drop_stale_call_window()
+        if self._call_window is not None or self.core.calls.active is not None:
             compat.toast(self, _("You are already in a call"))
             return
         account = self.core.accounts.get(chat.account_id)
@@ -149,13 +158,16 @@ class MainWindow(Adw.ApplicationWindow):
         widgets.run(self, go(), error=_("Could not start the call"))
 
     def _on_incoming_call(self, _calls, call) -> None:
-        if self._call_window is not None:
+        self._drop_stale_call_window()
+        if self._call_window is not None or self.core.calls.active is not call:
             return
         call.connect("notify::state", lambda *_: self._call_state(call))
-        self._incoming_window = IncomingCallWindow(self.app, call)
-        self._incoming_window.set_transient_for(self)
-        self._incoming_window.connect("destroy", lambda *_: setattr(self, "_incoming_window", None))
-        self._incoming_window.present()
+        incoming = IncomingCallWindow(self.app, call)
+        self._incoming_window = incoming
+        incoming.set_transient_for(self)
+        incoming.connect("destroy", lambda w: self._incoming_window is w and
+                         setattr(self, "_incoming_window", None))
+        incoming.present()
 
     def _call_state(self, call) -> None:
         if call.state in ("connecting", "active") and self._call_window is None:
@@ -164,12 +176,14 @@ class MainWindow(Adw.ApplicationWindow):
             self._incoming_window.destroy()
 
     def _show_call(self, call) -> None:
+        self._drop_stale_call_window()
         if self._call_window is not None:
             return
-        self._call_window = CallWindow(self.app, call)
-        self._call_window.set_transient_for(self)
-        self._call_window.connect("destroy", lambda *_: setattr(self, "_call_window", None))
-        self._call_window.present()
+        window = CallWindow(self.app, call)
+        self._call_window = window
+        window.set_transient_for(self)
+        window.connect("destroy", lambda w: self._call_window is w and setattr(self, "_call_window", None))
+        window.present()
 
     def _watch_omemo(self) -> None:
         """Connect to the encryption service whenever it is there: at startup it is created while the window is

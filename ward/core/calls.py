@@ -88,11 +88,22 @@ class Calls(GObject.Object):
         self._sessions.pop(account_id, None)
 
     # ================================================================== placing
+    def _busy(self) -> bool:
+        """Whether a call is still live.  A window or a notification can outlive its call for a moment; do not
+        let that stale object block the next call."""
+        if self.active is None:
+            return False
+        info = self._calls.get(self.active.sid)
+        if info is None or self.active.state == "ended":
+            self.active = None
+            return False
+        return True
+
     async def place_call(self, account: AccountItem, peer: str, video: bool = False) -> CallItem:
         session = self._session_for(account.id)
         if session is None or not getattr(session, "online", False):
             raise CallError(_("You are not connected"))
-        if self.active is not None:
+        if self._busy():
             raise CallError(_("You are already in a call"))
         if not media_available():
             raise CallError(_("Calling needs GStreamer (webrtcbin and libnice-gstreamer)"))
@@ -104,7 +115,11 @@ class Calls(GObject.Object):
         self._calls[sid] = info
         self.active = call
         self.store.append(call)
-        self._send_jmi(session, peer, sid, "propose", ("audio", "video") if video else ("audio",))
+        try:
+            self._send_jmi(session, peer, sid, "propose", ("audio", "video") if video else ("audio",))
+        except Exception:
+            self._finish(sid, "", notify=False)
+            raise
         info.timeout = GLib.timeout_add_seconds(RING_SECONDS, self._ring_timeout, sid)
         return call
 
@@ -132,7 +147,7 @@ class Calls(GObject.Object):
     async def _on_jmi(self, session, peer: str, sid: str, action: str, media: tuple[str, ...]) -> None:
         info = self._calls.get(sid)
         if action == "propose":
-            if self.active is not None:
+            if self._busy():
                 self._send_jmi(session, peer, sid, "reject")
                 return
             if info is not None:
@@ -177,20 +192,32 @@ class Calls(GObject.Object):
     async def reject(self, call: CallItem) -> None:
         info = self._calls.get(call.sid)
         if info is None:
+            if self.active is call:
+                self.active = None
             return
-        self._send_jmi(info.session, info.peer, call.sid, "reject")
-        if info.offer:
-            await self._send_terminate(info, _("Declined"))
-        self._finish(call.sid, _("Declined"), notify=True)
+        try:
+            self._send_jmi(info.session, info.peer, call.sid, "reject")
+            if info.offer:
+                await self._send_terminate(info, _("Declined"))
+        except Exception as e:
+            log.info("could not reject call %s: %s", call.sid, e)
+        finally:
+            self._finish(call.sid, _("Declined"), notify=True)
 
     async def hangup(self, call: CallItem) -> None:
         info = self._calls.get(call.sid)
         if info is None:
+            if self.active is call:
+                self.active = None
             return
-        self._send_jmi(info.session, info.peer, call.sid, "finish")
-        if info.offer or info.answer:
-            await self._send_terminate(info, _("Call ended"))
-        self._finish(call.sid, "", notify=True)
+        try:
+            self._send_jmi(info.session, info.peer, call.sid, "finish")
+            if info.offer or info.answer:
+                await self._send_terminate(info, _("Call ended"))
+        except Exception as e:
+            log.info("could not end call %s: %s", call.sid, e)
+        finally:
+            self._finish(call.sid, "", notify=True)
 
     # ================================================================== Jingle session
     async def _start_offer(self, info: _Call) -> None:
@@ -304,7 +331,7 @@ class Calls(GObject.Object):
                                 direction=0, media="video" if video else "audio", state="incoming", video=video)
                 info = _Call(call, session, j.initiator or session.jid, offer=j.contents)
                 self._calls[j.sid] = info
-                if self.active is None:
+                if not self._busy():
                     self.active = call
                     self.store.append(call)
                     info.timeout = GLib.timeout_add_seconds(RING_SECONDS, self._ring_timeout, j.sid)

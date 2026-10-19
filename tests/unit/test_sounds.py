@@ -15,9 +15,12 @@ def test_bundled_sound_is_found():
     assert app.bundled_sound("no-such-sound") == "" and app.bundled_sound("../etc/passwd") == ""
 
 
-def test_bundled_ringtone_is_found():
-    path = app.bundled_sound("phone-incoming-call")
-    assert path.endswith("phone-incoming-call.oga") and os.path.isfile(path)
+def test_bundled_call_sounds_are_found():
+    for name in ("phone-incoming-call", "phone-outgoing-calling"):
+        path = app.bundled_sound(name)
+        assert path.endswith(name + ".oga") and os.path.isfile(path)
+        with open(path, "rb") as fh:
+            assert fh.read(4) == b"OggS"
     with open(path, "rb") as fh:
         assert fh.read(4) == b"OggS"
 
