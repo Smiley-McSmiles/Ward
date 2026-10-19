@@ -131,11 +131,15 @@ class MediaSession(GObject.Object):
     }
 
     def __init__(self, audio: bool, video: bool, stun: str = "", turns: tuple[str, ...] | list[str] = (),
-                 relay_only: bool = False, sources: str = ""):
-        """stun and turns: webrtcbin URIs (core.turn makes them); relay_only: never connect directly."""
+                 relay_only: bool = False, sources: str = "", receive_video: bool | None = None):
+        """stun and turns: webrtcbin URIs (core.turn makes them); relay_only: never connect directly.
+
+        receive_video: whether to show their video (a video call answered with audio only still receives it);
+        defaults to video.  An audio-only call makes no display sink at all, so it also works without a display."""
         super().__init__()
         Gst, _GstWebRTC, _GstSdp = gst()
         self.audio, self.video = audio, video
+        self.receive_video = video if receive_video is None else receive_video
         self.sources = sources or os.environ.get("WARD_CALL_SOURCES", "auto")
         self.state = "new"
         self.received = {"audio": 0, "video": 0}       # buffers decoded, for tests and diagnostics
@@ -189,8 +193,10 @@ class MediaSession(GObject.Object):
         Gst = gst()[0]
         pts = pts or {}
         # the other side's video, made here on the main thread (gtk4paintablesink must be) and linked when their
-        # video arrives; a sink waiting unlinked is fine, it never holds the pipeline back (async=False)
-        self._remote_sink, self._remote_video = self._video_sink()
+        # video arrives; a sink waiting unlinked is fine, it never holds the pipeline back (async=False).  An
+        # audio-only call has no video sink: gtk4paintablesink needs a display, and an audio call must not.
+        if self.receive_video:
+            self._remote_sink, self._remote_video = self._video_sink()
         if self.audio:
             if self.sources == "test":
                 src = self._make("audiotestsrc", is_live=True, wave=0, volume=0.2)
@@ -201,7 +207,8 @@ class MediaSession(GObject.Object):
                 # Echo cancellation and noise suppression.  webrtcdsp compares the microphone with what the
                 # speakers play, which a webrtcechoprobe on the playback side records; it looks the probe up by
                 # name when it starts, so the probe exists from now on (linked when their audio arrives), named
-                # for this call alone.  Without one the dsp failed to start and the call never connected.
+                # for this call alone.  The probe is a pad of its own: it must never sit in the microphone
+                # chain, or the playback branch cannot link into it and their audio is never heard.
                 probe = "ward-echo-probe-%d" % next(_probe_names)
                 self._echo_probe = self._make("webrtcechoprobe", name=probe)
                 els.append(self._make("webrtcdsp", probe=probe))
@@ -251,8 +258,15 @@ class MediaSession(GObject.Object):
         if self.sources == "test" and os.environ.get("WARD_CALL_FAKESINK"):
             return self._make("fakesink", sync=False, async_=False), None
         if _have("gtk4paintablesink"):
-            sink = self._make("gtk4paintablesink", async_=False)
-            return sink, sink.get_property("paintable")
+            try:
+                from gi.repository import Gdk
+
+                display = Gdk.Display.get_default() is not None
+            except Exception:
+                display = False
+            if display:
+                sink = self._make("gtk4paintablesink", async_=False)
+                return sink, sink.get_property("paintable")
         Gst = gst()[0]
         conv = self._make("videoconvert")
         sink = self._make("appsink", emit_signals=True, max_buffers=1, drop=True, sync=False, async_=False,

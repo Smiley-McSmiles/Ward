@@ -8,11 +8,19 @@ on the standard Jingle Message Initiation (XEP-0353), with the Jingle-to-SDP tra
 tested end to end: Opus and VP8 both ways, answering on one of two devices, declining, cancelling, busy. The STUN and
 TURN settings (server discovery, manual servers, shared-secret credentials, relay only) and the Preferences test stay.
 
+The session descriptions now carry the ICE candidates gathered so far as well as trickling the rest, Ward advertises
+SDP offer/answer (urn:ietf:rfc:3264) so Conversations does the same, and answer content names follow the offer even
+when a webrtcbin version renames its mids. GStreamer errors (no microphone, no camera) end a call with a reason
+instead of leaving it "Connecting" until the timeout. Audio-only calls make no video sink, so they work on a system
+without a display server.
+
 Screen sharing is not in the rebuilt calls yet.
 
 An AppImage: one file with Python, GTK, libadwaita, GStreamer's WebRTC with libnice and the OMEMO libraries inside,
 for distributions where Ward's dependencies are missing or too old. Calls work in it on Void, whose own GStreamer has
-no WebRTC. `./package.sh appimage` builds it; CI builds and starts it.
+no WebRTC. `./package.sh appimage` builds it; CI builds and starts it. The image includes NSS's crypto modules
+(libsoftokn3, libfreebl3, ...): libsrtp2 is built against NSS, which loads them by name, and without them SRTP could
+not start, so calls connected but carried no voice.
 
 ## v1.0.1 (2026-10-19)
 

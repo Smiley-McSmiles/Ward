@@ -23,9 +23,12 @@ NS_ICE_UDP = "urn:xmpp:jingle:transports:ice-udp:1"
 NS_DTLS = "urn:xmpp:jingle:apps:dtls:0"
 NS_JMI = "urn:xmpp:jingle-message:0"
 NS_ERRORS = "urn:xmpp:jingle:errors:1"
+NS_SDP_OA = "urn:ietf:rfc:3264"
 
-# what a client must advertise for others to call it (Conversations checks these)
-FEATURES = (NS_JINGLE, NS_RTP, NS_RTP_AUDIO, NS_RTP_VIDEO, NS_ICE_UDP, NS_DTLS, NS_JMI)
+# what a client must advertise for others to call it (Conversations checks these).  SDP offer/answer tells peers
+# such as Conversations to put their candidates in the session-initiate/accept as well as trickling them, which
+# survives a lost transport-info.
+FEATURES = (NS_JINGLE, NS_RTP, NS_RTP_AUDIO, NS_RTP_VIDEO, NS_ICE_UDP, NS_DTLS, NS_JMI, NS_SDP_OA)
 
 PROTOCOL = "UDP/TLS/RTP/SAVPF"
 
@@ -383,6 +386,35 @@ def reason_of(el: ET.Element | None) -> str:
         if child.tag != q(NS_JINGLE, "text"):
             return child.tag.split("}")[-1]
     return ""
+
+
+def text_of(el: ET.Element | None) -> str:
+    """The free text in a <reason/> (what a peer says went wrong), '' without one."""
+    if el is None:
+        return ""
+    r = el.find(q(NS_JINGLE, "reason")) if el.tag != q(NS_JINGLE, "reason") else el
+    if r is None:
+        return ""
+    text = r.find(q(NS_JINGLE, "text"))
+    return (text.text or "").strip() if text is not None else ""
+
+
+def add_candidates(contents: list[ET.Element], candidates: dict[str, list[Candidate]]) -> int:
+    """Put candidates for a content name into its <transport>; returns how many were added."""
+    added = 0
+    for content in contents:
+        if content.tag != q(NS_JINGLE, "content"):
+            continue
+        transport = content.find(q(NS_ICE_UDP, "transport"))
+        if transport is None:
+            continue
+        have = {(c.get("ip"), c.get("port")) for c in transport.findall(q(NS_ICE_UDP, "candidate"))}
+        for candidate in candidates.get(content.get("name", ""), []):
+            if (candidate.ip, str(candidate.port)) in have:
+                continue
+            transport.append(candidate.to_xml())
+            added += 1
+    return added
 
 
 def media_of(jingle_or_propose: ET.Element) -> set[str]:

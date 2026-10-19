@@ -55,6 +55,8 @@ class Call(GObject.Object):
         self.started_at = 0.0                # when media started flowing
         self.created_at = time.time()
         self.end = ""                        # missed, declined... (see above)
+        self.reason = ""                     # the Jingle reason the call ended with
+        self.error = ""                      # what failed, for the log and the call line
         self.ms: Any = None                  # media.MediaSession
         self.offer: ET.Element | None = None     # a received session-initiate we have not answered yet
         self.local_names: list[str] = []     # content names in our SDP order (= m-line indexes)
@@ -178,7 +180,7 @@ class CallService(GObject.Object):
             own.append(jingle.jmi("accept", call.sid))
             ET.SubElement(own, q(NS_HINTS, "store"))
             session.send(own)
-            msg = session.new_message(call.remote, "chat", "jm-proceed-" + call.sid)
+            msg = session.new_message(call.remote or call.peer, "chat", "jm-proceed-" + call.sid)
             msg.append(jingle.jmi("proceed", call.sid))
             ET.SubElement(msg, q(NS_HINTS, "store"))
             session.send(msg)
@@ -330,6 +332,7 @@ class CallService(GObject.Object):
             return
         action, sid = j.get("action", ""), j.get("sid", "")
         call = self.find(session.account.id, sid)
+        log.info("call %s: jingle %s from %s", sid, action, frm)
         if action == "session-initiate":
             if call is None:
                 # a call without Jingle Message Initiation (some clients start with Jingle directly)
@@ -352,17 +355,21 @@ class CallService(GObject.Object):
                 self.emit("added", call)
                 self.emit("incoming", call)
                 return
-            if call.outgoing or frm != call.remote:
+            if call.outgoing or util.bare(frm) != call.peer:
                 session.reply_iq(stanza, error="item-not-found")
                 return
+            if util.resource(frm):
+                call.remote = frm       # the resource that sends the session is the one to answer, even after a rebind
             session.reply_iq(stanza)
             call.offer = j
             if call.state == "connecting":
                 aio.spawn(self._answer(session, call))
             return
-        if call is None or (call.remote and frm != call.remote):
+        if call is None or (frm and util.bare(frm) != call.peer):
             session.reply_iq(stanza, error="item-not-found")
             return
+        if util.resource(frm):
+            call.remote = frm
         session.reply_iq(stanza)
         if action == "session-accept" and call.outgoing:
             aio.spawn(self._accepted(call, j))
@@ -370,6 +377,10 @@ class CallService(GObject.Object):
             self._remote_candidates(call, j)
         elif action == "session-terminate":
             reason = jingle.reason_of(j)
+            call.reason = reason
+            call.error = jingle.text_of(j) or reason
+            log.info("call %s: %s ended it: %s%s", call.sid, call.remote or call.peer, reason or "no reason",
+                     (" (%s)" % jingle.text_of(j)) if jingle.text_of(j) else "")
             end = {"decline": DECLINED, "busy": BUSY, "success": ENDED, "cancel": CANCELLED}.get(reason, FAILED)
             if end == CANCELLED and call.state == "incoming":
                 end = MISSED
@@ -377,30 +388,36 @@ class CallService(GObject.Object):
         # session-info (ringing, mute...) and anything else: acknowledged, nothing to do
 
     def _terminate(self, session, call: Call, reason: str) -> None:
-        if not call.remote:
+        if not (call.remote or call.peer):
             return
         j = jingle.jingle_element("session-terminate", call.sid)
         j.append(jingle.reason_element(reason))
         aio.spawn(self._send_jingle(session, call, j, quiet=True))
 
     async def _send_jingle(self, session, call: Call, j: ET.Element, quiet: bool = False) -> bool:
+        to = call.remote or call.peer
         try:
-            await session.iq("set", call.remote, j, timeout=20)
+            await session.iq("set", to, j, timeout=20)
             return True
         except Exception as e:
             if not quiet:
-                log.info("jingle %s to %s failed: %s", j.get("action"), call.remote, e)
+                log.info("call %s: jingle %s to %s failed: %s", call.sid, j.get("action"), to, e)
             return False
 
     # ------------------------------------------------------------------ negotiation
-    async def _media(self, session, call: Call):
+    async def _media(self, session, call: Call, send_video: bool | None = None,
+                     receive_video: bool | None = None):
         from . import media
 
         stun, turns = await self.core.turn.uris(session)
-        ms = media.MediaSession(True, call.video, stun, turns, bool(self.core.settings["calls.relay_only"]))
+        video = call.video if send_video is None else send_video
+        ms = media.MediaSession(True, video, stun, turns, bool(self.core.settings["calls.relay_only"]),
+                                receive_video=video if receive_video is None else receive_video)
         ms.set_muted(call.muted)
+        ms.set_camera(call.camera)
         ms.connect("local-candidate", lambda _m, mline, cand: self._local_candidate(session, call, mline, cand))
         ms.connect("state-changed", lambda _m, state: self._media_state(call, state))
+        ms.connect("error", lambda _m, text: self._media_error(call, text))
         call.ms = ms
         call.emit("media")
         return ms
@@ -411,17 +428,22 @@ class CallService(GObject.Object):
             ms = await self._media(session, call)
             offer = await ms.create_offer()
         except Exception as e:
-            log.warning("cannot start the call: %s", e)
-            await self._fail(call, "failed-application")
+            log.warning("call %s: cannot start the media: %s", call.sid, e)
+            await self._fail(call, "failed-application", error=str(e))
             return
         if not call.active:
             return
         self._learn_local(call, offer)
+        await self._gather(call)
+        contents = jingle.sdp_to_jingle(offer, True, with_candidates=False)
+        self._embed_candidates(contents, call)
         j = jingle.jingle_element("session-initiate", call.sid, initiator=session.bound_jid or session.jid)
-        for el in jingle.sdp_to_jingle(offer, True, with_candidates=False):
+        for el in contents:
             j.append(el)
+        log.info("call %s: session-initiate to %s: media %s, %d contents, %d local candidates",
+                 call.sid, call.remote, sorted(call.media), len(call.local_names), self._candidate_count(j))
         if not await self._send_jingle(session, call, j):
-            await self._fail(call, "connectivity-error", send=False)
+            await self._fail(call, "connectivity-error", send=False, error="the session-initiate was not accepted")
             return
         self._flush_local(session, call)
 
@@ -432,10 +454,12 @@ class CallService(GObject.Object):
         try:
             await call.ms.set_answer(jingle.jingle_to_sdp(j, False))
         except Exception as e:
-            log.warning("cannot use the answer: %s", e)
-            await self._fail(call, "failed-application")
+            log.warning("call %s: cannot use the answer: %s", call.sid, e)
+            await self._fail(call, "failed-application", error=str(e))
             return
         call.described = True
+        log.info("call %s: session-accept from %s: %d contents, %d remote candidates",
+                 call.sid, call.remote, len(call.remote_names), self._candidate_count(j))
         self._flush_remote(call)
 
     async def _answer(self, session, call: Call) -> None:
@@ -444,32 +468,87 @@ class CallService(GObject.Object):
         if j is None or call.ms is not None:
             return
         call.remote_names = [c.get("name", "") for c in j.findall(q(NS_JINGLE, "content"))]
+        offered = jingle.media_of(j)
         try:
-            ms = await self._media(session, call)
+            ms = await self._media(session, call, send_video=call.video and "video" in offered,
+                                   receive_video="video" in offered)
             answer = await ms.accept_offer(jingle.jingle_to_sdp(j, True))
         except Exception as e:
-            log.warning("cannot answer the call: %s", e)
-            await self._fail(call, "failed-application")
+            log.warning("call %s: cannot answer the media: %s", call.sid, e)
+            await self._fail(call, "failed-application", error=str(e))
             return
         if not call.active:
             return
         call.described = True
-        self._learn_local(call, answer)
+        await self._gather(call)
+        contents = jingle.sdp_to_jingle(answer, False, with_candidates=False)
+        names = self._match_names(contents, call.remote_names)
+        self._learn_local(call, answer, names)
+        self._embed_candidates(contents, call)
         acc = jingle.jingle_element("session-accept", call.sid, responder=session.bound_jid or session.jid)
-        for el in jingle.sdp_to_jingle(answer, False, with_candidates=False):
+        for el in contents:
             acc.append(el)
+        log.info("call %s: session-accept to %s: media %s, %d contents, %d local candidates",
+                 call.sid, call.remote, sorted(offered), len(call.local_names), self._candidate_count(acc))
         if not await self._send_jingle(session, call, acc):
-            await self._fail(call, "connectivity-error", send=False)
+            await self._fail(call, "connectivity-error", send=False, error="the session-accept was not accepted")
             return
         self._flush_local(session, call)
         self._flush_remote(call)
 
-    def _learn_local(self, call: Call, sdp_text: str) -> None:
+    def _learn_local(self, call: Call, sdp_text: str, names: list[str] | None = None) -> None:
         sdp = jingle.parse_sdp(sdp_text)
-        call.local_names = [m.mid for m in sdp.media]
-        for m in sdp.media:
-            call.local_ice[m.mid] = (m.get("ice-ufrag") or sdp.get("ice-ufrag") or "",
-                                     m.get("ice-pwd") or sdp.get("ice-pwd") or "")
+        mids = [m.mid for m in sdp.media]
+        names = names if names and len(names) == len(mids) else mids
+        call.local_names = list(names)
+        call.local_ice = {}
+        for m, name in zip(sdp.media, names, strict=False):
+            call.local_ice[name] = (m.get("ice-ufrag") or sdp.get("ice-ufrag") or "",
+                                    m.get("ice-pwd") or sdp.get("ice-pwd") or "")
+
+    @staticmethod
+    def _match_names(contents: list[ET.Element], offered: list[str]) -> list[str]:
+        """The offer's content names for our contents, by position: some webrtcbin versions rename the mids."""
+        own = [c.get("name", "") for c in contents if c.tag == q(NS_JINGLE, "content")]
+        if len(own) != len(offered) or not offered:
+            return own
+        old_new = dict(zip(own, offered, strict=False))
+        for content in contents:
+            if content.tag == q(NS_JINGLE, "content"):
+                content.set("name", old_new.get(content.get("name", ""), content.get("name", "")))
+            elif content.tag == q(jingle.NS_GROUPING, "group"):
+                for ref in content.findall(q(jingle.NS_GROUPING, "content")):
+                    ref.set("name", old_new.get(ref.get("name", ""), ref.get("name", "")))
+        return list(offered)
+
+    async def _gather(self, call: Call, wait: float = 0.75) -> None:
+        """Give ICE a moment to gather host candidates, so the session-initiate/accept can carry some too."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + wait
+        while loop.time() < deadline:
+            if any((c := jingle.Candidate.from_sdp(raw)) is not None and c.protocol == "udp"
+                   for _ml, raw in call.pending_local):
+                return
+            await asyncio.sleep(0.05)
+
+    def _embed_candidates(self, contents: list[ET.Element], call: Call) -> None:
+        """Move the candidates gathered so far into the session-initiate/accept (and still trickle later ones)."""
+        pending, call.pending_local = call.pending_local, []
+        by_name: dict[str, list[jingle.Candidate]] = {}
+        for mline, raw in pending:
+            c = jingle.Candidate.from_sdp(raw)
+            if c is None or c.protocol != "udp" or not (0 <= mline < len(call.local_names)):
+                continue
+            by_name.setdefault(call.local_names[mline], []).append(c)
+        if not by_name:
+            return
+        added = jingle.add_candidates(contents, by_name)
+        if added:
+            log.info("call %s: %d local candidates in the session description", call.sid, added)
+
+    @staticmethod
+    def _candidate_count(j: ET.Element) -> int:
+        return len(j.findall(".//{%s}candidate" % jingle.NS_ICE_UDP))
 
     def _local_candidate(self, session, call: Call, mline: int, cand: str) -> None:
         call.pending_local.append((mline, cand))
@@ -504,21 +583,41 @@ class CallService(GObject.Object):
         pending, call.pending_remote = call.pending_remote, []
         names = call.local_names or call.remote_names
         for name, cand in pending:
-            if call.ms is not None and name in names:
-                call.ms.add_remote_candidate(names.index(name), cand)
+            if call.ms is None:
+                continue
+            # our names are the m-line order; the peer's answer may use different names (some webrtcbin versions)
+            if name in names:
+                index = names.index(name)
+            elif name in call.remote_names:
+                index = call.remote_names.index(name)
+            else:
+                log.info("call %s: dropping a candidate for unknown content %r (known: %s)",
+                         call.sid, name, ", ".join(names))
+                continue
+            call.ms.add_remote_candidate(index, cand)
 
     def _media_state(self, call: Call, state: str) -> None:
+        log.info("call %s: media %s -> %s", call.sid, call.ms.state if call.ms is not None else "?", state)
         if state == "connected" and call.state == "connecting":
             call.started_at = time.time()
             self._cancel_timer(call)
             self._set(call, "active")
         elif state == "failed" and call.active:
-            aio.spawn(self._fail(call, "connectivity-error"))
+            aio.spawn(self._fail(call, "connectivity-error", error="the media connection failed"))
+
+    def _media_error(self, call: Call, text: str) -> None:
+        """A GStreamer error (no microphone, no camera, a codec): end the call instead of waiting for the timeout."""
+        log.warning("call %s: media error: %s", call.sid, text)
+        if call.active:
+            aio.spawn(self._fail(call, "failed-application", error=text))
 
     # ================================================================== ending
-    async def _fail(self, call: Call, reason: str, send: bool = True) -> None:
+    async def _fail(self, call: Call, reason: str, send: bool = True, error: str = "") -> None:
         if not call.active:
             return
+        call.reason = reason
+        call.error = error or reason
+        log.info("call %s failed (%s): %s", call.sid, reason, call.error)
         session = self.core.sessions.get(call.account_id)
         if send and session is not None and call.state in ("connecting", "active"):
             self._terminate(session, call, reason)
@@ -540,6 +639,7 @@ class CallService(GObject.Object):
 
     def _set(self, call: Call, state: str) -> None:
         if call.state != state:
+            log.info("call %s: %s -> %s", call.sid, call.state or "new", state)
             call.state = state
 
     def _timeout(self, call: Call, seconds: float, action) -> None:
@@ -563,7 +663,8 @@ class CallService(GObject.Object):
             return
         chat = await self.core.open_chat(acc, call.peer)
         extra = {"call": {"sid": call.sid, "media": sorted(call.media), "end": call.end,
-                          "duration": call.duration if call.end == ENDED else 0, "outgoing": call.outgoing}}
+                          "duration": call.duration if call.end == ENDED else 0, "outgoing": call.outgoing,
+                          "reason": call.reason, "error": call.error}}
         values = {"chat_id": chat.id, "msg_id": call.sid, "sender": acc.jid if call.outgoing else call.peer,
                   "sender_jid": "", "direction": 1 if call.outgoing else 0,
                   "timestamp": int(call.created_at * 1000), "body": "", "kind": "call", "status": 0,

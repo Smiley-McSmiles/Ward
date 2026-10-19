@@ -127,6 +127,32 @@ def test_opus_from_webrtcbin_gets_two_channels():
     assert (pt.get("name"), pt.get("clockrate"), pt.get("channels")) == ("opus", "48000", "2")
 
 
+def test_candidates_can_ride_in_the_description():
+    """A session-initiate/accept can carry the candidates gathered so far, before trickling the rest."""
+    sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=rtpmap:111 opus/48000/2\r\n" \
+          "a=ice-ufrag:u\r\na=ice-pwd:p\r\na=fingerprint:sha-256 %s\r\na=setup:actpass\r\n" % FP
+    contents = jingle.sdp_to_jingle(sdp, True, with_candidates=False)
+    candidate = jingle.Candidate.from_sdp("candidate:1 1 UDP 2122260223 192.0.2.7 47431 typ host")
+    assert jingle.add_candidates(contents, {"0": [candidate]}) == 1
+    transport = contents[0].find(jingle.q(jingle.NS_ICE_UDP, "transport"))
+    assert [c.get("port") for c in transport.findall(jingle.q(jingle.NS_ICE_UDP, "candidate"))] == ["47431"]
+    assert jingle.add_candidates(contents, {"0": [candidate]}) == 0       # not twice
+
+
+def test_answer_content_names_follow_the_offer():
+    """Some webrtcbin versions rename the mids in an answer; Conversations finds candidates by the offer's names."""
+    from ward.core.calls.service import CallService
+
+    sdp = "v=0\r\na=group:BUNDLE audio0 video1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:audio0\r\n" \
+          "a=rtpmap:111 opus/48000/2\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:video1\r\na=rtpmap:96 VP8/90000\r\n"
+    contents = jingle.sdp_to_jingle(sdp, False, with_candidates=False)
+    names = CallService._match_names(contents, ["0", "1"])
+    assert names == ["0", "1"]
+    assert [c.get("name") for c in contents if c.tag == jingle.q(jingle.NS_JINGLE, "content")] == ["0", "1"]
+    group = next(c for c in contents if c.tag == jingle.q(jingle.NS_GROUPING, "group"))
+    assert [c.get("name") for c in group.findall(jingle.q(jingle.NS_GROUPING, "content"))] == ["0", "1"]
+
+
 def test_jmi_and_reasons():
     p = jingle.jmi("propose", "s1", {"audio", "video"})
     assert jingle.media_of(p) == {"audio", "video"} and p.get("id") == "s1"
