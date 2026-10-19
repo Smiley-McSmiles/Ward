@@ -200,12 +200,12 @@ class Calls(GObject.Object):
             return
         try:
             self._send_jmi(info.session, info.peer, call.sid, "reject")
-            if info.offer:
-                await self._send_terminate(info, _("Declined"))
         except Exception as e:
             log.info("could not reject call %s: %s", call.sid, e)
-        finally:
-            self._finish(call.sid, _("Declined"), notify=True)
+        # Let the next call start immediately; the Jingle session-terminate can finish in the background.
+        self._finish(call.sid, _("Declined"), notify=True)
+        if info.offer:
+            await self._send_terminate(info, _("Declined"))
 
     async def hangup(self, call: CallItem) -> None:
         info = self._calls.get(call.sid)
@@ -215,12 +215,12 @@ class Calls(GObject.Object):
             return
         try:
             self._send_jmi(info.session, info.peer, call.sid, "finish")
-            if info.offer or info.answer:
-                await self._send_terminate(info, _("Call ended"))
         except Exception as e:
             log.info("could not end call %s: %s", call.sid, e)
-        finally:
-            self._finish(call.sid, "", notify=True)
+        # Let the next call start immediately; the Jingle session-terminate can finish in the background.
+        self._finish(call.sid, "", notify=True)
+        if info.offer or info.answer:
+            await self._send_terminate(info, _("Call ended"))
 
     # ================================================================== Jingle session
     async def _start_offer(self, info: _Call) -> None:
