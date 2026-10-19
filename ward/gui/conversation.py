@@ -697,7 +697,6 @@ class ConversationView(Gtk.Box):
         if self._code_toast is not None:
             self._code_toast.dismiss()
         toast = Adw.Toast(title=_("Code Copied!"), timeout=2)
-        toast.add_css_class("code-copied")
         self._code_toast = toast
         self.window.toasts.add_toast(toast)
 
