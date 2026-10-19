@@ -17,8 +17,9 @@ from gi.repository import Gio, GLib, GObject
 from .. import aio, util
 from ..i18n import _
 from . import jingle
+from .chats import insert_message_job
 from .jingle import Candidate, Content
-from .models import AccountItem, CallItem
+from .models import STATUS_SENT, AccountItem, CallItem
 from .rtp import CallMedia
 from .rtp import available as media_available
 from .turn import TurnService
@@ -45,6 +46,12 @@ class _Call:
     remote_candidates: list[tuple[str, Candidate]] = field(default_factory=list)
     timeout: int = 0
     answered: bool = False
+
+
+def _format_duration(seconds: int) -> str:
+    if seconds >= 3600:
+        return "%d:%02d:%02d" % (seconds // 3600, (seconds % 3600) // 60, seconds % 60)
+    return "%d:%02d" % (seconds // 60, seconds % 60)
 
 
 class Calls(GObject.Object):
@@ -361,12 +368,49 @@ class Calls(GObject.Object):
             info.call.error = reason
         if self.active is info.call:
             self.active = None
+        aio.spawn(self._record_history(info, reason), name="call history")
         for index in range(self.store.get_n_items()):
             if self.store.get_item(index) is info.call:
                 self.store.remove(index)
                 break
         if notify:
             self.emit("ended", info.call, reason)
+
+    async def _record_history(self, info: _Call, reason: str) -> None:
+        chats = getattr(self.core, "chats", None)
+        db = getattr(self.core, "db", None)
+        call = info.call
+        if chats is None or db is None or not call.jid:
+            return
+        try:
+            chat = await chats.get_or_create(call.account_id, call.jid, "chat", name=call.name)
+            media = _("video") if call.media == "video" else _("audio")
+            if call.started_at:
+                seconds = max(0, int((time.time() * 1000 - call.started_at) / 1000))
+                body = _("%(kind)s call · %(duration)s") % {"kind": media.capitalize(),
+                                                            "duration": _format_duration(seconds)}
+            elif call.direction == 0:
+                if reason == _("Declined"):
+                    body = _("Declined %(kind)s call") % {"kind": media}
+                else:
+                    body = _("Missed %(kind)s call") % {"kind": media}
+            else:
+                body = _("Cancelled %(kind)s call") % {"kind": media}
+            account = self.core.accounts.get(call.account_id)
+            sender = account.jid if account is not None and call.direction else call.jid
+            values = {
+                "chat_id": chat.id, "direction": call.direction,
+                "timestamp": call.started_at or int(time.time() * 1000),
+                "sender": sender, "sender_jid": sender, "body": body, "is_markdown": 0, "kind": "call",
+                "status": STATUS_SENT if call.direction else 0, "extra": {"call": {
+                    "media": call.media, "reason": reason, "duration": seconds if call.started_at else 0}},
+            }
+            msg_id = await db.run(lambda conn: insert_message_job(conn, values))
+            message = await chats.reload_message(chat, msg_id)
+            if message is not None:
+                chats.show_message(chat, message)
+        except Exception as e:
+            log.info("could not record call history: %s", e)
 
     def toggle_mute(self, call: CallItem) -> None:
         info = self._calls.get(call.sid)

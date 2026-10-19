@@ -15,6 +15,13 @@ def test_bundled_sound_is_found():
     assert app.bundled_sound("no-such-sound") == "" and app.bundled_sound("../etc/passwd") == ""
 
 
+def test_bundled_ringtone_is_found():
+    path = app.bundled_sound("phone-incoming-call")
+    assert path.endswith("phone-incoming-call.oga") and os.path.isfile(path)
+    with open(path, "rb") as fh:
+        assert fh.read(4) == b"OggS"
+
+
 def test_sound_theme_lookup(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_DATA_DIRS", str(tmp_path / "system"))

@@ -45,10 +45,13 @@ def _load():
 
 
 def screen_available() -> bool:
-    """Screen capture is X11-only until the PipeWire portal source is added."""
+    """X11 uses ximagesrc; Wayland uses the XDG ScreenCast portal and pipewiresrc."""
     gst, _webrtc = _load()
-    return bool(gst is not None and not os.environ.get("WAYLAND_DISPLAY") and
-                gst.ElementFactory.find("ximagesrc"))
+    if gst is None:
+        return False
+    if os.environ.get("WAYLAND_DISPLAY"):
+        return bool(gst.ElementFactory.find("pipewiresrc"))
+    return bool(gst.ElementFactory.find("ximagesrc"))
 
 
 def available() -> bool:
@@ -104,6 +107,7 @@ class CallMedia(GObject.Object):
         self._camera_pad = None
         self._screen_pad = None
         self._blank_pad = None
+        self._portal_session = ""
         self._video_enabled = True
         self._screen_enabled = False
         self._closed = False
@@ -134,7 +138,7 @@ class CallMedia(GObject.Object):
     def _add_audio(self) -> None:
         source = None
         if not self.test_mode:
-            for name in ("pulsesrc", "pipewiresrc"):
+            for name in ("pulsesrc", "autoaudiosrc"):
                 if _factory(name):
                     source = _make(name)
                     break
@@ -195,12 +199,25 @@ class CallMedia(GObject.Object):
                 source.set_property("pattern", "ball")
         elif kind == "screen":
             source = None
-            if not self.test_mode and not os.environ.get("WAYLAND_DISPLAY") and _factory("ximagesrc"):
-                try:
-                    source = _make("ximagesrc")
-                    source.set_property("use-damage", False)
-                except Exception:
-                    source = None
+            if not self.test_mode:
+                if os.environ.get("WAYLAND_DISPLAY") and _factory("pipewiresrc"):
+                    try:
+                        from .portal import screencast
+
+                        fd, node, session = screencast()
+                        self._portal_session = session
+                        source = _make("pipewiresrc")
+                        source.set_property("fd", fd)
+                        source.set_property("path", str(node))
+                    except Exception as e:
+                        log.info("screen sharing portal failed: %s", e)
+                        source = None
+                elif _factory("ximagesrc"):
+                    try:
+                        source = _make("ximagesrc")
+                        source.set_property("use-damage", False)
+                    except Exception:
+                        source = None
             if source is None:
                 source = _make("videotestsrc")
                 source.set_property("is-live", True)
@@ -415,6 +432,14 @@ class CallMedia(GObject.Object):
             pass
         self.pipeline = None
         self.webrtc = None
+        if self._portal_session:
+            try:
+                from .portal import close_session
+
+                close_session(self._portal_session)
+            except Exception:
+                pass
+            self._portal_session = ""
 
 
 def _candidate_from_gst(value: str) -> Candidate | None:

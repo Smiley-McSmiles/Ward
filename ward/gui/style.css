@@ -51,6 +51,7 @@
 .message-error { color: @error_color; font-size: 0.85em; }
 .message-unencrypted { border-left: 3px solid @error_color; padding-left: 6px; }
 .status-line { font-size: 0.85em; opacity: 0.6; padding: 2px 12px; }
+.call-history { font-style: italic; }
 .date-separator { font-size: 0.85em; font-weight: bold; opacity: 0.6; margin: 12px 0 4px 0; }
 .new-messages { color: @accent_color; font-size: 0.8em; font-weight: bold; }
 .new-messages separator { background-color: @accent_color; }

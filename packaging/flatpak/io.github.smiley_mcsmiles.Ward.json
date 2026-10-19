@@ -10,7 +10,10 @@
     "--socket=wayland",
     "--socket=fallback-x11",
     "--device=dri",
+    "--device=all",
     "--socket=pulseaudio",
+    "--talk-name=org.freedesktop.portal.Desktop",
+    "--filesystem=xdg-run/pipewire-0",
     "--talk-name=org.kde.StatusNotifierWatcher",
     "--own-name=org.kde.StatusNotifierItem-2-1"
   ],
