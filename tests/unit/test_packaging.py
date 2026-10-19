@@ -330,6 +330,25 @@ def test_appimage_enchant_looks_in_descriptor_9(tmp_path):
     assert b"/usr/share/enchant-2\0" in after
 
 
+def test_appimage_bundles_nss_crypto_modules(tmp_path):
+    """libsrtp2 is built against NSS, which loads libsoftokn3/libfreebl3 by name: ldd never sees them, and without
+    them SRTP cannot start, so calls connect but carry no audio."""
+    mk = _mkappimage()
+    b = mk.Bundle.__new__(mk.Bundle)
+    b.syslib = str(tmp_path / "sys")
+    b.lib = str(tmp_path / "lib")
+    b.elves = set()
+    os.makedirs(b.syslib)
+    for name in ("libsoftokn3.so", "libsoftokn3.chk", "libfreebl3.so", "libfreebl3.chk", "libnssckbi.so"):
+        (tmp_path / "sys" / name).write_bytes(b"x")
+    b.nss()
+    assert (tmp_path / "lib" / "libsoftokn3.so").exists()
+    assert (tmp_path / "lib" / "libfreebl3.so").exists()
+    assert (tmp_path / "lib" / "libnssckbi.so").exists()
+    assert (tmp_path / "lib" / "libsoftokn3.chk").exists()
+    assert str(tmp_path / "lib" / "libsoftokn3.so") in b.elves
+
+
 def test_appimage_bundles_no_system_libraries():
     mk = _mkappimage()
     for soname in ("libc.so.6", "libGL.so.1", "libEGL.so.1", "libX11.so.6", "libfontconfig.so.1", "libstdc++.so.6"):

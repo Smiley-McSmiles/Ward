@@ -195,6 +195,28 @@ class Bundle:
         shutil.copy2(scanner, helpers)
         self.elves.add(os.path.join(helpers, "gst-plugin-scanner"))
 
+    def nss(self) -> None:
+        """NSS's crypto modules are loaded by name, not linked, so ldd and closure() never see them.  libsrtp2 on
+        Ubuntu is built against NSS: without libsoftokn3/libfreebl3, srtp_init() fails ("Could not initialize
+        SRTP encoder") and calls connect but carry no audio or video."""
+        names = ("libnss3.so", "libnssutil3.so", "libnspr4.so", "libplc4.so", "libplds4.so",
+                 "libsoftokn3.so", "libsoftokn3.chk", "libfreebl3.so", "libfreebl3.chk",
+                 "libfreeblpriv3.so", "libfreeblpriv3.chk", "libnssdbm3.so", "libnssdbm3.chk",
+                 "libnssckbi.so", "libnsssysinit.so", "libsmime3.so", "libssl3.so")
+        copied = []
+        for name in names:
+            for directory in (self.syslib, os.path.join(self.syslib, "nss")):
+                source = os.path.join(directory, name)
+                if not os.path.exists(source) or os.path.exists(os.path.join(self.lib, name)):
+                    continue
+                os.makedirs(self.lib, exist_ok=True)
+                shutil.copy2(source, os.path.join(self.lib, name))
+                if name.endswith(".so"):
+                    self.elves.add(os.path.join(self.lib, name))
+                copied.append(name)
+                break
+        log("NSS modules: %d" % len(copied))
+
     def gtk_modules(self) -> None:
         """GTK's GStreamer media backend (videos in chats), GdkPixbuf's loaders (SVG icons), dconf and Enchant's
         Hunspell provider (spell check, with the system's dictionaries)."""
@@ -348,6 +370,7 @@ def main() -> None:
     b.ward()
     b.typelibs()
     b.gstreamer()
+    b.nss()
     b.gtk_modules()
     b.data()
     b.closure()
