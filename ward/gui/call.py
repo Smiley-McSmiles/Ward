@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from gi.repository import Adw, GLib, Gtk
 
+from ..core.rtp import screen_available
 from ..i18n import _
 from . import widgets
 
@@ -112,7 +113,8 @@ class CallWindow(Adw.Window):
                                       tooltip_text=_("Camera"), visible=call.media == "video")
         self.video.connect("toggled", lambda b: self.calls.toggle_video(call) if b.get_active() != call.video else None)
         self.screen = Gtk.ToggleButton(icon_name="video-display-symbolic", active=call.screen,
-                                       tooltip_text=_("Share screen"), visible=call.media == "video")
+                                       tooltip_text=_("Share screen"),
+                                       visible=call.media == "video" and screen_available())
         self.screen.connect("toggled", lambda b: self.calls.toggle_screen(call)
                             if b.get_active() != call.screen else None)
         hang = Gtk.Button(icon_name="call-stop-symbolic", css_classes=["destructive-action", "circular"],

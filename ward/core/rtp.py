@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 from gi.repository import GObject
@@ -41,6 +42,13 @@ def _load():
         return None, None
     GST, WEBRTC, SDP = Gst, GstWebRTC, GstSdp
     return GST, WEBRTC
+
+
+def screen_available() -> bool:
+    """Screen capture is X11-only until the PipeWire portal source is added."""
+    gst, _webrtc = _load()
+    return bool(gst is not None and not os.environ.get("WAYLAND_DISPLAY") and
+                gst.ElementFactory.find("ximagesrc"))
 
 
 def available() -> bool:
@@ -187,7 +195,7 @@ class CallMedia(GObject.Object):
                 source.set_property("pattern", "ball")
         elif kind == "screen":
             source = None
-            if not self.test_mode and _factory("ximagesrc"):
+            if not self.test_mode and not os.environ.get("WAYLAND_DISPLAY") and _factory("ximagesrc"):
                 try:
                     source = _make("ximagesrc")
                     source.set_property("use-damage", False)
