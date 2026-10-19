@@ -569,7 +569,12 @@ class OmemoService(GObject.Object):
         recipients = self._recipients(chat)
         if not recipients and chat.type != "groupchat":
             raise EncryptionBlocked(_("Private messages in groups cannot be encrypted"))
-        for jid in recipients | {acc.jid}:
+        # Our other devices must be able to decrypt the carbon copy of what we send.  The server reflects our own
+        # messages to every resource of this account, so include our own bare JID in the OMEMO recipients.
+        targets = set(recipients)
+        if chat.type != "pm" and targets:
+            targets.add(acc.jid)
+        for jid in targets | {acc.jid}:
             await self.refresh(session, jid)
             await self.review(session, jid)
         inside, outside = stanzas.split_content(el)
@@ -582,10 +587,10 @@ class OmemoService(GObject.Object):
             order.append(NS1)
         token = _encrypting.set(True)
         try:
-            messages, errors = await m.encrypt(frozenset(recipients), plaintexts, backend_priority_order=order,
+            messages, errors = await m.encrypt(frozenset(targets), plaintexts, backend_priority_order=order,
                                                identifier=str(chat.id))
         except NoEligibleDevices as e:
-            if recipients == {acc.jid}:
+            if targets == {acc.jid}:
                 raise OnlyThisDevice() from None
             if body is None and self.legacy_enabled:
                 return el, ""       # a reaction for legacy OMEMO users: see below
@@ -610,7 +615,7 @@ class OmemoService(GObject.Object):
                 out.append(oldmemo.etree.serialize_message(msg))
             namespaces.add(msg.namespace)
         if not namespaces:
-            if recipients == {acc.jid}:
+            if targets == {acc.jid}:
                 raise OnlyThisDevice()
             if body is None:
                 # a reaction (or other body-less update) for people on legacy OMEMO, which can only encrypt a body:
