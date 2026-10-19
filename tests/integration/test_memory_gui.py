@@ -210,7 +210,6 @@ def test_message_rows_are_light(app, prosody, run, tmp_path):  # noqa: F811
             app.core.settings.set("chats.emoji_skin_tone", 0)
             assert app.core.settings["chats.recent_emoji"][:2] == ["👋🏾", "🎉"]
             await wait_for(lambda: row.react_button.get_popover() is None, 5, "picker freed")
-            row._hover(False)
         finally:
             await stop(peer)
         await app.core.shutdown()
