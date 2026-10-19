@@ -15,6 +15,8 @@ from gi.repository import GLib, GObject
 
 log = logging.getLogger(__name__)
 
+_probe_names = itertools.count(1)
+
 _gst: tuple | bool | None = None
 
 
@@ -160,6 +162,7 @@ class MediaSession(GObject.Object):
         self._camera = None
         self._remote_sink = None
         self._remote_video = None
+        self._echo_probe = None     # webrtcechoprobe, waiting for their audio
         self._built = False
 
     # ------------------------------------------------------------------ building
@@ -194,8 +197,14 @@ class MediaSession(GObject.Object):
             else:
                 src = self._make("autoaudiosrc")
             els = [src, self._make("audioconvert"), self._make("audioresample")]
-            if _have("webrtcdsp") and self.sources != "test":
-                els.append(self._make("webrtcdsp"))          # echo cancellation and noise suppression
+            if _have("webrtcdsp") and _have("webrtcechoprobe"):
+                # Echo cancellation and noise suppression.  webrtcdsp compares the microphone with what the
+                # speakers play, which a webrtcechoprobe on the playback side records; it looks the probe up by
+                # name when it starts, so the probe exists from now on (linked when their audio arrives), named
+                # for this call alone.  Without one the dsp failed to start and the call never connected.
+                probe = "ward-echo-probe-%d" % next(_probe_names)
+                self._echo_probe = self._make("webrtcechoprobe", name=probe)
+                els.append(self._make("webrtcdsp", probe=probe))
                 els.append(self._make("audioconvert"))
             self._mute = self._make("volume")
             pt = pts.get("audio", 111)
@@ -309,6 +318,17 @@ class MediaSession(GObject.Object):
                     sink.set_property(prop, value)
             if self.sources == "test":
                 sink.set_property("sync", False)
+            # the first stream we play passes the echo probe (made with the dsp, already in the pipeline)
+            probe, self._echo_probe = self._echo_probe, None
+            if probe is not None:
+                for el in (q, conv, res, sink):
+                    self.pipe.add(el)
+                self._chain(q, conv, res, probe, sink)
+                for el in (q, conv, res, probe, sink):
+                    el.sync_state_with_parent()
+                pad.link(q.get_static_pad("sink"))
+                self._count(pad, kind)
+                return
             els = [q, conv, res, sink]
         elif name.startswith("video"):
             kind = "video"

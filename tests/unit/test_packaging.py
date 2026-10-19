@@ -168,5 +168,196 @@ def test_set_version_everywhere(tmp_path):
     readme = (tmp_path / "README.md").read_text()
     assert "badge/version-9.8.7-rc2-blue.svg" in readme
     assert 'alt="Version 9.8.7-rc2"' in readme
+    assert "ward-9.8.7-rc2-x86_64.AppImage" in readme and "ward-9.8.7-rc2.flatpak" in readme
     assert "## v9.8.7-rc2" in (tmp_path / "CHANGELOG.md").read_text()
     assert subprocess.run([*run, "nonsense"], capture_output=True).returncode == 2
+
+
+# Every Void package name Ward asks for, checked against void-linux/void-packages (srcpkgs/) on 2026-10-19.
+# xbps-install refuses a whole install when one name is unknown: a name that is not in this list must be checked
+# there before it is added here.
+VOID_PACKAGES = {
+    "python3", "python3-gobject", "gtk4", "libadwaita", "python3-slixmpp", "python3-markdown-it",
+    "python3-cryptography", "gtksourceview5", "libspelling", "libsecret", "python3-Pillow", "python3-mdit-py-plugins",
+    "python3-pip", "gnupg", "gst-plugins-good1", "desktop-file-utils", "gtk-update-icon-cache", "zbar", "libnice",
+    "gst-plugins-base1", "gst-plugins-bad1", "gst-plugins-rs1",
+}
+
+
+def test_void_package_names():
+    """install.sh, ward --check and the package template asked Void for python3-markdown-it-py and
+    python3-linkify-it-py, which Void does not have (markdown-it-py is python3-markdown-it there)."""
+    import re
+
+    from ward import deps
+
+    names = set()
+    with open(os.path.join(ROOT, "install.sh")) as f:
+        text = f.read()
+    for m in re.finditer(r'xbps-install\) (?:REQ|CALLS)="([^"]*)"(?:\s*OPT="([^"]*)")?', text):
+        for group in m.groups():
+            names.update((group or "").split())
+    with open(os.path.join(ROOT, "package.sh")) as f:
+        names.update(re.search(r'VOID_DEPENDS="([^"]*)"', f.read()).group(1).split())
+    names.update(n for v in deps.PACKAGES["xbps"].values() for n in v.split() if n != "-")
+    assert "python3-markdown-it" in names and "gst-plugins-bad1" in names     # the parsing found them
+    assert names <= VOID_PACKAGES, "not Void package names (or not checked yet): %s" % sorted(names - VOID_PACKAGES)
+
+
+def _sh_function(name: str) -> str:
+    """One shell function from install.sh, to run on its own."""
+    import re
+
+    with open(os.path.join(ROOT, "install.sh")) as f:
+        text = f.read()
+    m = re.search(r"^%s\(\) \{\n.*?^\}\n" % re.escape(name), text, re.S | re.M)
+    assert m, name
+    return m.group(0)
+
+
+def _fake_bin(tmp_path, name: str, body: str) -> None:
+    path = tmp_path / name
+    path.write_text("#!/bin/sh\n" + body)
+    path.chmod(0o755)
+
+
+def test_xbps_install_skips_installed_packages(tmp_path):
+    """xbps-install refuses the whole transaction over one package that is already installed ("Package `python3'
+    already installed"), so nothing new was installed on a Void machine that already had any of them."""
+    log = tmp_path / "log"
+    _fake_bin(tmp_path, "xbps-query", 'case "$1" in python3|gtk4) exit 0 ;; *) exit 2 ;; esac\n')
+    _fake_bin(tmp_path, "xbps-install", 'echo "$@" >> "%s"\n' % log)
+    script = _sh_function("xbps_install") + 'AS_ROOT=""\nxbps_install python3 libnice gtk4 gst-plugins-bad1\n' \
+        'xbps_install python3 gtk4\n'
+    env = dict(os.environ, PATH="%s:%s" % (tmp_path, os.environ["PATH"]))
+    subprocess.run([_sh(), "-c", script], check=True, env=env)
+    assert log.read_text().split("\n")[0].split() == ["-y", "libnice", "gst-plugins-bad1"]
+    assert len(log.read_text().strip().splitlines()) == 1         # nothing left to install: not run at all
+
+
+def test_calls_reason_on_void(tmp_path):
+    _fake_bin(tmp_path, "xbps-query", 'echo libnice-0.1.22_1\n')
+    script = "pm_name() { echo xbps-install; }\n" + _sh_function("calls_reason") + "calls_reason\n"
+    env = dict(os.environ, PATH="%s:%s" % (tmp_path, os.environ["PATH"]))
+    out = subprocess.run([_sh(), "-c", script], check=True, env=env, capture_output=True, text=True).stdout
+    assert "built without webrtcbin" in out and "(0.1.22)" in out and "0.1.23" in out
+
+
+def test_check_explains_gstreamer_without_webrtcbin(monkeypatch):
+    """ward --check offered "xbps-install -S gst-plugins-bad1 libnice gst-plugins-good1" on Void although they
+    were installed: Void's gst-plugins-bad1 has no webrtcbin, since its libnice is older than GStreamer needs."""
+    from ward import deps
+
+    monkeypatch.setattr(deps, "_calls_missing", lambda: ["webrtcbin"])
+    monkeypatch.setattr(deps, "package_manager", lambda: "xbps")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "libnice-0.1.22_1\n", ""))
+    f = deps._calls_feature()
+    assert not f.available and f.hint == ""
+    assert "built without webrtcbin" in f.detail and "0.1.22" in f.detail
+    monkeypatch.setattr(deps, "_calls_missing", lambda: ["webrtcbin", "nicesrc"])
+    assert "xbps-install" in deps._calls_feature().hint          # really missing packages: the usual hint
+
+
+# ---------------------------------------------------------------------------------------------- AppImage
+def _mkappimage():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("mkappimage", os.path.join(ROOT, "packaging", "mkappimage.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc/self/fd")
+def test_apprun_environment(tmp_path):
+    """AppRun points GTK, GStreamer, GdkPixbuf and Enchant into the image, tells Ward how to start it again and leaves
+    LD_LIBRARY_PATH alone, so the programs Ward starts get the system's libraries."""
+    app = tmp_path / "Ward.AppDir"
+    lib = app / "usr" / "lib" / "x86_64-linux-gnu"
+    (lib / "girepository-1.0").mkdir(parents=True)
+    (lib / "enchant-2").mkdir()
+    (lib / "gdk-pixbuf-2.0" / "2.10.0").mkdir(parents=True)
+    (lib / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache.in").write_text('"@APPDIR@/usr/lib/svg.so"\n')
+    (app / "usr" / "bin").mkdir(parents=True)
+    out = tmp_path / "out"
+    _fake_bin(app / "usr" / "bin", "python3", 'for v in WARD_APPIMAGE WARD_SHARE_DIR GI_TYPELIB_PATH GTK_PATH '
+              'GST_PLUGIN_SYSTEM_PATH_1_0 GST_PLUGIN_SCANNER_1_0 GDK_PIXBUF_MODULE_FILE PYTHONPATH '
+              'LD_LIBRARY_PATH; do\n'
+              '    eval "echo $v=\\${$v-unset}"\ndone > "%s"\necho "fd9=$(readlink /proc/$$/fd/9)" >> "%s"\n'
+              'echo "args=$*" >> "%s"\n' % (out, out, out))
+    shutil.copy(os.path.join(ROOT, "packaging", "appimage", "AppRun"), app / "AppRun")
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "XDG_RUNTIME_DIR": str(tmp_path),
+           "APPIMAGE": "/home/me/Ward-1.0.AppImage", "PYTHONPATH": "/somewhere/else"}
+    subprocess.run([_sh(), str(app / "AppRun"), "--background"], check=True, env=env)
+    got = dict(line.split("=", 1) for line in out.read_text().splitlines())
+    assert got["args"] == "-m ward --background"
+    assert got["WARD_APPIMAGE"] == "/home/me/Ward-1.0.AppImage"
+    assert got["WARD_SHARE_DIR"] == "%s/usr/share/ward" % app
+    assert got["GI_TYPELIB_PATH"] == "%s/girepository-1.0" % lib
+    assert got["GST_PLUGIN_SYSTEM_PATH_1_0"] == "%s/gstreamer-1.0" % lib
+    assert got["GTK_PATH"] == "%s/gtk-4.0" % lib
+    assert got["PYTHONPATH"] == got["LD_LIBRARY_PATH"] == "unset"
+    assert got["fd9"] == str(lib / "enchant-2")
+    with open(got["GDK_PIXBUF_MODULE_FILE"]) as f:
+        assert f.read() == '"%s/usr/lib/svg.so"\n' % app
+
+
+def test_apprun_finds_certificates():
+    """The bundled OpenSSL looks where Debian keeps certificates; the other systems' places are tried in turn."""
+    with open(os.path.join(ROOT, "packaging", "appimage", "AppRun")) as f:
+        text = f.read()
+    for path in ("/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/ca-bundle.pem",
+                 "/etc/ssl/cert.pem"):
+        assert path in text
+
+
+def test_appimage_enchant_looks_in_descriptor_9(tmp_path):
+    """Enchant only loads providers from the folder it was built for: the bundled copy is pointed at the one AppRun
+    opens as descriptor 9, with the string's length kept."""
+    mk = _mkappimage()
+    b = mk.Bundle.__new__(mk.Bundle)
+    b.ma = "x86_64-linux-gnu"
+    b.lib = str(tmp_path)
+    (tmp_path / "enchant-2").mkdir()
+    lib = tmp_path / "libenchant-2.so.2"
+    before = b"\x7fELF...\0/usr/lib/x86_64-linux-gnu/enchant-2\0/usr/share/enchant-2\0"
+    lib.write_bytes(before)
+    b.libs = {"libenchant-2.so.2": str(lib)}
+    b.enchant()
+    after = lib.read_bytes()
+    assert len(after) == len(before)
+    assert b"\0/proc/self/fd/9\0" in after and b"/usr/lib/x86_64-linux-gnu/enchant-2" not in after
+    assert b"/usr/share/enchant-2\0" in after
+
+
+def test_appimage_bundles_no_system_libraries():
+    mk = _mkappimage()
+    for soname in ("libc.so.6", "libGL.so.1", "libEGL.so.1", "libX11.so.6", "libfontconfig.so.1", "libstdc++.so.6"):
+        assert soname in mk.EXCLUDE
+    # the small X11 libraries are not in AppImage's excludelist: GTK needs them, minimal systems lack them
+    assert "libXi.so.6" not in mk.EXCLUDE and "libXcursor.so.1" not in mk.EXCLUDE
+
+
+def test_appimage_has_no_package_manager(monkeypatch):
+    """Inside the AppImage the system's packages add nothing: no "sudo apt install" hints, and --check says where
+    Ward runs from."""
+    from ward import deps
+
+    monkeypatch.setenv("WARD_APPIMAGE", "/home/me/Ward.AppImage")
+    deps.package_manager.cache_clear()
+    try:
+        assert deps.package_manager() is None
+        assert deps.install_hint("spelling") == ""
+        assert "Package manager: AppImage" in deps.report()
+    finally:
+        monkeypatch.delenv("WARD_APPIMAGE")
+        deps.package_manager.cache_clear()
+
+
+def test_package_sh_builds_appimages():
+    out = subprocess.run(["bash", os.path.join(ROOT, "package.sh"), "--help"], check=True, capture_output=True,
+                         text=True).stdout
+    assert "--appimage" in out
+    with open(os.path.join(ROOT, "package.sh")) as f:
+        text = f.read()
+    assert "flatpak appimage recipes; do" in text and "appimage) build_appimage ;;" in text

@@ -290,7 +290,10 @@ class WardApplication(Adw.Application):
             return
         path = paths.autostart_file()
         if on:
-            exe = shutil.which("ward") or "ward"
+            # an AppImage is started by its file: there is no ward on the PATH
+            exe = paths.appimage() or shutil.which("ward") or "ward"
+            if " " in exe:
+                exe = '"%s"' % exe
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("[Desktop Entry]\nType=Application\nName=%s\nExec=%s --background\nIcon=%s\n"

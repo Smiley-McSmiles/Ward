@@ -50,8 +50,8 @@ PACKAGES: dict[str, dict[str, str]] = {
                "media": "gstreamer-plugins-good", "zbar": "zbar", "pip": "python3-pip", "omemo": "-"},
     "xbps": {"python": "python3", "gi": "python3-gobject", "gtk": "gtk4", "adw": "libadwaita",
              "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
-             "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it-py", "mdit": "python3-mdit-py-plugins",
-             "linkify": "python3-linkify-it-py", "crypto": "python3-cryptography", "pillow": "python3-Pillow",
+             "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it", "mdit": "python3-mdit-py-plugins",
+             "linkify": "-", "crypto": "python3-cryptography", "pillow": "python3-Pillow",
              "gpg": "gnupg", "media": "gst-plugins-good1", "zbar": "zbar", "pip": "python3-pip", "omemo": "-"},
     "apk": {"python": "python3", "gi": "py3-gobject3", "gtk": "gtk4.0", "adw": "libadwaita",
             "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
@@ -92,7 +92,7 @@ CALL_PACKAGES = {
     "dnf": "gstreamer1-plugins-bad-free libnice-gstreamer1 gstreamer1-plugins-good gstreamer1-plugin-gtk4",
     "pacman": "gst-plugins-bad libnice gst-plugins-good gst-plugin-gtk4",
     "zypper": "gstreamer-plugins-bad typelib-1_0-GstWebRTC-1_0 gstreamer-plugins-libnice gstreamer-plugins-good",
-    "xbps": "gst-plugins-bad1 libnice gst-plugins-good1",
+    "xbps": "gst-plugins-bad1 libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-rs1",
     "apk": "gst-plugins-bad libnice-gstreamer gst-plugins-good",
     "emerge": "media-plugins/gst-plugins-webrtc net-libs/libnice media-plugins/gst-plugins-vpx "
               "media-plugins/gst-plugins-opus",
@@ -115,8 +115,8 @@ _PM_BINARIES = (("apt", "apt-get"), ("dnf", "dnf"), ("pacman", "pacman"), ("zypp
 
 @cache
 def package_manager() -> str | None:
-    if os.path.exists("/.flatpak-info"):
-        return None
+    if os.path.exists("/.flatpak-info") or os.environ.get("WARD_APPIMAGE"):
+        return None         # the system's packages cannot add anything to the sandbox or the image
     sysname = platform.system()
     for name, binary in _PM_BINARIES:
         if name == "pkg" and sysname not in ("FreeBSD", "DragonFly"):
@@ -232,10 +232,19 @@ def have(name: str) -> bool:
     if name == "source":
         return _typelib("GtkSource", "5")[0]
     if name == "spelling":
-        # some distributions ship the typelib without the library (or the other way round)
+        # some distributions ship the typelib without the library (or the other way round).  ldconfig does not know
+        # the AppImage's own copy: that one is found by loading it.
+        import ctypes
         import ctypes.util
 
-        return ctypes.util.find_library("spelling-1") is not None and _typelib("Spelling", "1")[0]
+        def loads(soname: str) -> bool:
+            try:
+                ctypes.CDLL(soname)
+                return True
+            except OSError:
+                return False
+        return ((ctypes.util.find_library("spelling-1") is not None or loads("libspelling-1.so.1"))
+                and _typelib("Spelling", "1")[0])
     if name == "secret":
         return _typelib("Secret", "1")[0]
     if name == "pillow":
@@ -292,19 +301,44 @@ def features() -> list[Feature]:
                 N_("GdkPixbuf is used without it"), ("pillow",)),
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
-        Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), _calls_available(),
-                ", ".join(_calls_missing()), ("calls",)),
+        _calls_feature(),
     ]
+
+
+def _calls_feature() -> Feature:
+    missing = _calls_missing()
+    reason = calls_built_without_webrtcbin()
+    if reason:
+        # the packages are there; installing them again would not help
+        return Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), False, reason, ())
+    return Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), not missing, ", ".join(missing),
+                   ("calls",))
+
+
+def calls_built_without_webrtcbin() -> str:
+    """Why calls cannot work although GStreamer's packages are installed, or "".  Void's gst-plugins-bad1 1.28 is
+    built without webrtcbin: GStreamer's WebRTC plugin needs libnice 0.1.23, and Void has 0.1.22."""
+    if _calls_missing() != ["webrtcbin"]:
+        return ""
+    text = "GStreamer here is built without webrtcbin"
+    if package_manager() == "xbps":
+        version = ""
+        try:
+            import subprocess
+
+            r = subprocess.run(["xbps-query", "-p", "pkgver", "libnice"], capture_output=True, text=True, timeout=5)
+            version = r.stdout.strip().rpartition("-")[2].split("_")[0]
+        except (OSError, subprocess.SubprocessError):
+            pass
+        text += ": Void's gst-plugins-bad1 leaves it out because its libnice (%s) is older than the 0.1.23 " \
+                "GStreamer's WebRTC plugin needs" % (version or "0.1.22")
+    return text
 
 
 def _calls_missing() -> list[str]:
     from .core.calls import media
 
     return media.missing_elements()
-
-
-def _calls_available() -> bool:
-    return not _calls_missing()
 
 
 def _gi_version() -> str:
@@ -328,8 +362,8 @@ def report() -> str:
     lines = ["Ward v%s on %s %s, Python %s" % (_ward_version(), platform.system(), platform.release(),
                                                platform.python_version())]
     pm = package_manager()
-    lines.append("Package manager: %s" % (pm or ("Flatpak sandbox" if os.path.exists("/.flatpak-info")
-                                                  else "unknown")))
+    lines.append("Package manager: %s" % (pm or ("Flatpak sandbox" if os.path.exists("/.flatpak-info") else
+                                                  "AppImage" if os.environ.get("WARD_APPIMAGE") else "unknown")))
     lines.append("")
     for f in features():
         mark = "ok " if f.available else ("MISSING" if f.required else "-- ")

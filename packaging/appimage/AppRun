@@ -1,0 +1,45 @@
+#!/bin/sh
+# Ward's AppImage: start the bundled Python on Ward, with GTK, GStreamer and GdkPixbuf pointed at their modules
+# inside the image.  The libraries find each other through their rpath, so LD_LIBRARY_PATH stays untouched and the
+# programs Ward starts (a browser, a sound player) run with the system's own.
+HERE=$(dirname "$(readlink -f "$0")")
+MA=x86_64-linux-gnu
+for d in "$HERE"/usr/lib/*-linux-gnu*; do [ -d "$d/girepository-1.0" ] && MA=${d##*/} && break; done
+LIB=$HERE/usr/lib/$MA
+
+# how to start Ward again (autostart at login): the .AppImage file, or this script in an extracted image
+export WARD_APPIMAGE="${APPIMAGE:-$HERE/AppRun}"
+export WARD_SHARE_DIR="$HERE/usr/share/ward"
+export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+unset PYTHONHOME PYTHONPATH
+
+export GI_TYPELIB_PATH="$LIB/girepository-1.0"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export GTK_PATH="$LIB/gtk-4.0"
+export GIO_EXTRA_MODULES="$LIB/gio/modules"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$LIB/gstreamer-1.0"
+export GST_PLUGIN_SCANNER_1_0="$LIB/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
+unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0 GST_PLUGIN_SYSTEM_PATH
+cache=${XDG_CACHE_HOME:-$HOME/.cache}/ward
+mkdir -p "$cache" 2>/dev/null
+export GST_REGISTRY_1_0="$cache/gstreamer-registry-appimage.bin"
+
+# GdkPixbuf's loader list names each loader by its full path, and the image is mounted somewhere new every time
+run=${XDG_RUNTIME_DIR:-$cache}
+loaders=$run/ward-appimage-$(printf %s "$HERE" | cksum | cut -d' ' -f1).loaders.cache
+sed "s|@APPDIR@|$HERE|g" "$LIB/gdk-pixbuf-2.0/2.10.0/loaders.cache.in" > "$loaders" 2>/dev/null &&
+    export GDK_PIXBUF_MODULE_FILE="$loaders"
+
+# Enchant (spell check) finds its Hunspell provider in the folder open as descriptor 9, dictionaries in the system's
+[ -d "$LIB/enchant-2" ] && exec 9<"$LIB/enchant-2"
+
+# the bundled OpenSSL looks for certificates where Debian keeps them: elsewhere, point it at the system's
+if [ -z "${SSL_CERT_FILE:-}" ]; then
+    for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem \
+             /etc/pki/tls/cacert.pem /etc/ssl/cert.pem; do
+        if [ -r "$f" ]; then export SSL_CERT_FILE="$f"; break; fi
+    done
+fi
+[ -z "${SSL_CERT_DIR:-}" ] && [ -d /etc/ssl/certs ] && export SSL_CERT_DIR=/etc/ssl/certs
+
+exec "$HERE/usr/bin/python3" -m ward "$@"

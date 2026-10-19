@@ -20,6 +20,25 @@ jobs:
           name: packages
           path: dist/
 
+  appimage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf squashfs-tools python3-pip python3-gi python3-gi-cairo python3-gst-1.0 \
+            gir1.2-girepository-2.0 gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1 \
+            gir1.2-spelling-1 libspelling-1-1 libenchant-2-2 gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
+            gir1.2-gst-plugins-bad-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-nice gstreamer1.0-libav gstreamer1.0-pipewire gstreamer1.0-alsa \
+            libgtk-4-media-gstreamer librsvg2-common adwaita-icon-theme shared-mime-info dconf-gsettings-backend
+      - run: ./package.sh appimage
+      - run: APPIMAGE_EXTRACT_AND_RUN=1 dist/ward-*-x86_64.AppImage --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+
   flatpak:
     runs-on: ubuntu-24.04
     container:
@@ -34,7 +53,7 @@ jobs:
           upload-artifact: true
 
   release:
-    needs: [packages, flatpak]
+    needs: [packages, appimage, flatpak]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -46,9 +65,9 @@ jobs:
           python3 tools/release_notes.py "${GITHUB_REF_NAME}" > notes.md
           mkdir upload
           find artifacts -maxdepth 2 -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.rpm' \
-            -o -name '*.pkg.tar.xz' -o -name '*.flatpak' -o -name SHA256SUMS \) -exec cp {} upload/ \;
+            -o -name '*.pkg.tar.xz' -o -name '*.flatpak' -o -name '*.AppImage' -o -name SHA256SUMS \) -exec cp {} upload/ \;
           tar -C artifacts/packages -czf upload/recipes.tar.gz recipes
-          (cd upload && sha256sum -- *.tar.gz *.deb *.rpm *.pkg.tar.xz *.flatpak 2>/dev/null > SHA256SUMS || true)
+          (cd upload && sha256sum -- *.tar.gz *.deb *.rpm *.pkg.tar.xz *.flatpak *.AppImage 2>/dev/null > SHA256SUMS || true)
       - uses: softprops/action-gh-release@v2
         with:
           body_path: notes.md

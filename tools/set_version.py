@@ -75,6 +75,7 @@ def main(argv: list[str]) -> int:
     readme = readme.replace("badge/version-%s-blue.svg" % old, "badge/version-%s-blue.svg" % version)
     readme = readme.replace('alt="Version %s"' % old, 'alt="Version %s"' % version)
     for a, b in (("ward-%s.flatpak" % old, "ward-%s.flatpak" % version),
+                 ("ward-%s-x86_64.AppImage" % old, "ward-%s-x86_64.AppImage" % version),
                  ("ward_%s_all.deb" % opv["deb"], "ward_%s_all.deb" % pv["deb"]),
                  ("ward-%s-1.noarch.rpm" % opv["deb"], "ward-%s-1.noarch.rpm" % pv["deb"]),
                  ("ward-%s-1-any.pkg.tar.xz" % opv["plain"], "ward-%s-1-any.pkg.tar.xz" % pv["plain"])):

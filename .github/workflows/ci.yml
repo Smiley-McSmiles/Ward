@@ -164,6 +164,34 @@ jobs:
           name: packages
           path: dist/
 
+  appimage:
+    name: AppImage
+    runs-on: ubuntu-24.04      # the oldest system with GTK 4.12 and libadwaita 1.4: its glibc is the AppImage's floor
+    steps:
+      - uses: actions/checkout@v4
+      - name: What the image bundles
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf squashfs-tools python3-pip python3-gi python3-gi-cairo python3-gst-1.0 \
+            gir1.2-girepository-2.0 gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1 \
+            gir1.2-spelling-1 libspelling-1-1 libenchant-2-2 gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
+            gir1.2-gst-plugins-bad-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-nice gstreamer1.0-libav gstreamer1.0-pipewire gstreamer1.0-alsa \
+            libgtk-4-media-gstreamer librsvg2-common adwaita-icon-theme shared-mime-info dconf-gsettings-backend
+      - run: ./package.sh appimage
+      - name: Start it
+        run: |
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          dist/ward-*-x86_64.AppImage --version
+          dist/ward-*-x86_64.AppImage --check | tee check.txt
+          grep -F "Package manager: AppImage" check.txt
+          grep -F "[ok ] OMEMO 2 encryption" check.txt
+          grep -F "[ok ] Audio and video calls" check.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+
   flatpak:
     name: Flatpak
     runs-on: ubuntu-24.04

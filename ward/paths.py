@@ -126,6 +126,11 @@ def in_flatpak() -> bool:
     return os.path.exists("/.flatpak-info")
 
 
+def appimage() -> str:
+    """The AppImage Ward runs from (its AppRun sets this), or ""."""
+    return os.environ.get("WARD_APPIMAGE", "")
+
+
 def user_downloads() -> str:
     try:
         from gi.repository import GLib
