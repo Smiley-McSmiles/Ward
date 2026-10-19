@@ -72,7 +72,8 @@ def main(argv: list[str]) -> int:
     sub("po/ward.pot", r'"Project-Id-Version: Ward [^\\"]+', '"Project-Id-Version: Ward %s' % version)
 
     readme = read("README.md")
-    readme = re.sub(r"^# Ward v\S+", "# Ward v%s" % version, readme, count=1, flags=re.M)
+    readme = readme.replace("badge/version-%s-blue.svg" % old, "badge/version-%s-blue.svg" % version)
+    readme = readme.replace('alt="Version %s"' % old, 'alt="Version %s"' % version)
     for a, b in (("ward-%s.flatpak" % old, "ward-%s.flatpak" % version),
                  ("ward_%s_all.deb" % opv["deb"], "ward_%s_all.deb" % pv["deb"]),
                  ("ward-%s-1.noarch.rpm" % opv["deb"], "ward-%s-1.noarch.rpm" % pv["deb"]),
