@@ -319,7 +319,8 @@ class MessageRow(Gtk.Box):
             return lbl
         nicks = self.view.mention_names()
         doc = render.parsed(m.id, body, m.is_markdown, nicks, settings["chats.markdown_others"])
-        r = render.Renderer(on_link=self.view.on_link, dark=style.is_dark(), action=action)
+        r = render.Renderer(on_link=self.view.on_link, dark=style.is_dark(), action=action,
+                            on_code_copy=self.view.on_code_copy)
         w = r.build(doc)
         if m.extra.get("unencrypted"):
             w.add_css_class("message-unencrypted")

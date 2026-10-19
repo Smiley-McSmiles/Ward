@@ -52,6 +52,18 @@ def parsed(key, text: str, is_markdown: bool, nicknames=None, others_markdown: b
     return doc
 
 
+def inline_code_ranges(runs: Inlines) -> list[tuple[int, int, str]]:
+    """Character ranges of inline-code runs in the label's plain text, with their contents."""
+    ranges = []
+    start = 0
+    for r in runs:
+        end = start + len(r.text)
+        if CODE in r.styles and r.text:
+            ranges.append((start, end, r.text))
+        start = end
+    return ranges
+
+
 def markup(runs: Inlines, revealed: set[int] | None = None, dark: bool = False) -> str:
     out = []
     for r in runs:
@@ -82,11 +94,13 @@ class Renderer:
     """Builds the widgets of one message.  on_link(uri, text) decides what clicking a link does."""
 
     def __init__(self, on_link: Callable[[str, str], bool] | None = None, dark: bool = False,
-                 large_emoji: bool = False, action: bool = False):
+                 large_emoji: bool = False, action: bool = False,
+                 on_code_copy: Callable[[str], None] | None = None):
         self.on_link = on_link
         self.dark = dark
         self.large_emoji = large_emoji
         self.action = action
+        self.on_code_copy = on_code_copy
 
     def build(self, doc: Document) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -151,6 +165,14 @@ class Renderer:
         revealed: set[int] = set()
         lbl.set_markup(markup(runs, revealed, self.dark))
         lbl.connect("activate-link", self._link, runs)
+        if self.on_code_copy is not None and any(CODE in r.styles for r in runs):
+            ranges = inline_code_ranges(runs)
+            state = {"code": None}
+            click = Gtk.GestureClick(button=1)
+            click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            click.connect("pressed", self._code_pressed, lbl, ranges, state)
+            click.connect("released", self._code_clicked, lbl, ranges, state)
+            lbl.add_controller(click)
         if any(SPOILER in r.styles for r in runs):
             click = Gtk.GestureClick()
 
@@ -161,6 +183,41 @@ class Renderer:
             lbl.add_controller(click)
             lbl.set_tooltip_text(_("Spoiler: click to reveal"))
         return lbl
+
+    def _code_at(self, label, ranges, x, y) -> str | None:
+        layout = label.get_layout()
+        if layout is None:
+            return None
+        ox, oy = label.get_layout_offsets()
+        found, index, _trailing = layout.xy_to_index(int(x - ox), int(y - oy))
+        if not found:
+            return None
+        text = label.get_text()
+        # Pango indexes are byte offsets into the UTF-8 text; the runs and ranges are in characters.
+        char_index = len(text.encode("utf-8")[:max(0, index)].decode("utf-8", "ignore"))
+        for start, end, code in ranges:
+            if start <= char_index < end:
+                return code
+        return None
+
+    def _code_pressed(self, gesture, n_press, x, y, label, ranges, state) -> None:
+        state["code"] = None
+        if n_press != 1:
+            return
+        code = self._code_at(label, ranges, x, y)
+        if code is not None:
+            state["code"] = code
+            # Claim this click so the selectable label does not turn it into a text cursor move.
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+
+    def _code_clicked(self, _gesture, n_press, _x, _y, label, _ranges, state) -> None:
+        code = state["code"]
+        state["code"] = None
+        if n_press != 1 or code is None:
+            return
+        label.get_clipboard().set(code)
+        if self.on_code_copy is not None:
+            self.on_code_copy(code)
 
     def _link(self, label, uri, runs) -> bool:
         if self.on_link is None:
