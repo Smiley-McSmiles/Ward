@@ -96,8 +96,7 @@ class ConversationView(Gtk.Box):
         self.sidebar_button = Gtk.Button(icon_name="sidebar-show-symbolic", css_classes=["flat"])
         self.sidebar_button.connect("clicked", lambda *_: self.window.toggle_sidebar())
         self.header.pack_start(self.sidebar_button)
-        self.window.split.connect("notify::collapsed", lambda *_: self._update_sidebar_button())
-        self.window.split.connect("notify::show-content", lambda *_: self._update_sidebar_button())
+        self.window.split.connect("notify::show-sidebar", lambda *_: self._update_sidebar_button())
         self._update_sidebar_button()
         self.title_button = Gtk.Button(css_classes=["flat"])
         tb = Gtk.Box(spacing=8)
@@ -137,8 +136,7 @@ class ConversationView(Gtk.Box):
         self.header.pack_end(self.call_button)
 
     def _update_sidebar_button(self) -> None:
-        hidden = self.window.split.get_collapsed() if not self.window.narrow else \
-            not self.window.split.get_show_content()
+        hidden = not self.window.split.get_show_sidebar()
         self.sidebar_button.set_tooltip_text(_("Show chat list") if hidden else _("Hide chat list"))
 
     def _build_banner(self) -> None:
