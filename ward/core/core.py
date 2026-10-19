@@ -38,6 +38,7 @@ from .requests import Requests
 from .roster import RosterService
 from .session import AccountSession
 from .storage.db import Database
+from .turn import TurnService
 
 log = logging.getLogger("ward.core")
 
@@ -77,6 +78,7 @@ class Core(GObject.Object):
         self.started = False
 
         self.accounts = Accounts(self.db)
+        self.turn = TurnService(self)
         self.pep = Pep(self)
         self.roster = RosterService(self)
         self.chats = Chats(self)
