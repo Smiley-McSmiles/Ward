@@ -300,11 +300,11 @@ def test_chat_actions_and_sidebar_toggle(app, run):
         view = w.conversation
         assert view.menu_button.activate_action("chat.details", None)
         assert view.menu_button.activate_action("chat.clear", None)
-        assert not w.split.get_collapsed()
+        assert w.split.get_show_sidebar()
         view.sidebar_button.emit("clicked")
-        assert w.split.get_collapsed()
+        assert not w.split.get_show_sidebar()
         view.sidebar_button.emit("clicked")
-        assert not w.split.get_collapsed()
+        assert w.split.get_show_sidebar()
         await app.core.shutdown()
 
     run(scenario(), timeout=30)

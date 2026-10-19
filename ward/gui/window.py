@@ -87,9 +87,10 @@ class MainWindow(Adw.ApplicationWindow):
         loading.set_child(compat.spinner())
         self.top.add_named(loading, "loading")
 
-        self.split = Adw.NavigationSplitView(min_sidebar_width=280, max_sidebar_width=380, sidebar_width_fraction=0.3)
+        self.split = Adw.OverlaySplitView(min_sidebar_width=280, max_sidebar_width=380,
+                                          sidebar_width_fraction=0.3, show_sidebar=True)
         self.sidebar = Sidebar(self)
-        self.split.set_sidebar(Adw.NavigationPage(title=_("Chats"), child=self.sidebar, tag="sidebar"))
+        self.split.set_sidebar(self.sidebar)
         self.content_stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         empty_view = Adw.ToolbarView()
         empty_view.add_top_bar(Adw.HeaderBar(show_title=False))
@@ -102,9 +103,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.content_stack.add_named(empty_view, "empty")
         self.conversation = ConversationView(self)
         self.content_stack.add_named(self.conversation, "chat")
-        self.content_page = Adw.NavigationPage(title=_("Chat"), child=self.content_stack, tag="content")
-        self.split.set_content(self.content_page)
-        self.split.connect("notify::show-content", self._on_show_content)
+        self.split.set_content(self.content_stack)
+        self.split.connect("notify::show-sidebar", self._on_show_sidebar)
         self.top.add_named(self.split, "main")
         self.welcome = None
 
@@ -238,8 +238,8 @@ class MainWindow(Adw.ApplicationWindow):
     # ================================================================== chats
     def show_chat(self, chat: ChatItem | None, force: bool = False) -> None:
         if chat is self.current_chat and not force:
-            if chat is not None:
-                self.split.set_show_content(True)
+            if chat is not None and self.narrow:
+                self.split.set_show_sidebar(False)
             return
         if chat is not None and not chat.open:
             widgets.run(self, self.core.chats.set_flags(chat, open=True))
@@ -248,38 +248,36 @@ class MainWindow(Adw.ApplicationWindow):
         if chat is None:
             self.conversation.show_chat(None)
             self.content_stack.set_visible_child_name("empty")
-            self.content_page.set_title(_("Chat"))
             self.core.set_active_chat(None)
-            if self.narrow:
-                self.split.set_show_content(False)
+            self.split.set_show_sidebar(True)
             return
         # the conversation sets up its members panel before it becomes visible (libadwaita 1.5 mis-sizes a split
         # view that starts showing its sidebar while it is being mapped)
         self.conversation.show_chat(chat)
         self.content_stack.set_visible_child_name("chat")
-        self.content_page.set_title(chat.name or chat.jid)
-        self.split.set_show_content(True)
+        if self.narrow:
+            self.split.set_show_sidebar(False)
         self.settings["ui.last_chat"] = str(chat.id)
         self.sidebar._refilter()
 
-    def _on_show_content(self, *_a) -> None:
-        if self.narrow and not self.split.get_show_content():
-            # back to the list on a phone: the chat is no longer being read
+    def _on_show_sidebar(self, *_a) -> None:
+        if self.narrow and self.split.get_show_sidebar():
+            # The sidebar covers the chat on a phone; it is no longer being read, but keep its rows so sliding it
+            # back is instant.
             self.core.set_active_chat(None)
-            self.current_chat = None
-            self.conversation.show_chat(None)
-            self.sidebar.select(None)
 
     def _set_narrow(self, narrow: bool) -> None:
         self.narrow = narrow
         self.conversation.set_narrow(narrow)
+        self.split.set_collapsed(narrow)
+        if narrow:
+            self.split.set_show_sidebar(self.current_chat is None)
+        else:
+            self.split.set_show_sidebar(True)
 
     def toggle_sidebar(self) -> None:
-        """Collapse or show the chat list; NavigationSplitView animates the column change."""
-        if self.narrow:
-            self.split.set_show_content(not self.split.get_show_content())
-        else:
-            self.split.set_collapsed(not self.split.get_collapsed())
+        """Collapse or show the chat list; OverlaySplitView animates the sidebar."""
+        self.split.set_show_sidebar(not self.split.get_show_sidebar())
 
     def open_chat_id(self, chat_id: int) -> None:
         chat = self.core.chats.by_id.get(chat_id)
@@ -356,8 +354,8 @@ class MainWindow(Adw.ApplicationWindow):
         if conv.search_button.get_active():
             conv.search_button.set_active(False)
             return True
-        if self.narrow and self.split.get_show_content():
-            self.split.set_show_content(False)
+        if self.narrow and not self.split.get_show_sidebar():
+            self.split.set_show_sidebar(True)
             return True
         return False
 
