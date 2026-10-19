@@ -157,6 +157,8 @@ SPECS: dict[str, Spec] = {
     "chats.voice_quality": S("choice", "standard", N_("Voice message quality"), page="chats",
                              group=N_("Media"), choices=(("standard", N_("Standard")), ("high", N_("High")))),
     # ------------------------------------------------------------------ Notifications
+    "calls.enabled": S("bool", True, N_("Audio and video calls"),
+                        N_("Contacts can call you, and you them, on this device"), page="chats", group=N_("Calls")),
     "notify.enabled": S("bool", True, N_("Notifications"), page="notifications", group=N_("Notifications")),
     "notify.content": S("choice", "full", N_("Show in notification"), page="notifications",
                         group=N_("Notifications"),
@@ -181,6 +183,8 @@ SPECS: dict[str, Spec] = {
                               group=N_("Sounds"), advanced=True),
     "notify.sound_request": S("sound", "dialog-information", N_("Contact request"), page="notifications",
                               group=N_("Sounds"), advanced=True),
+    "notify.sound_call": S("sound", "phone-incoming-call", N_("Incoming call"), page="notifications",
+                           group=N_("Sounds"), advanced=True),
     # ------------------------------------------------------------------ Encryption and privacy
     "encryption.default": S("choice", "always", N_("Default encryption"),
                             N_("Each account and chat can override this"), page="encryption",

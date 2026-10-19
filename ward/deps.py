@@ -85,6 +85,24 @@ PACKAGES: dict[str, dict[str, str]] = {
               "media": "gst-plugins1-good", "zbar": "zbar", "pip": PY + "-pip", "omemo": "-"},
 }
 
+# calls: GStreamer's WebRTC (webrtcbin, DTLS, SRTP), ICE (libnice), VP8 and Opus, and the GTK 4 video sink
+CALL_PACKAGES = {
+    "apt": "gstreamer1.0-plugins-bad gir1.2-gst-plugins-bad-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-nice "
+           "gstreamer1.0-plugins-good gstreamer1.0-gtk4",
+    "dnf": "gstreamer1-plugins-bad-free libnice-gstreamer1 gstreamer1-plugins-good gstreamer1-plugin-gtk4",
+    "pacman": "gst-plugins-bad libnice gst-plugins-good gst-plugin-gtk4",
+    "zypper": "gstreamer-plugins-bad typelib-1_0-GstWebRTC-1_0 gstreamer-plugins-libnice gstreamer-plugins-good",
+    "xbps": "gst-plugins-bad1 libnice gst-plugins-good1",
+    "apk": "gst-plugins-bad libnice-gstreamer gst-plugins-good",
+    "emerge": "media-plugins/gst-plugins-webrtc net-libs/libnice media-plugins/gst-plugins-vpx "
+              "media-plugins/gst-plugins-opus",
+    "pkg": "gstreamer1-plugins-webrtc libnice-gst1 gstreamer1-plugins-vpx gstreamer1-plugins-opus",
+    "pkg_add": "gstreamer1-plugins-bad libnice gstreamer1-plugins-good",
+    "pkgin": "gst-plugins1-bad libnice gst-plugins1-good",
+}
+for _pm, _names in CALL_PACKAGES.items():
+    PACKAGES[_pm]["calls"] = _names
+
 INSTALL_CMD = {"apt": "sudo apt install", "dnf": "sudo dnf install", "pacman": "sudo pacman -S",
                "zypper": "sudo zypper install", "xbps": "sudo xbps-install -S", "apk": "doas apk add",
                "emerge": "sudo emerge --ask", "pkg": "sudo pkg install", "pkg_add": "doas pkg_add",
@@ -263,8 +281,20 @@ def features() -> list[Feature]:
                 N_("GdkPixbuf is used without it"), ("pillow",)),
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
+        Feature("calls", N_("Audio and video calls (GStreamer WebRTC)"), _calls_available(),
+                ", ".join(_calls_missing()), ("calls",)),
     ]
     return out
+
+
+def _calls_missing() -> list[str]:
+    from .core.calls import media
+
+    return media.missing_elements()
+
+
+def _calls_available() -> bool:
+    return not _calls_missing()
 
 
 def _gi_version() -> str:

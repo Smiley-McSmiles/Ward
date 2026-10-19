@@ -135,3 +135,17 @@ button.message-meta { padding: 0 4px; min-height: 0; min-width: 0; font-weight: 
 .captcha { border-radius: 8px; }
 .qr-code { background-color: white; padding: 12px; border-radius: 12px; }
 .video-fullscreen { background-color: black; }
+/* calls */
+.call-window { background-color: #1e1e22; color: white; }
+.call-window .dim-label { color: alpha(white, 0.7); }
+.call-remote { background-color: black; }
+.call-local { border-radius: 12px; box-shadow: 0 2px 8px alpha(black, 0.5); }
+.call-button { min-width: 56px; min-height: 56px; }
+.call-button image { -gtk-icon-size: 22px; }
+.call-button:not(.destructive-action):not(.suggested-action):not(.success) {
+  background-color: alpha(white, 0.15); color: white; }
+.call-button:checked { background-color: white; color: #1e1e22; }
+.call-button.success { background-color: @success_bg_color; color: @success_fg_color; }
+.call-video-status { padding: 4px 10px; border-radius: 8px; }
+.call-line { margin: 6px 0; padding: 6px 12px; border-radius: 12px; background-color: alpha(currentColor, 0.06); }
+.call-line.missed { color: @error_color; }

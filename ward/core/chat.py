@@ -142,6 +142,13 @@ class ChatService(GObject.Object):
         if pm.type == "error":
             await self._on_error(session, pm)
             return
+        if pm.type != "groupchat":
+            # calls (Jingle Message Initiation): live, carbon copies and archived alike
+            inner = stanzas.unwrap(el)[0]
+            sent = (w is not None and w.kind == "carbon-sent") or (
+                w is not None and w.kind == "mam" and util.bare(pm.from_jid) == own)
+            if await self.core.calls.handle_message(session, pm, inner, w is not None and w.kind == "mam", sent):
+                return
         if pm.type == "groupchat":
             if w is None:
                 await self.core.muc.on_groupchat(session, pm, el)

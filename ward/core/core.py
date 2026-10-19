@@ -69,6 +69,7 @@ class Core(GObject.Object):
         self.db = db or Database()
         self.connect_on_start = connect
         self.sessions: dict[int, AccountSession] = {}
+        self._tasks: set[asyncio.Task] = set()
         self.own_devices: dict[int, dict] = {}
         self.active_chat: ChatItem | None = None
         self.window_focused = False
@@ -89,6 +90,9 @@ class Core(GObject.Object):
         self.e2e = E2E(self)
         self.admin = AdminService(self)
         self.notifier = Notifier(self)
+        from .calls.service import CallService
+
+        self.calls = CallService(self)
         self.omemo = None
         self.omemo_error = ""
         self.pgp = None
@@ -134,10 +138,23 @@ class Core(GObject.Object):
                     aio.spawn(self.connect_account(acc))
         aio.spawn(self._retention())
 
+    def _track(self, task: asyncio.Task) -> None:
+        """Work that uses the database: shutdown waits for it to stop before closing it."""
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
     async def shutdown(self) -> None:
         for s in list(self.sessions.values()):
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(s.stop(), 4)
+        # login steps still running, and the message workers: stopped before the database closes under them
+        for aid in list(self.messaging.workers):
+            self.messaging.detach(aid)
+        pending = [t for t in self._tasks if not t.done()]
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         self.settings.flush()
         await aio.run_in_thread(self.db.close)
         self.started = False
@@ -175,7 +192,7 @@ class Core(GObject.Object):
         if s is not None:
             return s
         handlers = {}
-        for svc in (self.roster, self.omemo, self.pgp):
+        for svc in (self.roster, self.omemo, self.pgp, self.calls):
             for key, meth in (getattr(svc, "iq_handlers", None) or {}).items():
                 handlers[key] = getattr(svc, meth)
         s = AccountSession(acc, self.settings, handlers)
@@ -185,10 +202,11 @@ class Core(GObject.Object):
         self.roster.attach(s)
         self.messaging.attach(s)
         self.muc.attach(s)
+        self.calls.attach(s)
         for svc in (self.omemo, self.pgp):
             if svc is not None:
                 svc.attach(s)
-        s.connect("online", lambda sess, resumed: aio.spawn(self._on_online(sess, resumed)))
+        s.connect("online", lambda sess, resumed: self._track(aio.spawn(self._on_online(sess, resumed))))
         s.connect("offline", lambda sess: self._on_offline(sess))
         s.connect("cert-problem", lambda sess, info: self.emit("cert-problem", sess.account, info))
         self.emit("session-added", s)

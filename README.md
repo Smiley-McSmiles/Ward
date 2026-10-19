@@ -30,6 +30,9 @@ XMPP app, on any server, including your own. It aims to replace Gajim without lo
 - **Everything a messenger should do.** Replies, reactions, edits with history, delete for everyone, delivery and
   read receipts synced across your devices, typing notifications, drafts, files and images (encrypted when the chat
   is), full-text search, message requests from strangers, blocking and spam reports.
+- **Audio and video calls** with Conversations, Dino, Gajim and Ward: all your devices ring and you answer on one,
+  with Jingle, ICE and DTLS-SRTP through GStreamer's WebRTC, STUN and TURN from your server, and a line in the
+  chat for every call.
 - **Groups and channels.** Private groups and public channels with sensible presets, invites, a members panel,
   roles and moderation, group settings, bookmarks with autojoin and public channel search.
 - **Note to self**, a chat with your own address that reaches all your devices (account menu > Note to self).
@@ -89,8 +92,13 @@ out, and talk OMEMO 2 only.
 ### Optional extras
 
 GtkSourceView 5 (code highlighting), libspelling (spell check), libsecret (passwords in the system keyring), GnuPG
-(OpenPGP), Pillow (smaller images), linkify-it-py (better link detection) and the GStreamer media
-plugins (video and audio). `ward --check` lists what you have.
+(OpenPGP), Pillow (smaller images), linkify-it-py (better link detection), the GStreamer media
+plugins (video and audio) and GStreamer's WebRTC with libnice (calls; on Fedora `gstreamer1-plugins-bad-free
+libnice-gstreamer1 gstreamer1-plugin-gtk4`). `ward --check` lists what you have, and `install.sh` offers to
+install them.
+
+Calls cross the internet when your server offers STUN and TURN (XEP-0215, as Prosody and ejabberd do with coturn);
+without them they work between devices that can reach each other directly.
 
 ## Running in the background, systemd and runit
 

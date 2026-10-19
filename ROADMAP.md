@@ -742,9 +742,9 @@ Preferences is an `Adw.PreferencesDialog` with 9 pages, each searchable. Default
 
 Keyboard shortcuts are shown in the shortcuts window (Ctrl+?). Customising them is a later addition.
 
-## Calls (after 1.0)
+## Calls
 
-One-to-one audio and video calls come after 1.0, built on Jingle and GStreamer's `webrtcbin` like Gajim and Dino, and compatible with Conversations' calls. Group calls are a later question.
+One-to-one audio and video calls are in, built on Jingle and GStreamer's `webrtcbin`, translating Jingle to SDP the way Conversations does, and tested against offers shaped like Conversations' own. Still to come: call keys verified through OMEMO, screen sharing, choosing devices, the camera portal, a picture-in-picture view, and group calls.
 
 **Protocol**
 

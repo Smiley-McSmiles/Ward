@@ -4,6 +4,10 @@ ward/aio.py
 ward/core/__init__.py
 ward/core/accounts.py
 ward/core/admin.py
+ward/core/calls/__init__.py
+ward/core/calls/jingle.py
+ward/core/calls/media.py
+ward/core/calls/service.py
 ward/core/chat.py
 ward/core/chats.py
 ward/core/colors.py
@@ -50,6 +54,7 @@ ward/deps.py
 ward/extras.py
 ward/gui/admin.py
 ward/gui/app.py
+ward/gui/call.py
 ward/gui/chatrow.py
 ward/gui/compat.py
 ward/gui/composer.py

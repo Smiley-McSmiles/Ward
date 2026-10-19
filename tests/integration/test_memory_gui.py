@@ -90,9 +90,7 @@ def test_closed_dialogs_are_freed(app, prosody, run, monkeypatch):  # noqa: F811
             await wait_for(lambda: not alive(), 10, "closed dialogs to be freed")
         except AssertionError:
             held = [r() for r in opened if r() is not None]
-            refs = ["%s <- %s" % (type(o).__name__, ", ".join(sorted({type(x).__name__ for x in gc.get_referrers(o)})))
-                    for o in held]
-            raise AssertionError("closed dialogs still in memory: %s" % refs) from None
+            raise AssertionError("closed dialogs still in memory: %s" % [_holders(o) for o in held]) from None
         await app.core.shutdown()
 
     run(scenario(), timeout=120)
@@ -214,3 +212,30 @@ def test_message_rows_are_light(app, prosody, run, tmp_path):  # noqa: F811
 
     run(scenario(), timeout=300)
 
+
+def _holders(obj) -> str:
+    """What keeps obj alive, two steps out: names of the functions, attributes and frames on the way."""
+    import types
+
+    def name(x) -> str:
+        if isinstance(x, types.FunctionType):
+            return "function %s" % x.__qualname__
+        if isinstance(x, types.MethodType):
+            return "method %s" % x.__func__.__qualname__
+        if isinstance(x, types.FrameType):
+            return "frame %s:%d" % (x.f_code.co_name, x.f_lineno)
+        if isinstance(x, types.CellType):
+            fns = [f.__qualname__ for f in gc.get_referrers(x) if isinstance(f, types.FunctionType)]
+            return "cell of %s" % fns
+        if isinstance(x, dict):
+            owners = [type(o).__name__ for o in gc.get_referrers(x) if getattr(o, "__dict__", None) is x]
+            return "dict of %s" % owners if owners else "dict"
+        return type(x).__name__
+
+    out = []
+    for r in gc.get_referrers(obj):
+        if isinstance(r, types.FrameType):
+            continue
+        outer = [name(rr) for rr in gc.get_referrers(r) if not isinstance(rr, list) or rr is not out][:6]
+        out.append("%s <- %s" % (name(r), outer))
+    return "%s held by %s" % (type(obj).__name__, "; ".join(out))
