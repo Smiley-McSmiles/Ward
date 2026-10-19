@@ -170,3 +170,39 @@ def test_answering_a_conversations_offer(monkeypatch):
     assert fp.get("setup") in ("active", "passive") and fp.text
     assert all(c.get("senders") == "both" for c in by_media.values())
     asyncio.set_event_loop(None)
+
+
+@pytest.mark.skipif(not media.available() or not (media._have("webrtcdsp") and media._have("webrtcechoprobe")),
+                    reason="needs GStreamer's webrtcdsp")
+def test_echo_cancellation_starts_with_its_probe(monkeypatch):
+    """webrtcdsp looks its webrtcechoprobe up by name when it starts: without one the pipeline failed ("No echo
+    probe with name webrtcechoprobe0 found") and calls never connected.  Two calls at once each get their own."""
+    from ward import aio
+
+    monkeypatch.setenv("WARD_CALL_SOURCES", "test")
+    gst = media.gst()[0]
+
+    async def start_two():
+        sessions = [media.MediaSession(True, False), media.MediaSession(True, False)]
+        errors = []
+        try:
+            for ms in sessions:
+                ms.connect("error", lambda _m, text: errors.append(text))
+                ms.build()
+                ms.start()
+            for _ in range(40):
+                if all(ms.pipe.get_state(0)[1] == gst.State.PLAYING for ms in sessions) or errors:
+                    break
+                await asyncio.sleep(0.05)
+            probes = [ms._echo_probe.get_name() if getattr(ms, "_echo_probe", None) else "" for ms in sessions]
+            return errors, probes, [ms.pipe.get_state(0)[1] for ms in sessions]
+        finally:
+            for ms in sessions:
+                ms.close()
+
+    loop = aio.install()
+    errors, probes, states = loop.run_until_complete(start_two())
+    assert not errors
+    assert states == [gst.State.PLAYING, gst.State.PLAYING]
+    assert len(set(probes)) == 2
+    asyncio.set_event_loop(None)
