@@ -115,8 +115,8 @@ _PM_BINARIES = (("apt", "apt-get"), ("dnf", "dnf"), ("pacman", "pacman"), ("zypp
 
 @cache
 def package_manager() -> str | None:
-    if os.path.exists("/.flatpak-info"):
-        return None
+    if os.path.exists("/.flatpak-info") or os.environ.get("WARD_APPIMAGE"):
+        return None         # the system's packages cannot add anything to the sandbox or the image
     sysname = platform.system()
     for name, binary in _PM_BINARIES:
         if name == "pkg" and sysname not in ("FreeBSD", "DragonFly"):
@@ -232,10 +232,19 @@ def have(name: str) -> bool:
     if name == "source":
         return _typelib("GtkSource", "5")[0]
     if name == "spelling":
-        # some distributions ship the typelib without the library (or the other way round)
+        # some distributions ship the typelib without the library (or the other way round).  ldconfig does not know
+        # the AppImage's own copy: that one is found by loading it.
+        import ctypes
         import ctypes.util
 
-        return ctypes.util.find_library("spelling-1") is not None and _typelib("Spelling", "1")[0]
+        def loads(soname: str) -> bool:
+            try:
+                ctypes.CDLL(soname)
+                return True
+            except OSError:
+                return False
+        return ((ctypes.util.find_library("spelling-1") is not None or loads("libspelling-1.so.1"))
+                and _typelib("Spelling", "1")[0])
     if name == "secret":
         return _typelib("Secret", "1")[0]
     if name == "pillow":
@@ -353,8 +362,8 @@ def report() -> str:
     lines = ["Ward v%s on %s %s, Python %s" % (_ward_version(), platform.system(), platform.release(),
                                                platform.python_version())]
     pm = package_manager()
-    lines.append("Package manager: %s" % (pm or ("Flatpak sandbox" if os.path.exists("/.flatpak-info")
-                                                  else "unknown")))
+    lines.append("Package manager: %s" % (pm or ("Flatpak sandbox" if os.path.exists("/.flatpak-info") else
+                                                  "AppImage" if os.environ.get("WARD_APPIMAGE") else "unknown")))
     lines.append("")
     for f in features():
         mark = "ok " if f.available else ("MISSING" if f.required else "-- ")

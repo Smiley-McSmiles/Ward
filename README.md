@@ -66,6 +66,7 @@ and libadwaita 1.4+**. Download from the [releases page](https://github.com/smil
 | System | How |
 | --- | --- |
 | Any Linux with Flatpak | `flatpak install --user ward-1.0.1.flatpak` (everything included) |
+| Any Linux from 2024 on (glibc 2.39+) | `chmod +x ward-1.0.1-x86_64.AppImage`, then run it (everything included) |
 | Debian 13+, Ubuntu 24.04+, Mint 22+, Pop!_OS | `sudo apt install ./ward_1.0.1_all.deb` |
 | Fedora 40+, RHEL 10, openSUSE | `sudo dnf install ./ward-1.0.1-1.noarch.rpm` (`zypper install` on openSUSE) |
 | Arch, Manjaro, EndeavourOS | `sudo pacman -U ward-1.0.1-1-any.pkg.tar.xz`, or the PKGBUILD from `recipes.tar.gz` |
@@ -95,7 +96,7 @@ sudo ./install.sh --uninstall      # your chats and settings in ~/.config/ward a
 ### Encryption libraries
 
 The OMEMO libraries ([python-omemo](https://github.com/Syndace/python-omemo), twomemo, oldmemo, x3dh, doubleratchet
-and xeddsa) are not in most distributions or in the BSD ports trees yet. The Flatpak includes them. With the other
+and xeddsa) are not in most distributions or in the BSD ports trees yet. The Flatpak and the AppImage include them. With the other
 packages, Ward offers to download them the first time you write an encrypted message (also under Preferences >
 Encryption): they go into `~/.local/share/ward/python`, nothing else on your system changes, and Ward restarts to use
 them. `install.sh --vendor` does the same for every user of the machine.
@@ -112,7 +113,8 @@ libnice-gstreamer1 gstreamer1-plugin-gtk4`). `ward --check` lists what you have,
 install them.
 
 Void's GStreamer comes without `webrtcbin` (Void's libnice, 0.1.22, is older than the 0.1.23 GStreamer's WebRTC
-plugin needs), so calls are not available there until Void updates libnice; `ward --check` says so.
+plugin needs), so calls are not available there until Void updates libnice; `ward --check` says so. The AppImage
+brings its own GStreamer and libnice, so calls work in it on Void.
 
 Calls cross the internet when your server offers STUN and TURN (XEP-0215, as Prosody and ejabberd do with coturn),
 or with the servers set in Preferences > Calls; without them they work between devices that can reach each other
@@ -197,9 +199,17 @@ installed) and the interface tests (with a display; `xvfb-run -a` works). `ruff 
 
 ## Packaging
 
-`./package.sh` builds the tarball, `.deb` and Arch packages on any distribution, `.rpm`, `.xbps`, a FreeBSD `.pkg` and
-the Flatpak where their tools are installed, and writes recipes for Alpine, Gentoo, the FreeBSD ports tree, OpenBSD
+`./package.sh` builds the tarball, `.deb` and Arch packages on any distribution, `.rpm`, `.xbps`, a FreeBSD `.pkg`,
+the Flatpak and the AppImage where their tools are installed, and writes recipes for Alpine, Gentoo, the FreeBSD ports tree, OpenBSD
 ports, NetBSD pkgsrc and Flatpak into `dist/recipes/`, with `dist/SHA256SUMS`. See `./package.sh --help`.
+
+`./package.sh appimage` bundles the build machine's Python, PyGObject, GTK, libadwaita and GStreamer (with WebRTC,
+libnice, and libav for the videos people send) and the PyPI libraries, OMEMO included, into one file
+(`packaging/mkappimage.py`). Build it on Ubuntu 24.04, as CI does: the AppImage runs on systems with that glibc (2.39)
+or newer. It needs `patchelf`, `squashfs-tools`, pip and the packages the CI job installs; the AppImage runtime is
+downloaded once (or set `APPIMAGE_RUNTIME`). Graphics drivers, X11, ALSA, fonts and glibc stay the system's;
+everything else is inside, so the image runs on a system with none of Ward's dependencies. Like every AppImage it
+mounts itself with FUSE (`fusermount`); without FUSE, `--appimage-extract-and-run` works.
 
 `./package.sh --version 1.1.0 --all` first sets the version everywhere it is written (the app, README, man page,
 metainfo and a new CHANGELOG section to fill in; `tools/set_version.py` does that part on its own). Pre-releases such

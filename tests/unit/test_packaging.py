@@ -168,6 +168,7 @@ def test_set_version_everywhere(tmp_path):
     readme = (tmp_path / "README.md").read_text()
     assert "badge/version-9.8.7-rc2-blue.svg" in readme
     assert 'alt="Version 9.8.7-rc2"' in readme
+    assert "ward-9.8.7-rc2-x86_64.AppImage" in readme and "ward-9.8.7-rc2.flatpak" in readme
     assert "## v9.8.7-rc2" in (tmp_path / "CHANGELOG.md").read_text()
     assert subprocess.run([*run, "nonsense"], capture_output=True).returncode == 2
 
@@ -255,3 +256,108 @@ def test_check_explains_gstreamer_without_webrtcbin(monkeypatch):
     assert "built without webrtcbin" in f.detail and "0.1.22" in f.detail
     monkeypatch.setattr(deps, "_calls_missing", lambda: ["webrtcbin", "nicesrc"])
     assert "xbps-install" in deps._calls_feature().hint          # really missing packages: the usual hint
+
+
+# ---------------------------------------------------------------------------------------------- AppImage
+def _mkappimage():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("mkappimage", os.path.join(ROOT, "packaging", "mkappimage.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc/self/fd")
+def test_apprun_environment(tmp_path):
+    """AppRun points GTK, GStreamer, GdkPixbuf and Enchant into the image, tells Ward how to start it again and leaves
+    LD_LIBRARY_PATH alone, so the programs Ward starts get the system's libraries."""
+    app = tmp_path / "Ward.AppDir"
+    lib = app / "usr" / "lib" / "x86_64-linux-gnu"
+    (lib / "girepository-1.0").mkdir(parents=True)
+    (lib / "enchant-2").mkdir()
+    (lib / "gdk-pixbuf-2.0" / "2.10.0").mkdir(parents=True)
+    (lib / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache.in").write_text('"@APPDIR@/usr/lib/svg.so"\n')
+    (app / "usr" / "bin").mkdir(parents=True)
+    out = tmp_path / "out"
+    _fake_bin(app / "usr" / "bin", "python3", 'for v in WARD_APPIMAGE WARD_SHARE_DIR GI_TYPELIB_PATH GTK_PATH '
+              'GST_PLUGIN_SYSTEM_PATH_1_0 GST_PLUGIN_SCANNER_1_0 GDK_PIXBUF_MODULE_FILE PYTHONPATH '
+              'LD_LIBRARY_PATH; do\n'
+              '    eval "echo $v=\\${$v-unset}"\ndone > "%s"\necho "fd9=$(readlink /proc/$$/fd/9)" >> "%s"\n'
+              'echo "args=$*" >> "%s"\n' % (out, out, out))
+    shutil.copy(os.path.join(ROOT, "packaging", "appimage", "AppRun"), app / "AppRun")
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "XDG_RUNTIME_DIR": str(tmp_path),
+           "APPIMAGE": "/home/me/Ward-1.0.AppImage", "PYTHONPATH": "/somewhere/else"}
+    subprocess.run([_sh(), str(app / "AppRun"), "--background"], check=True, env=env)
+    got = dict(line.split("=", 1) for line in out.read_text().splitlines())
+    assert got["args"] == "-m ward --background"
+    assert got["WARD_APPIMAGE"] == "/home/me/Ward-1.0.AppImage"
+    assert got["WARD_SHARE_DIR"] == "%s/usr/share/ward" % app
+    assert got["GI_TYPELIB_PATH"] == "%s/girepository-1.0" % lib
+    assert got["GST_PLUGIN_SYSTEM_PATH_1_0"] == "%s/gstreamer-1.0" % lib
+    assert got["GTK_PATH"] == "%s/gtk-4.0" % lib
+    assert got["PYTHONPATH"] == got["LD_LIBRARY_PATH"] == "unset"
+    assert got["fd9"] == str(lib / "enchant-2")
+    with open(got["GDK_PIXBUF_MODULE_FILE"]) as f:
+        assert f.read() == '"%s/usr/lib/svg.so"\n' % app
+
+
+def test_apprun_finds_certificates():
+    """The bundled OpenSSL looks where Debian keeps certificates; the other systems' places are tried in turn."""
+    with open(os.path.join(ROOT, "packaging", "appimage", "AppRun")) as f:
+        text = f.read()
+    for path in ("/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/ca-bundle.pem",
+                 "/etc/ssl/cert.pem"):
+        assert path in text
+
+
+def test_appimage_enchant_looks_in_descriptor_9(tmp_path):
+    """Enchant only loads providers from the folder it was built for: the bundled copy is pointed at the one AppRun
+    opens as descriptor 9, with the string's length kept."""
+    mk = _mkappimage()
+    b = mk.Bundle.__new__(mk.Bundle)
+    b.ma = "x86_64-linux-gnu"
+    b.lib = str(tmp_path)
+    (tmp_path / "enchant-2").mkdir()
+    lib = tmp_path / "libenchant-2.so.2"
+    before = b"\x7fELF...\0/usr/lib/x86_64-linux-gnu/enchant-2\0/usr/share/enchant-2\0"
+    lib.write_bytes(before)
+    b.libs = {"libenchant-2.so.2": str(lib)}
+    b.enchant()
+    after = lib.read_bytes()
+    assert len(after) == len(before)
+    assert b"\0/proc/self/fd/9\0" in after and b"/usr/lib/x86_64-linux-gnu/enchant-2" not in after
+    assert b"/usr/share/enchant-2\0" in after
+
+
+def test_appimage_bundles_no_system_libraries():
+    mk = _mkappimage()
+    for soname in ("libc.so.6", "libGL.so.1", "libEGL.so.1", "libX11.so.6", "libfontconfig.so.1", "libstdc++.so.6"):
+        assert soname in mk.EXCLUDE
+    # the small X11 libraries are not in AppImage's excludelist: GTK needs them, minimal systems lack them
+    assert "libXi.so.6" not in mk.EXCLUDE and "libXcursor.so.1" not in mk.EXCLUDE
+
+
+def test_appimage_has_no_package_manager(monkeypatch):
+    """Inside the AppImage the system's packages add nothing: no "sudo apt install" hints, and --check says where
+    Ward runs from."""
+    from ward import deps
+
+    monkeypatch.setenv("WARD_APPIMAGE", "/home/me/Ward.AppImage")
+    deps.package_manager.cache_clear()
+    try:
+        assert deps.package_manager() is None
+        assert deps.install_hint("spelling") == ""
+        assert "Package manager: AppImage" in deps.report()
+    finally:
+        monkeypatch.delenv("WARD_APPIMAGE")
+        deps.package_manager.cache_clear()
+
+
+def test_package_sh_builds_appimages():
+    out = subprocess.run(["bash", os.path.join(ROOT, "package.sh"), "--help"], check=True, capture_output=True,
+                         text=True).stdout
+    assert "--appimage" in out
+    with open(os.path.join(ROOT, "package.sh")) as f:
+        text = f.read()
+    assert "flatpak appimage recipes; do" in text and "appimage) build_appimage ;;" in text

@@ -10,6 +10,10 @@ TURN settings (server discovery, manual servers, shared-secret credentials, rela
 
 Screen sharing is not in the rebuilt calls yet.
 
+An AppImage: one file with Python, GTK, libadwaita, GStreamer's WebRTC with libnice and the OMEMO libraries inside,
+for distributions where Ward's dependencies are missing or too old. Calls work in it on Void, whose own GStreamer has
+no WebRTC. `./package.sh appimage` builds it; CI builds and starts it.
+
 ## v1.0.1 (2026-10-19)
 
 Sent messages now sync between devices on the same account, Wayland screen sharing works through the ScreenCast portal, calls leave a history line in their chat, and incoming calls ring.

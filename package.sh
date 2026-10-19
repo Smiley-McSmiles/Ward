@@ -3,8 +3,9 @@
 # Ward packaging - one script for every Linux distribution family and the BSDs.
 #
 # Builds: a portable source tarball (.tar.gz with install.sh), Debian/Ubuntu (.deb), Fedora/RHEL/openSUSE
-# (.rpm), Arch (.pkg.tar.xz), Void (.xbps), FreeBSD (.pkg, on FreeBSD) and a Flatpak bundle, plus recipes for
-# Alpine (APKBUILD), Gentoo (ebuild), the FreeBSD ports tree, OpenBSD ports and NetBSD pkgsrc, and SHA256SUMS.
+# (.rpm), Arch (.pkg.tar.xz), Void (.xbps), FreeBSD (.pkg, on FreeBSD), a Flatpak bundle and an AppImage, plus
+# recipes for Alpine (APKBUILD), Gentoo (ebuild), the FreeBSD ports tree, OpenBSD ports and NetBSD pkgsrc, and
+# SHA256SUMS.
 # The .deb and Arch packages are written by small Python scripts, so they build on any distribution.
 #
 #   ./package.sh                     everything this machine can build (= --all); a missing tool only skips that
@@ -627,6 +628,45 @@ build_flatpak() {
     log "  -> dist/$NAME-$VERSION.flatpak   (install: flatpak install --user dist/$NAME-$VERSION.flatpak)"
 }
 
+# ---------------------------------------------------------------------------------------------- AppImage
+# One file that runs on any distribution as new as the build machine (build on Ubuntu 24.04: glibc 2.39, GTK 4.14,
+# GStreamer 1.24): Python, GTK, libadwaita, GStreamer's WebRTC with libnice and the OMEMO libraries are inside.
+# packaging/mkappimage.py fills the AppDir; the AppImage runtime (APPIMAGE_RUNTIME, or downloaded) and mksquashfs
+# make the file.
+APPIMAGE_RUNTIME_URL=https://github.com/AppImage/type2-runtime/releases/download/continuous
+build_appimage() {
+    [ "$(uname -s)" = Linux ] || skip "AppImages are built on Linux"
+    have dpkg || skip "the AppImage is built on Debian or Ubuntu (Ubuntu 24.04 for the widest reach)"
+    have patchelf || skip "patchelf not found (apt install patchelf)"
+    have mksquashfs || skip "mksquashfs not found (apt install squashfs-tools)"
+    local py="" c
+    for c in ${APPIMAGE_PYTHON:-} python3 python3.13 python3.12 python3.11; do
+        if have "$c" && "$c" -c "import gi; gi.require_version('Gtk','4.0'); gi.require_version('Adw','1');
+gi.require_version('Gst','1.0'); gi.require_version('GstWebRTC','1.0')" 2>/dev/null; then py=$c; break; fi
+    done
+    [ -n "$py" ] || skip "no Python with PyGObject, GTK 4, libadwaita and GStreamer WebRTC to bundle (apt install python3-gi gir1.2-adw-1 gir1.2-gst-plugins-bad-1.0 gstreamer1.0-nice)"
+    "$py" -m pip --version >/dev/null 2>&1 || skip "pip not found for $py (apt install python3-pip)"
+    local arch runtime
+    arch=$(uname -m)
+    log "appimage ($arch, $("$py" -c 'import platform; print("Python", platform.python_version())'))"
+    local appdir=$BUILD/appimage/Ward.AppDir
+    stage "$appdir" /usr --no-system-links
+    "$py" "$ROOT/packaging/mkappimage.py" "$appdir"
+    runtime=${APPIMAGE_RUNTIME:-$BUILD/appimage/runtime-$arch}
+    if [ ! -s "$runtime" ]; then
+        have curl || skip "curl not found to download the AppImage runtime (or set APPIMAGE_RUNTIME)"
+        curl -fsSL -o "$runtime.part" "$APPIMAGE_RUNTIME_URL/runtime-$arch" && mv "$runtime.part" "$runtime"
+    fi
+    local out=$DIST/$NAME-$VERSION-$arch.AppImage
+    mkdir -p "$DIST"
+    rm -f "$BUILD/appimage/image.squashfs" "$out"
+    mksquashfs "$appdir" "$BUILD/appimage/image.squashfs" -root-owned -noappend -comp zstd -Xcompression-level 19 \
+        -quiet -no-progress >/dev/null
+    cat "$runtime" "$BUILD/appimage/image.squashfs" > "$out"
+    chmod 755 "$out"
+    log "  -> dist/$(basename "$out")   ($(du -h "$out" | cut -f1); run: chmod +x $(basename "$out") && ./$(basename "$out"))"
+}
+
 build_recipes() {
     recipe_rpm; recipe_arch; recipe_void; recipe_alpine; recipe_gentoo; recipe_freebsd; recipe_openbsd; recipe_netbsd
     mkdir -p "$DIST/recipes/flatpak"
@@ -651,6 +691,7 @@ Usage: ./package.sh [options]
   --openbsd     OpenBSD port
   --netbsd      NetBSD pkgsrc package
   --flatpak     Flatpak bundle (needs flatpak-builder) and manifest
+  --appimage    AppImage with everything inside (on Debian/Ubuntu; needs patchelf, mksquashfs and pip)
   --recipes     only the recipes in dist/recipes/
   --container   build inside a Fedora container (podman/docker), e.g. --container --rpm
   --version V   set the version everywhere first (code, README, man page, metainfo, CHANGELOG), e.g.
@@ -666,7 +707,7 @@ release_files() {  # this version's packages in dist/, by their exact names (oth
     local f
     for f in "$DIST/$SRCNAME.tar.gz" "$DIST/${NAME}_${DEBVER}_all.deb" "$DIST/$NAME-$DEBVER"-1.*.rpm \
              "$DIST/$NAME-$PLAINVER"-1-any.pkg.tar.* "$DIST/$NAME-${PLAINVER}"_1.*.xbps "$DIST/$NAME-$PLAINVER.pkg" \
-             "$DIST/$NAME-$VERSION.flatpak"; do
+             "$DIST/$NAME-$VERSION.flatpak" "$DIST/$NAME-$VERSION"-*.AppImage; do
         [ -f "$f" ] && echo "$f"
     done
     return 0
@@ -676,7 +717,7 @@ checksums() {
     local files=() f
     for f in $(release_files); do
         case "$f" in
-            *.tar.gz|*.deb|*.rpm|*.pkg.tar.*|*.xbps|*.pkg|*.flatpak) [ -f "$f" ] && files+=("$(basename "$f")") ;;
+            *.tar.gz|*.deb|*.rpm|*.pkg.tar.*|*.xbps|*.pkg|*.flatpak|*.AppImage) [ -f "$f" ] && files+=("$(basename "$f")") ;;
         esac
     done
     [ ${#files[@]} -gt 0 ] || return 0
@@ -737,7 +778,7 @@ if [ "${targets[0]}" = all ]; then
     built=(); skipped=(); failed=()
     build_tar || { warn "tarball failed"; failed+=(tar); }
     export PKG_TAR_DONE=1 PKG_CHILD=1
-    for t in deb rpm arch void alpine gentoo freebsd openbsd netbsd flatpak recipes; do
+    for t in deb rpm arch void alpine gentoo freebsd openbsd netbsd flatpak appimage recipes; do
         set +e
         bash "$ROOT/package.sh" "$t"
         rc=$?
@@ -771,6 +812,7 @@ for t in "${targets[@]}"; do
         openbsd) build_openbsd ;;
         netbsd) build_netbsd ;;
         flatpak) build_flatpak ;;
+        appimage) build_appimage ;;
         recipes) build_recipes ;;
         clean) rm -rf "$DIST" "$BUILD"; log "removed dist/ and build/" ;;
         *) echo "unknown target: $t (see ./package.sh --help)" >&2; exit 2 ;;
