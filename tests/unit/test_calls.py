@@ -19,6 +19,10 @@ class FakeSession:
         self.online = True
         self.messages: list[ET.Element] = []
         self.iqs: list[tuple[str, str, tuple]] = []
+        self.features: set[str] = set()
+
+    def add_feature(self, feature):
+        self.features.add(feature)
 
     def connect(self, *_a):
         pass
@@ -277,3 +281,13 @@ def test_a_reconnect_keeps_the_call_session(monkeypatch, run):
         await service.hangup(call)
 
     run(scenario(), timeout=20)
+
+
+def test_call_features_are_advertised(monkeypatch):
+    monkeypatch.setattr(calls, "media_available", lambda: True)
+    service = calls.Calls(FakeCore())
+    session = FakeSession()
+    service.attach(session)
+    assert {"urn:xmpp:jingle-message:0", "urn:xmpp:jingle:1", "urn:xmpp:jingle:apps:rtp:1",
+            "urn:xmpp:jingle:transports:ice-udp:1", "urn:xmpp:jingle:apps:dtls:0",
+            "urn:xmpp:jingle:apps:rtp:audio", "urn:xmpp:jingle:apps:rtp:video"} <= session.features

@@ -27,6 +27,15 @@ from .turn import TurnService
 log = logging.getLogger("ward.calls")
 
 RING_SECONDS = 60
+CALL_FEATURES = (
+    jingle.NS_JMI,
+    jingle.NS_JINGLE,
+    jingle.NS_RTP,
+    jingle.NS_ICE,
+    jingle.NS_DTLS,
+    "urn:xmpp:jingle:apps:rtp:audio",
+    "urn:xmpp:jingle:apps:rtp:video",
+)
 
 
 class CallError(Exception):
@@ -74,6 +83,9 @@ class Calls(GObject.Object):
     def attach(self, session) -> None:
         self._sessions[session.account.id] = session
         session.connect("message", lambda s, el: self._on_message(s, el))
+        if media_available():
+            for feature in CALL_FEATURES:
+                session.add_feature(feature)
 
     def detach(self, account_id: int) -> None:
         self._sessions.pop(account_id, None)
