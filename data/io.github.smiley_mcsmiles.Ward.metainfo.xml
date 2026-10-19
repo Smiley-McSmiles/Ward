@@ -77,6 +77,11 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.0.1" date="2026-10-19">
+      <description>
+        <p>Sent messages now sync between devices on the same account, Wayland screen sharing works through the ScreenCast portal, calls leave a history line in their chat, and incoming calls ring.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-10-18">
       <description>
         <p>The first release: encrypted chats and groups, Markdown, files, several accounts, OpenPGP with GPGMan
