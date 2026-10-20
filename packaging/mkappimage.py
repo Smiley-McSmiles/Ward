@@ -29,7 +29,8 @@ APPID = "io.github.smiley_mcsmiles.Ward"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # GObject introspection namespaces Ward loads (with what they need in turn)
-NAMESPACES = [("Gtk", "4.0"), ("Adw", "1"), ("GdkPixbuf", "2.0"), ("Gst", "1.0"), ("GstSdp", "1.0"),
+NAMESPACES = [("Gtk", "4.0"), ("Adw", "1"), ("GdkWayland", "4.0"), ("GdkX11", "4.0"),
+              ("GdkPixbuf", "2.0"), ("Gst", "1.0"), ("GstSdp", "1.0"),
               ("GstWebRTC", "1.0"), ("GstVideo", "1.0"), ("GstAudio", "1.0"), ("GstApp", "1.0"),
               ("GstPbutils", "1.0"), ("GtkSource", "5"), ("Secret", "1"), ("Spelling", "1")]
 
