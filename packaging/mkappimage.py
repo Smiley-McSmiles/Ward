@@ -217,6 +217,17 @@ class Bundle:
                 break
         log("NSS modules: %d" % len(copied))
 
+    def gtk_source(self) -> None:
+        """GtkSourceView's language specs and style schemes are data files, not compiled into its library.  Without
+        them the AppImage has no syntax highlighting even though the typelib and library are bundled."""
+        source = "/usr/share/gtksourceview-5"
+        if not os.path.isdir(source):
+            log("GtkSourceView data: not on this machine")
+            return
+        destination = os.path.join(self.usr, "share", "gtksourceview-5")
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+        log("GtkSourceView data: %d language specs" % len(os.listdir(os.path.join(destination, "language-specs"))))
+
     def gtk_modules(self) -> None:
         """GTK's GStreamer media backend (videos in chats), GdkPixbuf's loaders (SVG icons), dconf and Enchant's
         Hunspell provider (spell check, with the system's dictionaries)."""
@@ -371,6 +382,7 @@ def main() -> None:
     b.typelibs()
     b.gstreamer()
     b.nss()
+    b.gtk_source()
     b.gtk_modules()
     b.data()
     b.closure()

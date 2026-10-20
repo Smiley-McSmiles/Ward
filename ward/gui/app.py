@@ -148,12 +148,22 @@ class WardApplication(Adw.Application):
             if accels:
                 self.set_accels_for_action("app." + name, accels)
         add("quit", lambda _p: self.quit_app(), ["<Ctrl>q"])
+        # Ctrl+W closes whichever Ward window has focus (main, call, XML console), not only the one whose action
+        # happens to carry the accelerator.
+        add("close-window", lambda _p: self._close_active_window(), ["<Ctrl>w"])
         add("preferences", lambda _p: self.show_preferences(), ["<Ctrl>comma"])
         add("about", lambda _p: self.show_about())
         add("show", lambda _p: self.activate())
         add("open-chat", lambda p: self._open_chat(p), param="s")
         add("mark-read", lambda p: self._mark_read(p), param="s")
         add("open-uri", lambda p: self.open_uri(p), param="s")
+
+    def _close_active_window(self) -> None:
+        win = self.get_active_window()
+        if win is not None:
+            win.close()
+        elif self.window is not None:
+            self.window.close()
 
     # ================================================================== command line
     def do_command_line(self, cmdline: Gio.ApplicationCommandLine) -> int:

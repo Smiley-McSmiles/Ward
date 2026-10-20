@@ -127,7 +127,7 @@ class Composer(Gtk.Box):
         row = Gtk.Box(spacing=6)
         self.append(row)
         self.attach_button = Gtk.Button(icon_name="ward-attach-symbolic", css_classes=["flat", "circular"],
-                                        valign=Gtk.Align.END, tooltip_text=_("Send a file"))
+                                        valign=Gtk.Align.CENTER, tooltip_text=_("Send a file"))
         self.attach_button.connect("clicked", lambda *_: self.choose_files())
         row.append(self.attach_button)
 
@@ -154,11 +154,11 @@ class Composer(Gtk.Box):
         overlay.add_overlay(self.placeholder)
         box.append(overlay)
         self.emoji_button = Gtk.MenuButton(icon_name="ward-emoji-symbolic", css_classes=["flat", "circular"],
-                                           valign=Gtk.Align.END, tooltip_text=_("Emoji"))
+                                           valign=Gtk.Align.CENTER, tooltip_text=_("Emoji"))
         widgets.emoji_button(self.emoji_button, self.settings, self._insert)
         box.append(self.emoji_button)
         self.send_button = Gtk.Button(icon_name="ward-send-symbolic", css_classes=["suggested-action", "circular"],
-                                      valign=Gtk.Align.END, sensitive=False, tooltip_text=_("Send"))
+                                      valign=Gtk.Align.CENTER, sensitive=False, tooltip_text=_("Send"))
         self.send_button.connect("clicked", lambda *_: self.send())
         row.append(self.send_button)
 

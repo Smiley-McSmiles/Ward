@@ -274,11 +274,18 @@ class MainWindow(Adw.ApplicationWindow):
             st & Gtk.accelerator_get_default_mod_mask()) and self._back())
         self.add_controller(keys)
         self._keys = keys
+        # GtkApplication accelerators for win.close do not reach us in the AppImage's older GTK; catch Ctrl+W
+        # before the focused text view can consume it.
+        close_keys = Gtk.EventControllerKey()
+        close_keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        close_keys.connect("key-pressed", self._on_close_key)
+        self.add_controller(close_keys)
+        self._close_keys = close_keys
         add("search-chat", lambda: self.current_chat is not None and self.conversation.search_button.set_active(True),
             ["<Ctrl>f"])
         add("send-file", lambda: self.current_chat is not None and self.conversation.composer.choose_files(),
             ["<Ctrl>u", "<Ctrl>o"])
-        add("close", self.close, ["<Ctrl>w"])
+        add("close", self.close)
         add("zoom-in", lambda: self._zoom(10), ["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"])
         add("zoom-out", lambda: self._zoom(-10), ["<Ctrl>minus", "<Ctrl>KP_Subtract"])
         add("zoom-reset", lambda: self._zoom(0), ["<Ctrl>0", "<Ctrl>KP_0"])
@@ -294,6 +301,14 @@ class MainWindow(Adw.ApplicationWindow):
         w = _shortcuts_window()
         w.set_transient_for(self)
         w.present()
+
+    def _on_close_key(self, _controller, keyval, _keycode, state) -> bool:
+        if keyval not in (Gdk.KEY_w, Gdk.KEY_W):
+            return False
+        if (state & Gtk.accelerator_get_default_mod_mask()) == Gdk.ModifierType.CONTROL_MASK:
+            self.close()
+            return True
+        return False
 
     def _back(self) -> bool:
         """Escape: close the in-chat search, or go back to the chat list on a narrow window."""
@@ -367,6 +382,7 @@ class MainWindow(Adw.ApplicationWindow):
         for name in self.list_actions():
             self.remove_action(name)
         self.remove_controller(self._keys)
+        self.remove_controller(self._close_keys)
         if self.welcome is not None:
             lifetime.dismantle(self.welcome)
         lifetime.dismantle(self)
