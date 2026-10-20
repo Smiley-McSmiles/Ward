@@ -37,7 +37,10 @@ def test_install_stages_everything(staged):
                 "share/bash-completion/completions/ward", "share/zsh/site-functions/_ward",
                 "share/fish/vendor_completions.d/ward.fish", "share/ward/icons",
                 "share/ward/runit/run", "share/ward/runit/log/run",
-                "share/ward/sounds/message-new-instant.oga"):
+                "share/ward/sounds/message-new-instant.oga",
+                "share/doc/ward/LICENSE", "share/doc/ward/THIRD_PARTY_NOTICES.md",
+                "share/doc/ward/LICENSES/AGPL-3.0.txt",
+                "share/doc/ward/LICENSES/sound-theme-freedesktop-CREDITS.txt"):
         assert (usr / rel).exists(), rel
     # the systemd unit is only staged on Linux; the BSDs do not have systemd
     if sys.platform.startswith("linux"):

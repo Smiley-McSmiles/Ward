@@ -60,7 +60,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # A package that cannot be built on this machine (tool missing) exits 3: "skipped", not "failed".
 skip() { warn "$*"; exit 3; }
 
-SRC_ITEMS=(ward data packaging po tools tests install.sh package.sh README.md ROADMAP.md LICENSE pyproject.toml)
+SRC_ITEMS=(ward data packaging po tools tests install.sh package.sh README.md ROADMAP.md LICENSE LICENSES
+           THIRD_PARTY_NOTICES.md pyproject.toml)
 
 stage() {  # stage <destdir> <prefix> [install.sh options...]
     local dest=$1 prefix=$2
@@ -211,6 +212,7 @@ $(printf '%s' "$POSTRM_COMMON")
 
 %files
 %license LICENSE
+/usr/share/doc/ward
 /usr/bin/ward
 /usr/lib/ward
 /usr/share/ward
