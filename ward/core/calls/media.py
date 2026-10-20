@@ -11,6 +11,7 @@ import itertools
 import logging
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from gi.repository import GLib, GObject
 
@@ -54,6 +55,13 @@ def missing_elements() -> list[str]:
 
 def available() -> bool:
     return not missing_elements()
+
+
+def screen_available() -> bool:
+    """X11 uses ximagesrc; Wayland uses the XDG ScreenCast portal and pipewiresrc."""
+    if os.environ.get("WAYLAND_DISPLAY"):
+        return _have("pipewiresrc")
+    return _have("ximagesrc")
 
 
 def _have(name: str) -> bool:
@@ -246,6 +254,11 @@ class MediaSession(GObject.Object):
         self._mute = None
         self._speaker_gain_el = None
         self._camera = None
+        self._selector: Any = None       # input-selector: camera or screen
+        self._camera_pad = None
+        self._screen_pad = None
+        self._portal_session = ""
+        self.screen = False
         self._remote_sink = None
         self._remote_video = None
         self._echo_probe = None     # webrtcechoprobe, waiting for their audio
@@ -327,14 +340,13 @@ class MediaSession(GObject.Object):
             self._chain(*els)
             self._link_to_webrtc(els[-1])
         if self.video:
-            if self.sources == "test":
-                src = self._make("videotestsrc", is_live=True, pattern=0)      # colour bars
-            else:
-                src = self._make("autovideosrc") if _have("autovideosrc") else self._make("v4l2src")
-            raw = Gst.Caps.from_string("video/x-raw,width=640,height=480,framerate=30/1")
+            # camera and screen are two branches of one input-selector, so switching is instant and needs no
+            # renegotiation: the other side keeps seeing the same video track.
+            self._selector = self._make("input-selector")
+            self._camera_pad = self._add_video_source("camera")
+            self._selector.set_property("active-pad", self._camera_pad)
             tee = self._make("tee")
-            self._chain(src, self._make("videoconvert"), self._make("videoscale", add_borders=True),
-                        self._make("videorate"), self._make("capsfilter", caps=raw), tee)
+            self._chain(self._selector, tee)
             self._camera = self._make("valve", drop=False)
             pt = pts.get("video", 96)
             caps = Gst.Caps.from_string("application/x-rtp,media=video,encoding-name=VP8,clock-rate=90000,"
@@ -350,6 +362,38 @@ class MediaSession(GObject.Object):
             sink, self.local_paintable = self._video_sink()
             self._chain(*preview, sink)
             tee.link(preview[0])
+
+    def _add_video_source(self, kind: str):
+        """One input-selector branch.  'screen' asks the desktop which screen or window to share."""
+        Gst = gst()[0]
+        if self.sources == "test":
+            pattern = 0 if kind == "camera" else 1
+            src = self._make("videotestsrc", is_live=True, pattern=pattern)
+        elif kind == "camera":
+            src = self._make("autovideosrc") if _have("autovideosrc") else self._make("v4l2src")
+        else:
+            src = self._screen_source()
+        raw = Gst.Caps.from_string("video/x-raw,width=640,height=480,framerate=30/1")
+        branch = [src, self._make("videoconvert"), self._make("videoscale", add_borders=True),
+                  self._make("videorate"), self._make("capsfilter", caps=raw)]
+        self._chain(*branch)
+        pad = self._selector.request_pad_simple("sink_%u")
+        if pad is None or branch[-1].get_static_pad("src").link(pad) != Gst.PadLinkReturn.OK:
+            raise RuntimeError("cannot connect the %s video source" % kind)
+        for element in branch:
+            element.sync_state_with_parent()
+        return pad
+
+    def _screen_source(self):
+        if os.environ.get("WAYLAND_DISPLAY") and _have("pipewiresrc"):
+            from .portal import screencast
+
+            fd, node, session = screencast()
+            self._portal_session = session
+            return self._make("pipewiresrc", fd=fd, path=str(node))
+        if _have("ximagesrc"):
+            return self._make("ximagesrc", use_damage=False)
+        raise RuntimeError("Screen capture is not available (install pipewiresrc or ximagesrc)")
 
     def _link_to_webrtc(self, el) -> None:
         pad = el.get_static_pad("src")
@@ -596,10 +640,27 @@ class MediaSession(GObject.Object):
         if self._camera is not None:
             self._camera.set_property("drop", not on)
 
+    def set_screen(self, on: bool) -> None:
+        """Share the desktop instead of the camera.  The first call opens the desktop's screen chooser."""
+        if self._selector is None or self._camera_pad is None:
+            raise RuntimeError("Screen sharing needs a video call")
+        if on:
+            if self._screen_pad is None:
+                self._screen_pad = self._add_video_source("screen")
+            self._selector.set_property("active-pad", self._screen_pad)
+        else:
+            self._selector.set_property("active-pad", self._camera_pad)
+        self.screen = bool(on)
+
     def close(self) -> None:
         if self.state == "closed":
             return
         self.state = "closed"
+        if self._portal_session:
+            from .portal import close_session
+
+            close_session(self._portal_session)
+            self._portal_session = ""
         Gst = gst()[0]
         bus = self.pipe.get_bus()
         bus.disconnect(self._bus_handler)

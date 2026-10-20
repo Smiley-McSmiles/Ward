@@ -1,6 +1,7 @@
 """Jingle <-> SDP for calls: candidates, directions, Opus, and answering an offer shaped like Conversations' own."""
 
 import asyncio
+import time
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -175,6 +176,29 @@ def test_audio_gain_and_device_list(monkeypatch):
         assert ms._mute.get_property("volume") == pytest.approx(0.25)
         assert all(isinstance(d.key, str) and isinstance(d.label, str) for d in media.audio_devices("input"))
         assert all(isinstance(d.key, str) and isinstance(d.label, str) for d in media.audio_devices("output"))
+    finally:
+        ms.close()
+    asyncio.set_event_loop(None)
+
+
+@pytest.mark.skipif(not media.available(), reason="GStreamer WebRTC is missing")
+def test_screen_sharing_switches_the_video_source(monkeypatch):
+    """Screen sharing uses a second input-selector branch, so the video track is renegotiated only once."""
+    monkeypatch.setenv("WARD_CALL_SOURCES", "test")
+    monkeypatch.setenv("WARD_CALL_FAKESINK", "1")
+    ms = media.MediaSession(True, True)
+    try:
+        ms.build()
+        ms.start()
+        ms.pipe.get_state(5 * media.gst()[0].SECOND)      # finish the asynchronous state change
+        assert ms._selector is not None and ms._camera_pad is not None
+        ms.set_screen(True)
+        assert ms.screen and ms._screen_pad is not None
+        time.sleep(0.2)      # input-selector applies the switch from its streaming thread
+        assert ms._selector.get_property("active-pad") == ms._screen_pad
+        ms.set_screen(False)
+        time.sleep(0.2)
+        assert not ms.screen and ms._selector.get_property("active-pad") == ms._camera_pad
     finally:
         ms.close()
     asyncio.set_event_loop(None)
