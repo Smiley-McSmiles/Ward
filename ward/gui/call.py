@@ -3,11 +3,15 @@ and starting a call from a chat."""
 
 from __future__ import annotations
 
+import logging
+
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from ..core.calls import media
 from ..i18n import _
 from . import compat, widgets
+
+log = logging.getLogger("ward.gui")
 
 
 class CallUI:
@@ -279,8 +283,10 @@ class CallWindow(Adw.Window):
         try:
             self.core.calls.set_screen(self.call, on)
         except Exception as e:
+            log.warning("screen sharing failed: %s", e)
             button.set_active(not on)
-            compat.toast(self, _("Could not share the screen: %s") % e)
+            compat.alert(self, _("Screen sharing"), _("Could not share the screen: %s") % e,
+                         [("close", _("Close"), "")], default="close")
             return
         button.set_tooltip_text(_("Stop sharing screen") if on else _("Share screen"))
         self._show_media()

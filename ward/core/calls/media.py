@@ -388,10 +388,16 @@ class MediaSession(GObject.Object):
         if os.environ.get("WAYLAND_DISPLAY") and _have("pipewiresrc"):
             from .portal import screencast
 
-            fd, node, session = screencast()
-            self._portal_session = session
-            return self._make("pipewiresrc", fd=fd, path=str(node))
-        if _have("ximagesrc"):
+            try:
+                fd, node, session = screencast()
+            except Exception as e:
+                log.warning("Wayland screen-sharing portal failed: %s", e)
+                if not (_have("ximagesrc") and os.environ.get("DISPLAY")):
+                    raise
+            else:
+                self._portal_session = session
+                return self._make("pipewiresrc", fd=fd, path=str(node))
+        if _have("ximagesrc") and os.environ.get("DISPLAY"):
             return self._make("ximagesrc", use_damage=False)
         raise RuntimeError("Screen capture is not available (install pipewiresrc or ximagesrc)")
 
@@ -644,6 +650,7 @@ class MediaSession(GObject.Object):
         """Share the desktop instead of the camera.  The first call opens the desktop's screen chooser."""
         if self._selector is None or self._camera_pad is None:
             raise RuntimeError("Screen sharing needs a video call")
+        log.info("screen sharing: %s", "on" if on else "off")
         if on:
             if self._screen_pad is None:
                 self._screen_pad = self._add_video_source("screen")

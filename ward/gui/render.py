@@ -266,7 +266,34 @@ class Renderer:
         sc = Gtk.ScrolledWindow(vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
                                 propagate_natural_width=True)
         sc.set_child(grid)
+        _forward_wheel_to_parent(sc)
         return sc
+
+
+def _forward_vertical_scroll(widget: Gtk.Widget, dy: float) -> bool:
+    """Wheel events over a horizontal-only scroller should scroll the message list, not disappear.
+
+    GTK 4.14 (the AppImage) does not hand an unconsumed vertical wheel event up from a ScrolledWindow whose
+    vertical policy is NEVER, while newer GTK does.  Do it explicitly for code blocks and tables."""
+    parent = widget.get_parent()
+    while parent is not None:
+        if isinstance(parent, Gtk.ScrolledWindow):
+            adjustment = parent.get_vadjustment()
+            if adjustment is not None and adjustment.get_upper() > adjustment.get_page_size():
+                step = max(adjustment.get_step_increment(), adjustment.get_page_increment() / 8, 24)
+                value = adjustment.get_value() + dy * step
+                value = max(adjustment.get_lower(), min(value, adjustment.get_upper() - adjustment.get_page_size()))
+                adjustment.set_value(value)
+                return True
+        parent = parent.get_parent()
+    return False
+
+
+def _forward_wheel_to_parent(widget: Gtk.Widget) -> None:
+    controller = Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL)
+    controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+    controller.connect("scroll", lambda _c, _dx, dy: _forward_vertical_scroll(widget, dy))
+    widget.add_controller(controller)
 
 
 class _CodeScroller(Gtk.ScrolledWindow):
@@ -278,6 +305,7 @@ class _CodeScroller(Gtk.ScrolledWindow):
         super().__init__(vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
                          propagate_natural_width=True)
         self.set_child(view)
+        _forward_wheel_to_parent(self)
         longest = max(text.splitlines() or [""], key=len)
         layout = view.create_pango_layout(longest)
         font = Pango.FontDescription.from_string("monospace")
