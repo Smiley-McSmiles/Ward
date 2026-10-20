@@ -12,13 +12,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import time
 from typing import Any
 from xml.etree import ElementTree as ET
 
 from gi.repository import GObject
 
-from ... import aio, util
+from ... import aio, paths, util
 from ..chats import find_message_job, insert_message_job
 from ..stanzas import NS_HINTS, NS_RECEIPTS
 from . import jingle
@@ -142,6 +143,19 @@ class CallService(GObject.Object):
     def find(self, account_id: int, sid: str) -> Call | None:
         return self.calls.get((account_id, sid))
 
+    def _trace(self, call: Call, text: str) -> None:
+        """Always keep a short call trace: diagnosing a call between different clients needs more than "failed"."""
+        try:
+            directory = paths.ensure(paths.state_dir())
+            path = os.path.join(directory, "calls.log")
+            if os.path.exists(path) and os.path.getsize(path) > 512 * 1024:
+                os.replace(path, path + ".1")
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write("%s %s %s [%s]: %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), call.account_id,
+                                                   call.sid, call.state or "new", text))
+        except OSError:
+            pass
+
     # ================================================================== starting and answering
     async def start(self, acc, jid: str, video: bool) -> Call:
         """Call a contact: all their devices ring until one answers."""
@@ -252,6 +266,9 @@ class CallService(GObject.Object):
             return True
         call = self.find(acc.id, sid)
         from_self = util.bare(frm) == own
+        log.info("call %s: JMI %s from %s (outgoing=%s, archived=%s)", sid, kind, frm, outgoing, archived)
+        if call is not None:
+            self._trace(call, "JMI %s from %s (outgoing=%s, archived=%s)" % (kind, frm, outgoing, archived))
         if kind == "propose":
             if from_self or outgoing:
                 return True             # we called from another device
@@ -333,6 +350,8 @@ class CallService(GObject.Object):
         action, sid = j.get("action", ""), j.get("sid", "")
         call = self.find(session.account.id, sid)
         log.info("call %s: jingle %s from %s", sid, action, frm)
+        if call is not None:
+            self._trace(call, "Jingle %s from %s" % (action, frm))
         if action == "session-initiate":
             if call is None:
                 # a call without Jingle Message Initiation (some clients start with Jingle directly)
@@ -381,6 +400,9 @@ class CallService(GObject.Object):
             call.error = jingle.text_of(j) or reason
             log.info("call %s: %s ended it: %s%s", call.sid, call.remote or call.peer, reason or "no reason",
                      (" (%s)" % jingle.text_of(j)) if jingle.text_of(j) else "")
+            self._trace(call, "session-terminate from %s: %s%s" % (
+                call.remote or call.peer, reason or "no reason",
+                (" (%s)" % jingle.text_of(j)) if jingle.text_of(j) else ""))
             end = {"decline": DECLINED, "busy": BUSY, "success": ENDED, "cancel": CANCELLED}.get(reason, FAILED)
             if end == CANCELLED and call.state == "incoming":
                 end = MISSED
@@ -442,6 +464,8 @@ class CallService(GObject.Object):
             j.append(el)
         log.info("call %s: session-initiate to %s: media %s, %d contents, %d local candidates",
                  call.sid, call.remote, sorted(call.media), len(call.local_names), self._candidate_count(j))
+        self._trace(call, "session-initiate to %s: media %s, contents %s, local candidates %d" % (
+            call.remote, sorted(call.media), call.local_names, self._candidate_count(j)))
         if not await self._send_jingle(session, call, j):
             await self._fail(call, "connectivity-error", send=False, error="the session-initiate was not accepted")
             return
@@ -460,6 +484,8 @@ class CallService(GObject.Object):
         call.described = True
         log.info("call %s: session-accept from %s: %d contents, %d remote candidates",
                  call.sid, call.remote, len(call.remote_names), self._candidate_count(j))
+        self._trace(call, "session-accept from %s: contents %s, remote candidates %d" % (
+            call.remote, call.remote_names, self._candidate_count(j)))
         self._flush_remote(call)
 
     async def _answer(self, session, call: Call) -> None:
@@ -490,6 +516,8 @@ class CallService(GObject.Object):
             acc.append(el)
         log.info("call %s: session-accept to %s: media %s, %d contents, %d local candidates",
                  call.sid, call.remote, sorted(offered), len(call.local_names), self._candidate_count(acc))
+        self._trace(call, "session-accept to %s: media %s, contents %s, local candidates %d" % (
+            call.remote, sorted(offered), call.local_names, self._candidate_count(acc)))
         if not await self._send_jingle(session, call, acc):
             await self._fail(call, "connectivity-error", send=False, error="the session-accept was not accepted")
             return
@@ -568,6 +596,7 @@ class CallService(GObject.Object):
                                         quiet=True))
 
     def _remote_candidates(self, call: Call, j: ET.Element) -> None:
+        added = 0
         for content in j.findall(q(NS_JINGLE, "content")):
             tr = content.find(q(jingle.NS_ICE_UDP, "transport"))
             if tr is None:
@@ -576,6 +605,9 @@ class CallService(GObject.Object):
                 cand = jingle.Candidate.from_xml(c)
                 if cand is not None:
                     call.pending_remote.append((content.get("name", ""), cand.to_sdp()))
+                    added += 1
+        if added:
+            self._trace(call, "transport-info: %d remote candidates" % added)
         if call.described:
             self._flush_remote(call)
 
@@ -608,6 +640,7 @@ class CallService(GObject.Object):
     def _media_error(self, call: Call, text: str) -> None:
         """A GStreamer error (no microphone, no camera, a codec): end the call instead of waiting for the timeout."""
         log.warning("call %s: media error: %s", call.sid, text)
+        self._trace(call, "media error: %s" % text)
         if call.active:
             aio.spawn(self._fail(call, "failed-application", error=text))
 
@@ -618,6 +651,7 @@ class CallService(GObject.Object):
         call.reason = reason
         call.error = error or reason
         log.info("call %s failed (%s): %s", call.sid, reason, call.error)
+        self._trace(call, "failed (%s): %s" % (reason, call.error))
         session = self.core.sessions.get(call.account_id)
         if send and session is not None and call.state in ("connecting", "active"):
             self._terminate(session, call, reason)
@@ -641,6 +675,7 @@ class CallService(GObject.Object):
         if call.state != state:
             log.info("call %s: %s -> %s", call.sid, call.state or "new", state)
             call.state = state
+            self._trace(call, "state -> %s" % state)
 
     def _timeout(self, call: Call, seconds: float, action) -> None:
         self._cancel_timer(call)
