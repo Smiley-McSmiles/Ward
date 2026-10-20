@@ -1,6 +1,7 @@
 """install.sh staging, the package writers, the .mo compiler and the BSD packing lists."""
 
 import gettext
+import json
 import os
 import shutil
 import subprocess
@@ -54,6 +55,25 @@ def test_install_stages_everything(staged):
     assert "Exec=/usr/bin/ward %U" in desktop and "x-scheme-handler/xmpp" in desktop
     launcher = (usr / "bin/ward").read_text()
     assert 'PYTHONPATH="/usr/lib/ward' in launcher and "-m ward" in launcher
+
+
+def test_flatpak_manifest_bundles_appimage_extras():
+    """The Flatpak runtime has GStreamer/NSS, but not GtkSourceView's language data or libspelling."""
+    with open(os.path.join(ROOT, "packaging/flatpak", "%s.json" % APPID)) as f:
+        manifest = json.load(f)
+    modules = {m["name"]: m for m in manifest["modules"] if isinstance(m, dict)}
+    assert modules["gtksourceview-data"]["buildsystem"] == "simple"
+    assert any("data/language-specs" in command for command in modules["gtksourceview-data"]["build-commands"])
+    assert "libspelling" in modules
+    assert modules["libspelling"]["buildsystem"] == "meson"
+    assert modules["libspelling"]["config-opts"] == ["-Ddocs=false", "-Dvapi=false", "-Dsysprof=false"]
+
+
+def test_package_flatpak_creates_its_build_directory():
+    with open(os.path.join(ROOT, "package.sh")) as f:
+        text = f.read()
+    assert 'mkdir -p "$DIST/recipes/flatpak" "$BUILD/flatpak"' in text
+    assert 'flatpak-builder --user --force-clean' in text
 
 
 def test_launcher_runs(staged, tmp_path):

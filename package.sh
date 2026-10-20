@@ -619,13 +619,16 @@ build_netbsd() {
 # ---------------------------------------------------------------------------------------------- Flatpak
 build_flatpak() {
     local manifest=$ROOT/packaging/flatpak/$APPID.json
-    mkdir -p "$DIST/recipes/flatpak"
+    mkdir -p "$DIST/recipes/flatpak" "$BUILD/flatpak"
     cp "$ROOT"/packaging/flatpak/*.json "$DIST/recipes/flatpak/"
     have flatpak-builder || skip "flatpak-builder not found; manifest copied to dist/recipes/flatpak/ (flatpak-builder --user --install build $APPID.json)"
     log "flatpak"
     local repo=$BUILD/flatpak/repo
-    flatpak-builder --force-clean --repo="$repo" --install-deps-from=flathub "$BUILD/flatpak/build" "$manifest" \
-        >"$BUILD/flatpak/build.log" 2>&1 || { tail -n 40 "$BUILD/flatpak/build.log" >&2; exit 1; }
+    # Build in the user installation: package.sh may run as a normal user, and a system install would ask for
+    # authentication (or fail in a container).  --install-deps-from puts the runtime and SDK there too.
+    flatpak-builder --user --force-clean --repo="$repo" --install-deps-from=flathub \
+        "$BUILD/flatpak/build" "$manifest" >"$BUILD/flatpak/build.log" 2>&1 ||
+        { tail -n 40 "$BUILD/flatpak/build.log" >&2; exit 1; }
     flatpak build-bundle "$repo" "$DIST/$NAME-$VERSION.flatpak" "$APPID"
     log "  -> dist/$NAME-$VERSION.flatpak   (install: flatpak install --user dist/$NAME-$VERSION.flatpak)"
 }
