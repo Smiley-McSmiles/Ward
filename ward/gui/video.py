@@ -8,6 +8,7 @@ from __future__ import annotations
 from gi.repository import Gdk, Gtk
 
 from ..i18n import _
+from . import compat
 
 
 def attachment(path: str, is_video: bool, save=None) -> Gtk.Widget:
@@ -55,6 +56,10 @@ def fullscreen(vid: Gtk.Video) -> None:
     root = vid.get_root()
     win = Gtk.Window(title=_("Video"), css_classes=["video-fullscreen"],
                      transient_for=root if isinstance(root, Gtk.Window) else None)
+    app = root.get_application() if isinstance(root, Gtk.Window) else None
+    if app is not None:
+        win.set_application(app)
+    compat.window_shortcuts(win, app)
     big = Gtk.Video(media_stream=stream, vexpand=True, hexpand=True)
     overlay = Gtk.Overlay()
     overlay.set_child(big)
