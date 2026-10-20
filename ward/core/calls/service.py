@@ -302,11 +302,14 @@ class CallService(GObject.Object):
             await self._end(call, MISSED)
         elif kind == "ringing" and call.outgoing and util.bare(frm) == call.peer and call.state == "proposing":
             self._set(call, "ringing")
-        elif kind == "proceed" and call.outgoing and util.bare(frm) == call.peer and not outgoing:
+        elif kind in ("proceed", "accept") and call.outgoing and util.bare(frm) == call.peer and not outgoing:
+            # XEP-0353: the answering device sends proceed to the caller.  Some older Conversations/Snikket
+            # builds send accept to the caller instead; take that as proceed too.
             if call.state in ("proposing", "ringing"):
                 call.remote = frm
                 self._set(call, "connecting")
                 self._timeout(call, CONNECT_TIMEOUT, lambda: self._fail(call, "connectivity-error"))
+                self._trace(call, "answered with JMI %s from %s" % (kind, frm))
                 aio.spawn(self._initiate(session, call))
         elif kind in ("proceed", "accept") and not call.outgoing and (from_self or outgoing):
             if call.state == "incoming":
