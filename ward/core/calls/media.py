@@ -10,6 +10,7 @@ import asyncio
 import itertools
 import logging
 import os
+from dataclasses import dataclass
 
 from gi.repository import GLib, GObject
 
@@ -58,6 +59,80 @@ def available() -> bool:
 def _have(name: str) -> bool:
     g = gst()
     return g is not None and g[0].ElementFactory.find(name) is not None
+
+
+@dataclass(frozen=True)
+class AudioDevice:
+    key: str
+    label: str
+    kind: str
+
+
+def _device_key(device) -> str:
+    props = device.get_properties()
+    return (props.get_string("node.name") or props.get_string("object.path") or props.get_string("device.id")
+            or device.get_display_name() or "")
+
+
+def _device_label(device, key: str) -> str:
+    label = device.get_display_name() or key
+    api = device.get_properties().get_string("device.api") or ""
+    return "%s (%s)" % (label, api) if api and api not in label else label
+
+
+def _monitor(kind: str):
+    """A started Gst.DeviceMonitor for 'input' or 'output', or None."""
+    g = gst()
+    if g is None:
+        return None
+    monitor = g[0].DeviceMonitor.new()
+    monitor.add_filter("Audio/Source" if kind == "input" else "Audio/Sink",
+                       g[0].Caps.from_string("audio/x-raw"))
+    try:
+        return monitor if monitor.start() else None
+    except Exception:
+        return None
+
+
+def audio_devices(kind: str) -> list[AudioDevice]:
+    """The microphones or speakers GStreamer can see, with stable keys to save in settings."""
+    monitor = _monitor(kind)
+    if monitor is None:
+        return []
+    try:
+        out: list[AudioDevice] = []
+        seen: set[str] = set()
+        for device in monitor.get_devices():
+            key = _device_key(device)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(AudioDevice(key, _device_label(device, key), kind))
+        return out
+    finally:
+        monitor.stop()
+
+
+def audio_element(kind: str, key: str):
+    """The Gst element for a saved device key, or None for the system default or a disappeared device."""
+    if not key:
+        return None
+    monitor = _monitor(kind)
+    if monitor is None:
+        return None
+    try:
+        for device in monitor.get_devices():
+            if key not in (_device_key(device), device.get_display_name()):
+                continue
+            try:
+                element = device.create_element()
+            except Exception:
+                element = None
+            if element is not None:
+                return element
+    finally:
+        monitor.stop()
+    return None
 
 
 def payload_types(sdp_text: str) -> dict[str, int]:
@@ -131,15 +206,21 @@ class MediaSession(GObject.Object):
     }
 
     def __init__(self, audio: bool, video: bool, stun: str = "", turns: tuple[str, ...] | list[str] = (),
-                 relay_only: bool = False, sources: str = "", receive_video: bool | None = None):
+                 relay_only: bool = False, sources: str = "", receive_video: bool | None = None,
+                 mic_device: str = "", speaker_device: str = "", mic_gain: float = 1.0,
+                 speaker_gain: float = 1.0):
         """stun and turns: webrtcbin URIs (core.turn makes them); relay_only: never connect directly.
 
         receive_video: whether to show their video (a video call answered with audio only still receives it);
-        defaults to video.  An audio-only call makes no display sink at all, so it also works without a display."""
+        defaults to video.  An audio-only call makes no display sink at all, so it also works without a display.
+        mic/speaker_device: keys from audio_devices(); empty is the system default.  The gains are linear,
+        1.0 = 100%."""
         super().__init__()
         Gst, _GstWebRTC, _GstSdp = gst()
         self.audio, self.video = audio, video
         self.receive_video = video if receive_video is None else receive_video
+        self.mic_device, self.speaker_device = mic_device, speaker_device
+        self.mic_gain, self.speaker_gain = max(0.0, mic_gain), max(0.0, speaker_gain)
         self.sources = sources or os.environ.get("WARD_CALL_SOURCES", "auto")
         self.state = "new"
         self.received = {"audio": 0, "video": 0}       # buffers decoded, for tests and diagnostics
@@ -163,6 +244,7 @@ class MediaSession(GObject.Object):
         bus.add_signal_watch()
         self._bus_handler = bus.connect("message", self._on_bus)
         self._mute = None
+        self._speaker_gain_el = None
         self._camera = None
         self._remote_sink = None
         self._remote_video = None
@@ -185,6 +267,29 @@ class MediaSession(GObject.Object):
             if not a.link(b):
                 raise RuntimeError("cannot link %s to %s" % (a.get_name(), b.get_name()))
 
+    def _make_audio_source(self):
+        element = audio_element("input", self.mic_device)
+        if element is None:
+            element = gst()[0].ElementFactory.make("autoaudiosrc")
+        if element is None:
+            raise RuntimeError("no audio input element")
+        self.pipe.add(element)
+        return element
+
+    def _make_audio_sink(self):
+        if self.sources == "test":
+            element = gst()[0].ElementFactory.make("fakesink")
+            if element is None:
+                raise RuntimeError("no audio output element")
+            element.set_property("sync", False)
+            return element
+        element = audio_element("output", self.speaker_device)
+        if element is None:
+            element = gst()[0].ElementFactory.make("autoaudiosink")
+        if element is None:
+            raise RuntimeError("no audio output element")
+        return element
+
     def build(self, pts: dict[str, int] | None = None) -> None:
         """The sending branches, with the payload types to use (an offer's, when answering)."""
         if self._built:
@@ -201,7 +306,7 @@ class MediaSession(GObject.Object):
             if self.sources == "test":
                 src = self._make("audiotestsrc", is_live=True, wave=0, volume=0.2)
             else:
-                src = self._make("autoaudiosrc")
+                src = self._make_audio_source()
             els = [src, self._make("audioconvert"), self._make("audioresample")]
             if _have("webrtcdsp") and _have("webrtcechoprobe"):
                 # Echo cancellation and noise suppression.  webrtcdsp compares the microphone with what the
@@ -213,7 +318,7 @@ class MediaSession(GObject.Object):
                 self._echo_probe = self._make("webrtcechoprobe", name=probe)
                 els.append(self._make("webrtcdsp", probe=probe))
                 els.append(self._make("audioconvert"))
-            self._mute = self._make("volume")
+            self._mute = self._make("volume", volume=self.mic_gain)
             pt = pts.get("audio", 111)
             caps = Gst.Caps.from_string("application/x-rtp,media=audio,encoding-name=OPUS,clock-rate=48000,"
                                         "encoding-params=(string)2,payload=%d" % pt)
@@ -325,7 +430,10 @@ class MediaSession(GObject.Object):
             q = Gst.ElementFactory.make("queue")
             conv = Gst.ElementFactory.make("audioconvert")
             res = Gst.ElementFactory.make("audioresample")
-            sink = Gst.ElementFactory.make("fakesink" if self.sources == "test" else "autoaudiosink")
+            gain = Gst.ElementFactory.make("volume")
+            gain.set_property("volume", self.speaker_gain)
+            self._speaker_gain_el = gain
+            sink = self._make_audio_sink()
             # as for video: joining the running call must not pause it (autoaudiosink is a bin)
             for prop, value in (("async-handling", True), ("async", False)):
                 if sink.find_property(prop):
@@ -335,15 +443,15 @@ class MediaSession(GObject.Object):
             # the first stream we play passes the echo probe (made with the dsp, already in the pipeline)
             probe, self._echo_probe = self._echo_probe, None
             if probe is not None:
-                for el in (q, conv, res, sink):
+                for el in (q, conv, res, gain, sink):
                     self.pipe.add(el)
-                self._chain(q, conv, res, probe, sink)
-                for el in (q, conv, res, probe, sink):
+                self._chain(q, conv, res, probe, gain, sink)
+                for el in (q, conv, res, probe, gain, sink):
                     el.sync_state_with_parent()
                 pad.link(q.get_static_pad("sink"))
                 self._count(pad, kind)
                 return
-            els = [q, conv, res, sink]
+            els = [q, conv, res, gain, sink]
         elif name.startswith("video"):
             kind = "video"
             sink, self._remote_sink = self._remote_sink, None
@@ -473,6 +581,16 @@ class MediaSession(GObject.Object):
     def set_muted(self, muted: bool) -> None:
         if self._mute is not None:
             self._mute.set_property("mute", muted)
+
+    def set_mic_gain(self, gain: float) -> None:
+        self.mic_gain = max(0.0, gain)
+        if self._mute is not None:
+            self._mute.set_property("volume", self.mic_gain)
+
+    def set_speaker_gain(self, gain: float) -> None:
+        self.speaker_gain = max(0.0, gain)
+        if self._speaker_gain_el is not None:
+            self._speaker_gain_el.set_property("volume", self.speaker_gain)
 
     def set_camera(self, on: bool) -> None:
         if self._camera is not None:
