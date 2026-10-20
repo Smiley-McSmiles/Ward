@@ -31,6 +31,59 @@ def _sender(bus) -> str:
     return (bus.get_unique_name() or "").lstrip(":").replace(".", "_")
 
 
+def _parent_window() -> str:
+    """The portal needs the focused window, or its chooser cannot be associated with Ward."""
+    try:
+        import gi
+        from gi.repository import Gtk
+
+        app = Gtk.Application.get_default()
+        window = app.get_active_window() if app is not None else None
+        surface = window.get_surface() if window is not None else None
+        if surface is None:
+            return ""
+        try:
+            gi.require_version("GdkX11", "4.0")
+            from gi.repository import GdkX11
+
+            if isinstance(surface, GdkX11.X11Surface):
+                return "x11:%d" % surface.get_xid()
+        except (ImportError, ValueError):
+            pass
+        try:
+            gi.require_version("GdkWayland", "4.0")
+            from gi.repository import GdkWayland
+
+            if isinstance(surface, GdkWayland.WaylandToplevel):
+                loop = GLib.MainLoop()
+                handles: dict[str, str] = {}
+
+                def exported(_toplevel, handle, _data) -> bool:
+                    if handle:
+                        handles["handle"] = handle
+                    loop.quit()
+                    return True
+
+                if surface.export_handle(exported, None):
+                    timed_out = {"value": False}
+
+                    def stop() -> bool:
+                        timed_out["value"] = True
+                        loop.quit()
+                        return False
+                    timeout = GLib.timeout_add_seconds(2, stop)
+                    loop.run()
+                    if not timed_out["value"]:
+                        GLib.source_remove(timeout)
+                    if handles.get("handle"):
+                        return "wayland:" + handles["handle"]
+        except (ImportError, ValueError):
+            pass
+    except Exception:
+        pass
+    return ""
+
+
 def _request(bus, proxy, method: str, parameters, timeout: int = 180):
     # The portal answers on /request/<sender>/<handle_token>; use the token carried in the method options.
     values = parameters.unpack()
@@ -69,8 +122,10 @@ def _request(bus, proxy, method: str, parameters, timeout: int = 180):
     return result
 
 
-def screencast() -> tuple[int, int, str]:
+def screencast(parent_window: str | None = None) -> tuple[int, int, str]:
     """Return (PipeWire fd, node id, portal session handle).  The fd is a duplicate owned by the caller."""
+    if parent_window is None:
+        parent_window = _parent_window()
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         proxy = Gio.DBusProxy.new_sync(bus, Gio.DBusProxyFlags.NONE, None, PORTAL, PATH, SCREENCAST, None)
@@ -95,7 +150,7 @@ def screencast() -> tuple[int, int, str]:
         "cursor_mode": GLib.Variant("u", 2),       # embedded cursor
     })))
 
-    started = _request(bus, proxy, "Start", GLib.Variant("(osa{sv})", (session, "", {
+    started = _request(bus, proxy, "Start", GLib.Variant("(osa{sv})", (session, parent_window, {
         "handle_token": GLib.Variant("s", _token()),
     })))
     streams = started.get("streams") or []
