@@ -96,13 +96,14 @@ sudo ./install.sh --uninstall      # your chats and settings in ~/.config/ward a
 ### Encryption libraries
 
 The OMEMO libraries ([python-omemo](https://github.com/Syndace/python-omemo), twomemo, oldmemo, x3dh, doubleratchet
-and xeddsa) are not in most distributions or in the BSD ports trees yet. The Flatpak and the AppImage include them. With the other
-packages, Ward offers to download them the first time you write an encrypted message (also under Preferences >
-Encryption): they go into `~/.local/share/ward/python`, nothing else on your system changes, and Ward restarts to use
-them. `install.sh --vendor` does the same for every user of the machine.
+and xeddsa) are not in most distributions or in the BSD ports trees yet. The AppImage and the Flatpak include them,
+legacy OMEMO included. With the other packages, Ward offers to download them the first time you write an encrypted
+message (also under Preferences > Encryption): they go into `~/.local/share/ward/python`, nothing else on your
+system changes, and Ward restarts to use them. `install.sh --vendor` does the same for every user of the machine.
 
-Legacy OMEMO (oldmemo), which most apps still use, is licensed under the AGPL-3.0; Ward itself is MIT. You can leave it
-out, and talk OMEMO 2 only.
+Legacy OMEMO (oldmemo), which most apps still use, is licensed under the AGPL-3.0; Ward itself is MIT. The
+AppImage and Flatpak include it unmodified; on other installs you can leave it out and talk OMEMO 2 only. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the third-party licenses and source locations.
 
 ### Optional extras
 
@@ -223,7 +224,8 @@ Strings are in `po/ward.pot` (`tools/update-pot.sh` refreshes it). Copy it to `p
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The optional legacy OMEMO library (oldmemo) is AGPL-3.0 and is only downloaded at your
-request.
+MIT, see [LICENSE](LICENSE). The AppImage and Flatpak also include the legacy OMEMO library (oldmemo), which is
+AGPL-3.0, and the freedesktop notification sounds, which retain their own licenses. The notices, source locations
+and full license texts are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSES/](LICENSES/).
 
 The plan, decisions and what comes next are in [ROADMAP.md](ROADMAP.md).
