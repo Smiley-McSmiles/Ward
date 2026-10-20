@@ -17,16 +17,16 @@
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/44/de/f98430906df1545ffde0d543dd124a7a439bc2cd32b36b9c53f805df7333/cffi-2.1.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
-      "sha256": "68e62fe11f30d5ca8289242866f0a5291402d8529ca2178ab8afc5c9694ae890",
+      "url": "https://files.pythonhosted.org/packages/37/6f/3b5ce4c3b2192d250f04908f2bfd91ef34552ec8f7716a5d4abdb8d67bb2/cffi-2.1.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "sha256": "f16c709686a78c727bbbf059f92b0bf41c6fc60deec706d2dc19f529175a6125",
       "only-arches": [
         "aarch64"
       ]
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/b1/db/dceb9dd5b231e1da801793f8acc9f3c52a7e1afe40bb1aae37e02b0faad5/cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "sha256": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+      "url": "https://files.pythonhosted.org/packages/95/95/86342356ff5953b3fb06f7ef7c5bee212d45e770abc7218d451b9148313c/cffi-2.1.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "a931079504ecc49efed7744c476a5c343a92fabf66dec2db95edb1b2fdc770e2",
       "only-arches": [
         "x86_64"
       ]
@@ -89,16 +89,16 @@
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/3b/bb/9e30e8ed18c20800ee327a12107d5249ad8dc444867b3adfcc21654e3c71/pillow-13.0.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
-      "sha256": "8bf295fe459343bc6093c8e5e0df60bfa189e0fcb775a22e2c2488fdeccc6c0d",
+      "url": "https://files.pythonhosted.org/packages/fb/3c/cd0770e96d20bfd990db024bcbd43897ff3e88da1f4782cf90ea231b1d4f/pillow-13.0.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "19b66ca0a4d25cc0200b381ce824c7ea090db61427315e73cfb05dbf1b35c369",
       "only-arches": [
         "aarch64"
       ]
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/e6/99/fdf65cc539e266ab93546c261bdf98411fe165c6e4e13f9dbf597097192b/pillow-13.0.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-      "sha256": "42d63be3af4f9b951b199b0a9d23365d37ab14687e6d77b74940432c8515c4ca",
+      "url": "https://files.pythonhosted.org/packages/ef/fe/f5cdaa2d1c4086e757430f368c271a58ee29cfe7378e7ae7b9d964015c25/pillow-13.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "5f56499c1a74d2b862beb0c33b8016f99d095858455df9d21583bbbc1c15b582",
       "only-arches": [
         "x86_64"
       ]
@@ -131,16 +131,16 @@
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/7d/2b/09a501222892bd77b6a141f1164bd79a440cb0c48cba020333c535ca7fc0/pycares-5.2.0-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
-      "sha256": "d0ff07053b002441da004acc7f66fac3395839661515b0273498ce35d3db7174",
+      "url": "https://files.pythonhosted.org/packages/5a/46/31c44395a791a762f09ee021cfd2fed3cf8ac97a2520855f322c1a884b84/pycares-5.2.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "46792166d9e5d265d116d4cee9385a9dcfba8eb5b99c63a9626ceb191c42be69",
       "only-arches": [
         "aarch64"
       ]
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/85/67/3c05609afbd1316474420bbaa4ddd34ccf50ffd8ad0884d71a0fa894ce88/pycares-5.2.0-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl",
-      "sha256": "095264dc91b71cee50eb0cf6de4935f34a0a86fc99fd73110dd327c3c324001f",
+      "url": "https://files.pythonhosted.org/packages/29/52/1699a4901f1457ca1bd6a5309b50bbe1c666f26c2119993f607f12eae92f/pycares-5.2.0-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "95cc844884b2c5a9b013d29a36e3f6a3af71ca0c12dbd3fb5209f6f40c4fea63",
       "only-arches": [
         "x86_64"
       ]
@@ -157,32 +157,32 @@
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/d2/2d/862a7d115305cc621358e51ba13f296e0ffdf4fbd984be9f63bc7862730b/pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
-      "sha256": "c18db21573bd2c6489f9a544b7499f0df2853958c568e5e783536ee1f690af41",
+      "url": "https://files.pythonhosted.org/packages/4d/b8/fbfc25875219cc060e613170ff10e850c6d8924beb4910da57c2ee3ba1d2/pydantic_core-2.50.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "409e0ea40ec30d9158f33574fd758e689f6045a0f2596701828c27816ca9687d",
       "only-arches": [
         "aarch64"
       ]
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/90/24/48cd98388e4ac2c08d0800af36d15413db15e20387f1038123a2c86cb2f6/pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-      "sha256": "93ba4e9d8210d941c200431a56b2c0400b131865947903937ed3ec5404307d2e",
+      "url": "https://files.pythonhosted.org/packages/1c/bc/d79d000e5203ebef39af839f2ce77a777fcad6e08ad26af9a2fcd114ffc8/pydantic_core-2.50.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "17e722e156d0444ecaefbe640bdb60928752bf2013e2b7a11cdb099aaae19bec",
       "only-arches": [
         "x86_64"
       ]
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/31/75/524d101b7d441d03967cb8ddd161ba9689c00afcae382a07a5b4500b3ec5/slixmpp-1.17.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
-      "sha256": "9d8612ba00dc889cfe261329d74771ca5d46b1c27b56164edc1b116dfc99649f",
+      "url": "https://files.pythonhosted.org/packages/41/01/a900415241b9029348fb0bbfdecad8c524b0f9313dc0cd46b1b4663d3c65/slixmpp-1.17.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "sha256": "8f5709541857ee9152da577df4af1fcf9241b2809f2720afaf2b1d27324e36da",
       "only-arches": [
         "aarch64"
       ]
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/5a/5a/8224e5877ccffb13a53b42e02e02c62ea1d5148456dd9978ad7b5de61846/slixmpp-1.17.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "sha256": "618796ae636a65aa4b1dba1a36ba119170bf17febfdd88f27c267189e91e69c7",
+      "url": "https://files.pythonhosted.org/packages/5c/55/9833810e774139c8b204f90de53af37a20d18b92b2afd689ae9dabc83c96/slixmpp-1.17.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "dc36d96ccc93604f3ab0b59e49d954fc720c275fb1af63d5c521884b54cf96b7",
       "only-arches": [
         "x86_64"
       ]
@@ -209,16 +209,16 @@
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/99/88/1cc278be5ebd98b5432aa4319b6256e651c4c13bf4f709cb5e6b00f4db66/xeddsa-1.2.0-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
-      "sha256": "98de0ce498124850766d9cf5bc505389976db1e11fc3a0c92bad2b9c54bcaad3",
+      "url": "https://files.pythonhosted.org/packages/36/4c/ed0318cc346c7c308ee9078d71016a854364cbd33125c2be2e6e83c27275/xeddsa-1.2.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "9af0c06104d411328b9d905fc9fc990cff31243cef6ceb418e8bdb6d1954ce43",
       "only-arches": [
         "aarch64"
       ]
     },
     {
       "type": "file",
-      "url": "https://files.pythonhosted.org/packages/f4/1d/f606426476940d9eaea01758faedb5366ce1f00aa4876030b3b0d2116226/xeddsa-1.2.0-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl",
-      "sha256": "2984409eb1f6c5d43f84cc18382507851fabee69e078f74851765af4854919af",
+      "url": "https://files.pythonhosted.org/packages/56/53/d9d1ec805c97f3c3d53d632f19a0fe193866b17d277ba952e1564b9bcdd2/xeddsa-1.2.0-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "77818cbd47b6bc15a5c2bf506fee2e8bee88b323069eb4ba06a8e520ebca96dd",
       "only-arches": [
         "x86_64"
       ]

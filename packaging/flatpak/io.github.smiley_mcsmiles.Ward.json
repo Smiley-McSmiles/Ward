@@ -1,7 +1,7 @@
 {
   "id": "io.github.smiley_mcsmiles.Ward",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "48",
+  "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
   "command": "ward",
   "finish-args": [
