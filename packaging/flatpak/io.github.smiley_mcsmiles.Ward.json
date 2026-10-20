@@ -26,6 +26,40 @@
   "modules": [
     "python3-deps.json",
     {
+      "name": "gtksourceview-data",
+      "buildsystem": "simple",
+      "build-commands": [
+        "mkdir -p /app/share/gtksourceview-5",
+        "cp -a data/language-specs /app/share/gtksourceview-5/",
+        "cp -a data/styles /app/share/gtksourceview-5/",
+        "cp -a data/snippets /app/share/gtksourceview-5/",
+        "cp -a data/fonts /app/share/gtksourceview-5/"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://download.gnome.org/sources/gtksourceview/5.14/gtksourceview-5.14.2.tar.xz",
+          "sha256": "1a6d387a68075f8aefd4e752cf487177c4a6823b14ff8a434986858aeaef6264"
+        }
+      ]
+    },
+    {
+      "name": "libspelling",
+      "buildsystem": "meson",
+      "config-opts": [
+        "-Ddocs=false",
+        "-Dvapi=false",
+        "-Dsysprof=false"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://download.gnome.org/sources/libspelling/0.4/libspelling-0.4.10.tar.xz",
+          "sha256": "56e3f01a3a18b575beea4c34349f99cdaba316e1f7c271b1231f7bcf5d9af73b"
+        }
+      ]
+    },
+    {
       "name": "ward",
       "buildsystem": "simple",
       "build-commands": [
