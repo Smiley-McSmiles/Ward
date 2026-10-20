@@ -268,8 +268,10 @@ class CallService(GObject.Object):
         """Share the desktop; raises when the desktop's screen chooser is unavailable or cancelled."""
         if call.ms is None:
             raise RuntimeError(_("The call is not connected"))
+        self._trace(call, "screen sharing %s" % ("on" if on else "off"))
         call.ms.set_screen(on)
         call.screen = on
+        self._trace(call, "screen sharing %s" % ("active" if on else "camera"))
 
     # ================================================================== Jingle Message Initiation
     async def handle_message(self, session, pm, inner: ET.Element, archived: bool, outgoing: bool) -> bool:
