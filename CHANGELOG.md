@@ -20,7 +20,9 @@ or from what you enter in Preferences; calls between different networks need one
 trace to ~/.local/state/ward/calls.log, independent of the Debug log setting, including candidate types and the
 peer's termination reason.
 
-Screen sharing is not in the rebuilt calls yet.
+Video calls can share the desktop: the call window has a Share screen button, using the XDG ScreenCast portal and
+PipeWire on Wayland and ximagesrc on X11.  The camera and screen are two branches of the same video track, so
+switching needs no renegotiation and the other side keeps seeing the same call.
 
 An AppImage: one file with Python, GTK, libadwaita, GStreamer's WebRTC with libnice and the OMEMO libraries inside,
 for distributions where Ward's dependencies are missing or too old. Calls work in it on Void, whose own GStreamer has

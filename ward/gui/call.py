@@ -5,8 +5,9 @@ from __future__ import annotations
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+from ..core.calls import media
 from ..i18n import _
-from . import widgets
+from . import compat, widgets
 
 
 class CallUI:
@@ -213,6 +214,11 @@ class CallWindow(Adw.Window):
             if call.video:
                 self.camera = self._button("camera-video-symbolic", _("Turn off camera"), "", self._toggle_camera,
                                            toggle=True)
+                if media.screen_available():
+                    self.share = self._button("video-display-symbolic", _("Share screen"), "",
+                                              self._toggle_screen, toggle=True)
+                    self.share.set_active(call.screen)
+                    self.share.set_tooltip_text(_("Stop sharing screen") if call.screen else _("Share screen"))
             self._button("call-stop-symbolic", _("Hang up"), "destructive-action",
                          lambda *_: widgets.run(self, self.core.calls.hang_up(call)))
         if state == "active" and not self._timer:
@@ -266,6 +272,17 @@ class CallWindow(Adw.Window):
         self.core.calls.set_camera(self.call, not off)
         button.set_icon_name("camera-disabled-symbolic" if off else "camera-video-symbolic")
         button.set_tooltip_text(_("Turn on camera") if off else _("Turn off camera"))
+        self._show_media()
+
+    def _toggle_screen(self, button) -> None:
+        on = button.get_active()
+        try:
+            self.core.calls.set_screen(self.call, on)
+        except Exception as e:
+            button.set_active(not on)
+            compat.toast(self, _("Could not share the screen: %s") % e)
+            return
+        button.set_tooltip_text(_("Stop sharing screen") if on else _("Share screen"))
         self._show_media()
 
     def _on_key(self, _c, keyval, _code, _state) -> bool:

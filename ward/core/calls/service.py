@@ -20,6 +20,7 @@ from xml.etree import ElementTree as ET
 from gi.repository import GObject
 
 from ... import aio, paths, util
+from ...i18n import _
 from ..chats import find_message_job, insert_message_job
 from ..stanzas import NS_HINTS, NS_RECEIPTS
 from . import jingle
@@ -43,6 +44,7 @@ class Call(GObject.Object):
     state = GObject.Property(type=str, default="")
     muted = GObject.Property(type=bool, default=False)
     camera = GObject.Property(type=bool, default=True)
+    screen = GObject.Property(type=bool, default=False)
 
     def __init__(self, account_id: int, sid: str, peer: str, outgoing: bool, media: set[str]):
         super().__init__()
@@ -261,6 +263,13 @@ class CallService(GObject.Object):
         call.camera = on
         if call.ms is not None:
             call.ms.set_camera(on)
+
+    def set_screen(self, call: Call, on: bool) -> None:
+        """Share the desktop; raises when the desktop's screen chooser is unavailable or cancelled."""
+        if call.ms is None:
+            raise RuntimeError(_("The call is not connected"))
+        call.ms.set_screen(on)
+        call.screen = on
 
     # ================================================================== Jingle Message Initiation
     async def handle_message(self, session, pm, inner: ET.Element, archived: bool, outgoing: bool) -> bool:

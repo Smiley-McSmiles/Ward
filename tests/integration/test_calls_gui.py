@@ -62,7 +62,9 @@ def test_incoming_video_call_in_the_window(app, prosody, run, tmp_path, monkeypa
             list(_children(win.buttons))[1].emit("clicked")          # answer with video
             await wait_for(lambda: incoming.state == "active" and call.state == "active", 30, "connected")
             await wait_for(lambda: win.stack.get_visible_child_name() == "video", 20, "their video shown")
-            assert [b.get_tooltip_text() for b in _children(win.buttons)] == ["Mute", "Turn off camera", "Hang up"]
+            tips = [b.get_tooltip_text() for b in _children(win.buttons)]
+            assert tips[:2] == ["Mute", "Turn off camera"] and tips[-1] == "Hang up"
+            assert ("Share screen" in tips) == media.screen_available()
             await asyncio.sleep(1.5)
             if shots:
                 _shot(win, os.path.join(shots, "active.png"))
