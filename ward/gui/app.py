@@ -9,7 +9,17 @@ import os
 import shutil
 import subprocess
 
+import gi
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+
+# Load both display backends before the GTK application starts.  GdkWaylandToplevel.export_handle (needed to give
+# the ScreenCast portal its parent window) is not registered if GdkWayland is first imported after activation.
+for _namespace in ("GdkWayland", "GdkX11"):
+    try:
+        gi.require_version(_namespace, "4.0")
+        __import__("gi.repository." + _namespace)
+    except (ImportError, ValueError):
+        pass
 
 from .. import APP_ID, APP_NAME, URL, __version__, aio, paths, util
 from .. import log as wardlog

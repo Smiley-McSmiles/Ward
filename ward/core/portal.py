@@ -42,43 +42,47 @@ def _parent_window() -> str:
         surface = window.get_surface() if window is not None else None
         if surface is None:
             return ""
-        try:
-            gi.require_version("GdkX11", "4.0")
-            from gi.repository import GdkX11
+        # Import GdkWayland before GdkX11: loading the X11 namespace after the Wayland one hides
+        # GdkWaylandToplevel.export_handle from PyGObject in some GTK builds.
+        if os.environ.get("WAYLAND_DISPLAY"):
+            try:
+                gi.require_version("GdkWayland", "4.0")
+                from gi.repository import GdkWayland
 
-            if isinstance(surface, GdkX11.X11Surface):
-                return "x11:%d" % surface.get_xid()
-        except (ImportError, ValueError):
-            pass
-        try:
-            gi.require_version("GdkWayland", "4.0")
-            from gi.repository import GdkWayland
+                if isinstance(surface, GdkWayland.WaylandToplevel):
+                    loop = GLib.MainLoop()
+                    handles: dict[str, str] = {}
 
-            if isinstance(surface, GdkWayland.WaylandToplevel):
-                loop = GLib.MainLoop()
-                handles: dict[str, str] = {}
-
-                def exported(_toplevel, handle, _data) -> bool:
-                    if handle:
-                        handles["handle"] = handle
-                    loop.quit()
-                    return True
-
-                if surface.export_handle(exported, None):
-                    timed_out = {"value": False}
-
-                    def stop() -> bool:
-                        timed_out["value"] = True
+                    def exported(_toplevel, handle, _data) -> bool:
+                        if handle:
+                            handles["handle"] = handle
                         loop.quit()
-                        return False
-                    timeout = GLib.timeout_add_seconds(2, stop)
-                    loop.run()
-                    if not timed_out["value"]:
-                        GLib.source_remove(timeout)
-                    if handles.get("handle"):
-                        return "wayland:" + handles["handle"]
-        except (ImportError, ValueError):
-            pass
+                        return True
+
+                    if surface.export_handle(exported, None):
+                        timed_out = {"value": False}
+
+                        def stop() -> bool:
+                            timed_out["value"] = True
+                            loop.quit()
+                            return False
+                        timeout = GLib.timeout_add_seconds(2, stop)
+                        loop.run()
+                        if not timed_out["value"]:
+                            GLib.source_remove(timeout)
+                        if handles.get("handle"):
+                            return "wayland:" + handles["handle"]
+            except (ImportError, ValueError):
+                pass
+        else:
+            try:
+                gi.require_version("GdkX11", "4.0")
+                from gi.repository import GdkX11
+
+                if isinstance(surface, GdkX11.X11Surface):
+                    return "x11:%d" % surface.get_xid()
+            except (ImportError, ValueError):
+                pass
     except Exception:
         pass
     return ""
