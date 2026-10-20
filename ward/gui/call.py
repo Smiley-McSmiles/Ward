@@ -142,9 +142,16 @@ class CallWindow(Adw.Window):
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(title=name))
+        # our own minimize and close: some desktops put neither in their decoration layout, and a call window must
+        # always be movable, minimizable and closable
+        header.set_show_start_title_buttons(False)
+        header.set_show_end_title_buttons(False)
         minimize = Gtk.Button(icon_name="window-minimize-symbolic", tooltip_text=_("Minimize"), css_classes=["flat"])
         minimize.connect("clicked", lambda *_: self.minimize())
-        header.pack_start(minimize)
+        header.pack_end(minimize)
+        close = Gtk.Button(icon_name="window-close-symbolic", tooltip_text=_("Close"), css_classes=["flat"])
+        close.connect("clicked", lambda *_: self.close())
+        header.pack_end(close)
         toolbar.add_top_bar(header)
 
         overlay = Gtk.Overlay()
