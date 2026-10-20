@@ -78,6 +78,8 @@ class Dialog:
             root = parent.get_root() if parent is not None else None
             if isinstance(root, Gtk.Window):
                 self.widget.set_transient_for(root)
+                if root.get_application() is not None:
+                    self.widget.set_application(root.get_application())
             self.widget.present()
 
     def close(self) -> None:

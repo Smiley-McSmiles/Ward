@@ -24,6 +24,11 @@ Video calls can share the desktop: the call window has a Share screen button, us
 PipeWire on Wayland and ximagesrc on X11.  The camera and screen are two branches of the same video track, so
 switching needs no renegotiation and the other side keeps seeing the same call.
 
+The AppImage bundles GtkSourceView's language specs and style schemes, so code blocks are highlighted there too.
+Scrolling with the pointer over a code block or table reaches the message list on GTK 4.14, the composer's attach,
+emoji and send buttons are vertically centered, and Ctrl+W closes the window even where GTK's application
+accelerators do not pass through.
+
 An AppImage: one file with Python, GTK, libadwaita, GStreamer's WebRTC with libnice and the OMEMO libraries inside,
 for distributions where Ward's dependencies are missing or too old. Calls work in it on Void, whose own GStreamer has
 no WebRTC. `./package.sh appimage` builds it; CI builds and starts it. The image includes NSS's crypto modules

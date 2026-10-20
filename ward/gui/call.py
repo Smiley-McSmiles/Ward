@@ -132,6 +132,7 @@ class CallWindow(Adw.Window):
     def __init__(self, ui: CallUI, call):
         super().__init__(title=_("Call"), default_width=720 if call.video else 380,
                          default_height=540 if call.video else 520, css_classes=["call-window"])
+        self.set_application(ui.app)
         self.ui = ui
         self.core = ui.core
         self.call = call

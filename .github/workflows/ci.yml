@@ -187,6 +187,10 @@ jobs:
           grep -F "Package manager: AppImage" check.txt
           grep -F "[ok ] OMEMO 2 encryption" check.txt
           grep -F "[ok ] Audio and video calls" check.txt
+          appimage=$(ls dist/ward-*-x86_64.AppImage | head -1)
+          "$appimage" --appimage-extract >/dev/null
+          test -f squashfs-root/usr/share/gtksourceview-5/language-specs/python.lang
+          test -f squashfs-root/usr/share/gtksourceview-5/styles/Adwaita.xml
       - uses: actions/upload-artifact@v4
         with:
           name: appimage

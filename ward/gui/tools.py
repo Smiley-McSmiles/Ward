@@ -19,6 +19,8 @@ class XmlConsole(Adw.Window):
 
     def __init__(self, window):
         super().__init__(title=_("XML console"), default_width=760, default_height=640, transient_for=window)
+        if window.get_application() is not None:
+            self.set_application(window.get_application())
         self.core = window.core
         self.session = None
         self._handler = 0
