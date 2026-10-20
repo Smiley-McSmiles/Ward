@@ -373,6 +373,25 @@ def test_appimage_has_no_package_manager(monkeypatch):
         deps.package_manager.cache_clear()
 
 
+def test_appimage_does_not_let_an_older_vendor_folder_shadow_it(tmp_path, monkeypatch):
+    """A distribution install's ~/.local/share/ward/python belongs to another Python (Void's 3.14, say); in the
+    AppImage it must not shadow the image's 3.12 OMEMO libraries, or the window says encryption is not installed."""
+    from ward import extras
+
+    monkeypatch.setenv("WARD_APPIMAGE", "/home/me/Ward.AppImage")
+    monkeypatch.delenv("WARD_VENDOR", raising=False)
+    vendor = tmp_path / "ward" / "python"
+    vendor.mkdir(parents=True)
+    monkeypatch.setattr(extras, "user_dir", lambda: str(vendor))
+    saved = sys.path[:]
+    try:
+        extras.activate()
+        assert sys.path[-1] == str(vendor)          # after the image's own site-packages
+        assert str(vendor) != sys.path[0]
+    finally:
+        sys.path[:] = saved
+
+
 @pytest.mark.skipif(not shutil.which("bash"), reason="package.sh is a bash script")
 def test_package_sh_builds_appimages():
     out = subprocess.run(["bash", os.path.join(ROOT, "package.sh"), "--help"], check=True, capture_output=True,
