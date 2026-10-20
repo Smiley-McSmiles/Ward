@@ -14,6 +14,11 @@ when a webrtcbin version renames its mids. GStreamer errors (no microphone, no c
 instead of leaving it "Connecting" until the timeout. Audio-only calls make no video sink, so they work on a system
 without a display server.
 
+Preferences > Calls > Audio lets you choose the microphone and speaker GStreamer should use, and set their volumes;
+a call in progress follows volume changes. STUN defaults to a public server so calls between different networks can
+find a direct path; replace it with your own or clear it in Preferences. Every call writes a short trace to
+~/.local/state/ward/calls.log, independent of the Debug log setting.
+
 Screen sharing is not in the rebuilt calls yet.
 
 An AppImage: one file with Python, GTK, libadwaita, GStreamer's WebRTC with libnice and the OMEMO libraries inside,

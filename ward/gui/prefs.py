@@ -71,6 +71,8 @@ def spec_row(spec: schema.Spec, value, on_change) -> Gtk.Widget | None:
         return row
     if spec.type == "sound":
         return _sound_row(spec, title, value, on_change)
+    if spec.type == "device":
+        return _device_row(spec, title, subtitle, value, on_change)
     if spec.type in ("str", "list", "time_range"):
         text = ", ".join(value) if isinstance(value, list) else str(value or "")
         if spec.type == "list" and value and all(len(v) <= 4 for v in value):
@@ -158,6 +160,24 @@ def _sound_row(spec: schema.Spec, title: str, value, on_change) -> Gtk.Widget:
         row.add_suffix(b)
     row.set_activatable_widget(pick)
     describe()
+    return row
+
+
+def _device_row(spec: schema.Spec, title: str, subtitle: str, value, on_change) -> Gtk.Widget:
+    """A microphone or speaker list from GStreamer's device monitor; empty means the system default."""
+    from ..core.calls import media
+
+    devices = media.audio_devices(spec.device)
+    choices: list[tuple[str, str]] = [("", _("System default"))]
+    choices += [(d.key, d.label) for d in devices]
+    if value and value not in {key for key, _label in choices}:
+        choices.append((value, _("%s (not connected)") % value))
+    row = Adw.ComboRow(title=title, subtitle=subtitle)
+    row.set_model(Gtk.StringList.new([label for _key, label in choices]))
+    keys = [key for key, _label in choices]
+    if value in keys:
+        row.set_selected(keys.index(value))
+    row.connect("notify::selected", lambda r, _p: on_change(keys[r.get_selected()]))
     return row
 
 

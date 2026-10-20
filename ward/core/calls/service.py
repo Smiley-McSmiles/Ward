@@ -91,6 +91,22 @@ class CallService(GObject.Object):
         self.core = core
         self.calls: dict[tuple[int, str], Call] = {}
         self._available: bool | None = None
+        settings = getattr(core, "settings", None)
+        if settings is not None and hasattr(settings, "connect"):
+            settings.connect("changed::calls.mic_gain", lambda *_: self._update_gains())
+            settings.connect("changed::calls.speaker_gain", lambda *_: self._update_gains())
+
+    def _update_gains(self) -> None:
+        """Preferences apply to a call already in progress."""
+        try:
+            mic = max(0, int(self.core.settings["calls.mic_gain"])) / 100.0
+            speaker = max(0, int(self.core.settings["calls.speaker_gain"])) / 100.0
+        except (KeyError, TypeError, ValueError):
+            return
+        for call in self.calls.values():
+            if call.ms is not None:
+                call.ms.set_mic_gain(mic)
+                call.ms.set_speaker_gain(speaker)
 
     # ================================================================== availability
     def available(self) -> bool:
@@ -436,8 +452,20 @@ class CallService(GObject.Object):
 
         stun, turns = await self.core.turn.uris(session)
         video = call.video if send_video is None else send_video
-        ms = media.MediaSession(True, video, stun, turns, bool(self.core.settings["calls.relay_only"]),
-                                receive_video=video if receive_video is None else receive_video)
+        settings = self.core.settings
+        try:
+            mic_gain = max(0, int(settings.get("calls.mic_gain", 100))) / 100.0
+            speaker_gain = max(0, int(settings.get("calls.speaker_gain", 100))) / 100.0
+        except (TypeError, ValueError):
+            mic_gain = speaker_gain = 1.0
+        self._trace(call, "ICE servers: %s, %d TURN; microphone %r, speaker %r" % (
+            stun or "no STUN", len(turns), settings.get("calls.mic_device", ""),
+            settings.get("calls.speaker_device", "")))
+        ms = media.MediaSession(True, video, stun, turns, bool(settings.get("calls.relay_only", False)),
+                                receive_video=video if receive_video is None else receive_video,
+                                mic_device=str(settings.get("calls.mic_device", "") or ""),
+                                speaker_device=str(settings.get("calls.speaker_device", "") or ""),
+                                mic_gain=mic_gain, speaker_gain=speaker_gain)
         ms.set_muted(call.muted)
         ms.set_camera(call.camera)
         ms.connect("local-candidate", lambda _m, mline, cand: self._local_candidate(session, call, mline, cand))
@@ -487,8 +515,11 @@ class CallService(GObject.Object):
         call.described = True
         log.info("call %s: session-accept from %s: %d contents, %d remote candidates",
                  call.sid, call.remote, len(call.remote_names), self._candidate_count(j))
-        self._trace(call, "session-accept from %s: contents %s, remote candidates %d" % (
-            call.remote, call.remote_names, self._candidate_count(j)))
+        embedded = [c for c in (jingle.Candidate.from_xml(e)
+                               for e in j.iter(q(jingle.NS_ICE_UDP, "candidate"))) if c is not None]
+        self._trace(call, "session-accept from %s: contents %s, remote candidates %s" % (
+            call.remote, call.remote_names,
+            ", ".join("%s/%s:%d" % (c.type, c.ip, c.port) for c in embedded) or "none"))
         self._flush_remote(call)
 
     async def _answer(self, session, call: Call) -> None:
@@ -576,6 +607,8 @@ class CallService(GObject.Object):
         added = jingle.add_candidates(contents, by_name)
         if added:
             log.info("call %s: %d local candidates in the session description", call.sid, added)
+            self._trace(call, "local candidates: %s" % ", ".join(
+                "%s/%s:%d" % (c.type, c.ip, c.port) for group in by_name.values() for c in group))
 
     @staticmethod
     def _candidate_count(j: ET.Element) -> int:
@@ -599,7 +632,7 @@ class CallService(GObject.Object):
                                         quiet=True))
 
     def _remote_candidates(self, call: Call, j: ET.Element) -> None:
-        added = 0
+        added = []
         for content in j.findall(q(NS_JINGLE, "content")):
             tr = content.find(q(jingle.NS_ICE_UDP, "transport"))
             if tr is None:
@@ -608,9 +641,10 @@ class CallService(GObject.Object):
                 cand = jingle.Candidate.from_xml(c)
                 if cand is not None:
                     call.pending_remote.append((content.get("name", ""), cand.to_sdp()))
-                    added += 1
+                    added.append(cand)
         if added:
-            self._trace(call, "transport-info: %d remote candidates" % added)
+            self._trace(call, "remote candidates: %s" % ", ".join(
+                "%s/%s:%d" % (c.type, c.ip, c.port) for c in added))
         if call.described:
             self._flush_remote(call)
 

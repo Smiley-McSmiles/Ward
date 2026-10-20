@@ -164,6 +164,23 @@ def test_jmi_and_reasons():
 
 
 @pytest.mark.skipif(not media.available(), reason="GStreamer WebRTC is missing")
+def test_audio_gain_and_device_list(monkeypatch):
+    """The microphone volume is the volume element before Opus; devices come from GStreamer's monitor."""
+    monkeypatch.setenv("WARD_CALL_SOURCES", "test")
+    ms = media.MediaSession(True, False, mic_gain=1.5, speaker_gain=0.5)
+    try:
+        ms.build()
+        assert ms._mute.get_property("volume") == pytest.approx(1.5)
+        ms.set_mic_gain(0.25)
+        assert ms._mute.get_property("volume") == pytest.approx(0.25)
+        assert all(isinstance(d.key, str) and isinstance(d.label, str) for d in media.audio_devices("input"))
+        assert all(isinstance(d.key, str) and isinstance(d.label, str) for d in media.audio_devices("output"))
+    finally:
+        ms.close()
+    asyncio.set_event_loop(None)
+
+
+@pytest.mark.skipif(not media.available(), reason="GStreamer WebRTC is missing")
 def test_answering_a_conversations_offer(monkeypatch):
     """webrtcbin picks Opus and VP8 from everything libwebrtc offers, with the offer's payload types."""
     from ward import aio

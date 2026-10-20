@@ -30,6 +30,7 @@ class Spec:
     unit: str = ""
     advanced: bool = False            # shown inside an "Advanced" expander of its group
     keywords: tuple[str, ...] = field(default_factory=tuple)
+    device: str = ""                  # "input" | "output" for type "device"
 
 
 def S(type_, default, title="", subtitle="", **kw) -> Spec:
@@ -166,12 +167,23 @@ SPECS: dict[str, Spec] = {
     # ------------------------------------------------------------------ Calls
     "calls.enabled": S("bool", True, N_("Audio and video calls"),
                         N_("Contacts can call you, and you them, on this device"), page="calls", group=N_("Calls")),
+    "calls.mic_device": S("device", "", N_("Microphone"),
+                          N_("The input device used for calls"), page="calls", group=N_("Audio"), device="input"),
+    "calls.speaker_device": S("device", "", N_("Speaker"),
+                              N_("The output device used for calls"), page="calls", group=N_("Audio"),
+                              device="output"),
+    "calls.mic_gain": S("int", 100, N_("Microphone volume"),
+                        N_("Applied to the microphone before encoding"), page="calls", group=N_("Audio"),
+                        min=0, max=200, step=5, unit="%"),
+    "calls.speaker_gain": S("int", 100, N_("Speaker volume"), N_("Applied to the other side's audio"),
+                            page="calls", group=N_("Audio"), min=0, max=200, step=5, unit="%"),
     "calls.discover": S("bool", True, N_("Discover STUN/TURN from the server"),
                         N_("Use XEP-0215 external service discovery for call relay servers"),
                         page="calls", group=N_("Network")),
-    "calls.stun": S("str", "", N_("STUN servers"),
-                    N_("Space-separated stun:host:port addresses; the server can provide these too"),
-                    page="calls", group=N_("Network")),
+    "calls.stun": S("str", "stun:stun.l.google.com:19302", N_("STUN servers"),
+                    N_("Space-separated stun:host:port addresses; the server can provide these too. A public "
+                       "server is used by default so calls work across networks; replace it with your own or "
+                       "clear the field"), page="calls", group=N_("Network")),
     "calls.turn": S("str", "", N_("TURN servers"),
                     N_("Space-separated turn:host:port addresses; add ?transport=tcp for TCP"),
                     page="calls", group=N_("Network")),
