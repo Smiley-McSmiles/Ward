@@ -180,10 +180,10 @@ SPECS: dict[str, Spec] = {
     "calls.discover": S("bool", True, N_("Discover STUN/TURN from the server"),
                         N_("Use XEP-0215 external service discovery for call relay servers"),
                         page="calls", group=N_("Network")),
-    "calls.stun": S("str", "stun:stun.l.google.com:19302", N_("STUN servers"),
-                    N_("Space-separated stun:host:port addresses; the server can provide these too. A public "
-                       "server is used by default so calls work across networks; replace it with your own or "
-                       "clear the field"), page="calls", group=N_("Network")),
+    "calls.stun": S("str", "", N_("STUN servers"),
+                    N_("Space-separated stun:host:port addresses; the server can provide these too. Leave empty "
+                       "to use only the server's own discovery; calls between different networks need a STUN or "
+                       "TURN server"), page="calls", group=N_("Network")),
     "calls.turn": S("str", "", N_("TURN servers"),
                     N_("Space-separated turn:host:port addresses; add ?transport=tcp for TCP"),
                     page="calls", group=N_("Network")),
