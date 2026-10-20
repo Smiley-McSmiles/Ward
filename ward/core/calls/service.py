@@ -628,6 +628,7 @@ class CallService(GObject.Object):
                 continue
             name = call.local_names[mline]
             ufrag, pwd = call.local_ice.get(name, ("", ""))
+            self._trace(call, "local candidate %s/%s:%d in %s" % (c.type, c.ip, c.port, name))
             aio.spawn(self._send_jingle(session, call, jingle.transport_info(call.sid, name, ufrag, pwd, c),
                                         quiet=True))
 
