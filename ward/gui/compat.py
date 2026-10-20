@@ -32,6 +32,32 @@ HAS_BOTTOM_SHEET = hasattr(Adw, "BottomSheet")       # 1.6
 HAS_WRAP_BOX = hasattr(Adw, "WrapBox")               # 1.7
 
 
+def window_shortcuts(window: Gtk.Window, app) -> Gtk.EventControllerKey:
+    """Ctrl+W/Ctrl+Q for a secondary window, in capture phase.
+
+    Application accelerators are not always delivered to an Adw.Window that the application did not create
+    itself (the call window and XML console), and a focused text view can consume Ctrl+W."""
+    controller = Gtk.EventControllerKey()
+    controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+
+    def pressed(_c, keyval, _code, state) -> bool:
+        from gi.repository import Gdk
+
+        if (state & Gtk.accelerator_get_default_mod_mask()) != Gdk.ModifierType.CONTROL_MASK:
+            return False
+        if keyval in (Gdk.KEY_w, Gdk.KEY_W):
+            window.close()
+            return True
+        if keyval in (Gdk.KEY_q, Gdk.KEY_Q) and app is not None and hasattr(app, "quit_app"):
+            app.quit_app()
+            return True
+        return False
+
+    controller.connect("key-pressed", pressed)
+    window.add_controller(controller)
+    return controller
+
+
 def spinner() -> Gtk.Widget:
     if HAS_SPINNER:
         return Adw.Spinner()

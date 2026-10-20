@@ -187,6 +187,7 @@ class CallWindow(Adw.Window):
         toolbar.set_content(overlay)
         self.set_content(toolbar)
 
+        compat.window_shortcuts(self, ui.app)
         self.connect("close-request", self._on_close)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_key)
