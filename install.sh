@@ -523,7 +523,7 @@ link_system_dirs() {
 
 uninstall() {
     say "Removing Ward from $PREFIX"
-    rm -rf "$D$LIBDIR" "$D$SHAREDIR/ward"
+    rm -rf "$D$LIBDIR" "$D$SHAREDIR/ward" "$D$SHAREDIR/doc/ward"
     rm -f "$D$BINDIR/ward" "$D$PREFIX/lib/systemd/user/ward.service"
     rm -f "$D$SHAREDIR/applications/$APPID.desktop" "$D$SHAREDIR/metainfo/$APPID.metainfo.xml" \
           "$D$SHAREDIR/pixmaps/$APPID.svg" "$D$MANDIR/ward.1" "$D$SHAREDIR/bash-completion/completions/ward" \
@@ -572,7 +572,10 @@ if [ "$VENDOR" -ge 1 ]; then vendor; fi
 
 wrapper "$D$BINDIR/ward"
 
-mkdir -p "$D$SHAREDIR/applications" "$D$SHAREDIR/metainfo" "$D$MANDIR" "$D$SHAREDIR/pixmaps" "$D$SHAREDIR/ward"
+mkdir -p "$D$SHAREDIR/applications" "$D$SHAREDIR/metainfo" "$D$MANDIR" "$D$SHAREDIR/pixmaps" \
+    "$D$SHAREDIR/ward" "$D$SHAREDIR/doc/ward"
+cp "$SRC/LICENSE" "$SRC/THIRD_PARTY_NOTICES.md" "$D$SHAREDIR/doc/ward/"
+cp -R "$SRC/LICENSES" "$D$SHAREDIR/doc/ward/"
 sed "s|^Exec=ward|Exec=$BINDIR/ward|" "$SRC/data/$APPID.desktop" > "$D$SHAREDIR/applications/$APPID.desktop"
 cp "$SRC/data/$APPID.metainfo.xml" "$D$SHAREDIR/metainfo/"
 for dir in "$SRC"/data/icons/hicolor/*/apps; do
@@ -606,7 +609,7 @@ render "$SRC/data/init/runit/run" "$SHAREDIR/ward/runit/run" 755
 render "$SRC/data/init/runit/log/run" "$SHAREDIR/ward/runit/log/run" 755
 
 # cp keeps the source modes: a tarball unpacked with a strict umask must still install world-readable files
-chmod -R go+rX "$D$LIBDIR" "$D$SHAREDIR/ward"
+chmod -R go+rX "$D$LIBDIR" "$D$SHAREDIR/ward" "$D$SHAREDIR/doc/ward"
 chmod 755 "$D$SHAREDIR/ward/runit/run" "$D$SHAREDIR/ward/runit/log/run"
 find "$D$SHAREDIR" \( -name "$APPID*" -o -name 'ward.1' -o -name 'ward' -o -name '_ward' -o -name 'ward.fish' \
     -o -name 'ward.mo' \) -type f -exec chmod 644 {} + 2>/dev/null || true
