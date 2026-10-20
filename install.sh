@@ -136,7 +136,7 @@ packages() {
         pacman) REQ="python python-gobject gtk4 libadwaita python-slixmpp python-markdown-it-py python-cryptography"
                 OPT="gtksourceview5 libspelling libsecret python-pillow python-linkify-it-py python-mdit_py_plugins python-pip gnupg gst-plugins-good desktop-file-utils" ;;
         xbps-install) REQ="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it python3-cryptography"
-                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-mdit-py-plugins python3-pip gnupg gst-plugins-good1 xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils gtk-update-icon-cache" ;;
+                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-mdit-py-plugins python3-pip gnupg gst-plugins-good1 xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils gtk4-update-icon-cache" ;;
         apk) REQ="python3 py3-gobject3 gtk4.0 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
              OPT="gtksourceview5 libspelling libsecret py3-pillow py3-linkify-it-py py3-pip gnupg gst-plugins-good xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils" ;;
         emerge) REQ="dev-lang/python dev-python/pygobject gui-libs/gtk gui-libs/libadwaita dev-python/slixmpp dev-python/markdown-it-py dev-python/cryptography"

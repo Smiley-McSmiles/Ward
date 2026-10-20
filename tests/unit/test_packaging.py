@@ -61,12 +61,16 @@ def test_flatpak_manifest_bundles_appimage_extras():
     """The Flatpak runtime has GStreamer/NSS, but not GtkSourceView's language data or libspelling."""
     with open(os.path.join(ROOT, "packaging/flatpak", "%s.json" % APPID)) as f:
         manifest = json.load(f)
+    assert manifest["runtime-version"] == "50"
     modules = {m["name"]: m for m in manifest["modules"] if isinstance(m, dict)}
     assert modules["gtksourceview-data"]["buildsystem"] == "simple"
     assert any("data/language-specs" in command for command in modules["gtksourceview-data"]["build-commands"])
     assert "libspelling" in modules
     assert modules["libspelling"]["buildsystem"] == "meson"
     assert modules["libspelling"]["config-opts"] == ["-Ddocs=false", "-Dvapi=false", "-Dsysprof=false"]
+    with open(os.path.join(ROOT, "packaging/flatpak/python3-deps.json")) as f:
+        deps = json.load(f)
+    assert not any("cp312" in source["url"] for source in deps["sources"])
 
 
 def test_package_flatpak_creates_its_build_directory():
@@ -202,7 +206,7 @@ def test_set_version_everywhere(tmp_path):
 VOID_PACKAGES = {
     "python3", "python3-gobject", "gtk4", "libadwaita", "python3-slixmpp", "python3-markdown-it",
     "python3-cryptography", "gtksourceview5", "libspelling", "libsecret", "python3-Pillow", "python3-mdit-py-plugins",
-    "python3-pip", "gnupg", "gst-plugins-good1", "desktop-file-utils", "gtk-update-icon-cache", "zbar", "libnice",
+    "python3-pip", "gnupg", "gst-plugins-good1", "desktop-file-utils", "gtk4-update-icon-cache", "zbar", "libnice",
     "gst-plugins-base1", "gst-plugins-bad1", "gst-plugins-rs1", "xdg-desktop-portal",
     "xdg-desktop-portal-gtk",
 }
