@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.1 (2026-10-20)
 
 Calls work with Conversations. Ward's calls used a `<jingle-message>` wrapper around the call invitations that no
 other app sends or understands, so Conversations never saw Ward's calls and Ward never saw theirs. They are rebuilt
@@ -35,10 +35,6 @@ no WebRTC. `./package.sh appimage` builds it; CI builds and starts it. The image
 (libsoftokn3, libfreebl3, ...): libsrtp2 is built against NSS, which loads them by name, and without them SRTP could
 not start, so calls connected but carried no voice. Its own encryption libraries come before an existing
 distribution's private folder, whose modules are built for another Python and used to hide the image's.
-
-## v1.0.1 (2026-10-19)
-
-Sent messages now sync between devices on the same account, Wayland screen sharing works through the ScreenCast portal, calls leave a history line in their chat, and incoming calls ring.
 
 ## v1.0.0 (2026-10-18)
 
