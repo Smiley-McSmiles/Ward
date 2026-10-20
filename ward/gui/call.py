@@ -135,6 +135,17 @@ class CallWindow(Adw.Window):
         self.set_title(name)
         contact = self.core.roster.contacts.get(call.account_id, call.peer)
         avatar_path = contact.avatar if contact is not None else ""
+        if getattr(ui.app, "window", None) is not None:
+            self.set_transient_for(ui.app.window)
+
+        # a real title bar: drag the window, and the desktop's own minimize and close buttons
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title=name))
+        minimize = Gtk.Button(icon_name="window-minimize-symbolic", tooltip_text=_("Minimize"), css_classes=["flat"])
+        minimize.connect("clicked", lambda *_: self.minimize())
+        header.pack_start(minimize)
+        toolbar.add_top_bar(header)
 
         overlay = Gtk.Overlay()
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, vexpand=True, hexpand=True)
@@ -160,7 +171,8 @@ class CallWindow(Adw.Window):
 
         self.buttons = Gtk.Box(spacing=18, halign=Gtk.Align.CENTER, valign=Gtk.Align.END, margin_bottom=24)
         overlay.add_overlay(self.buttons)
-        self.set_content(overlay)
+        toolbar.set_content(overlay)
+        self.set_content(toolbar)
 
         self.connect("close-request", self._on_close)
         keys = Gtk.EventControllerKey()
