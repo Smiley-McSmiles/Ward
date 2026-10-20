@@ -128,19 +128,19 @@ pyver() {   # py311 style prefix for FreeBSD and NetBSD package names
 packages() {
     case "$(pm_name)" in
         apt-get) REQ="python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-slixmpp python3-markdown-it python3-cryptography"
-                 OPT="gir1.2-gtksource-5 gir1.2-spelling-1 gir1.2-secret-1 python3-pil python3-linkify-it python3-mdit-py-plugins python3-pip gnupg libgtk-4-media-gstreamer desktop-file-utils" ;;
+                 OPT="gir1.2-gtksource-5 gir1.2-spelling-1 gir1.2-secret-1 python3-pil python3-linkify-it python3-mdit-py-plugins python3-pip gnupg libgtk-4-media-gstreamer xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils" ;;
         dnf) REQ="python3 python3-gobject gobject-introspection cairo-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it-py python3-cryptography"
-             OPT="gtksourceview5 libspelling libsecret python3-pillow python3-linkify-it-py python3-mdit-py-plugins python3-pip gnupg2 gstreamer1-plugins-good desktop-file-utils" ;;
+             OPT="gtksourceview5 libspelling libsecret python3-pillow python3-linkify-it-py python3-mdit-py-plugins python3-pip gnupg2 gstreamer1-plugins-good xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils" ;;
         zypper) REQ="python3 python3-gobject typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 python3-slixmpp python3-markdown-it-py python3-cryptography"
-                OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-linkify-it-py python3-pip gpg2 desktop-file-utils" ;;
+                OPT="typelib-1_0-GtkSource-5 typelib-1_0-Spelling-1 typelib-1_0-Secret-1 python3-Pillow python3-linkify-it-py python3-pip gpg2 xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils" ;;
         pacman) REQ="python python-gobject gtk4 libadwaita python-slixmpp python-markdown-it-py python-cryptography"
                 OPT="gtksourceview5 libspelling libsecret python-pillow python-linkify-it-py python-mdit_py_plugins python-pip gnupg gst-plugins-good desktop-file-utils" ;;
         xbps-install) REQ="python3 python3-gobject gtk4 libadwaita python3-slixmpp python3-markdown-it python3-cryptography"
-                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-mdit-py-plugins python3-pip gnupg gst-plugins-good1 desktop-file-utils gtk-update-icon-cache" ;;
+                      OPT="gtksourceview5 libspelling libsecret python3-Pillow python3-mdit-py-plugins python3-pip gnupg gst-plugins-good1 xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils gtk-update-icon-cache" ;;
         apk) REQ="python3 py3-gobject3 gtk4.0 libadwaita py3-slixmpp py3-markdown-it-py py3-cryptography"
-             OPT="gtksourceview5 libspelling libsecret py3-pillow py3-linkify-it-py py3-pip gnupg gst-plugins-good desktop-file-utils" ;;
+             OPT="gtksourceview5 libspelling libsecret py3-pillow py3-linkify-it-py py3-pip gnupg gst-plugins-good xdg-desktop-portal xdg-desktop-portal-gtk desktop-file-utils" ;;
         emerge) REQ="dev-lang/python dev-python/pygobject gui-libs/gtk gui-libs/libadwaita dev-python/slixmpp dev-python/markdown-it-py dev-python/cryptography"
-                OPT="x11-libs/gtksourceview:5 app-crypt/libsecret dev-python/pillow dev-python/linkify-it-py dev-python/pip app-crypt/gnupg" ;;
+                OPT="x11-libs/gtksourceview:5 app-crypt/libsecret dev-python/pillow dev-python/linkify-it-py dev-python/pip app-crypt/gnupg sys-apps/xdg-desktop-portal gui-libs/xdg-desktop-portal-gtk" ;;
         pkg) P=$(pyver)
              REQ="python3 $P-pygobject $P-sqlite3 gtk4 libadwaita $P-slixmpp $P-markdown-it-py $P-cryptography"
              OPT="gtksourceview5 libspelling libsecret $P-pillow $P-linkify-it-py $P-pip gnupg desktop-file-utils" ;;
@@ -160,17 +160,17 @@ packages() {
     # optional: GStreamer WebRTC (webrtcbin) and libnice's ICE plugin for audio and video calls
     CALLS=""
     case "$(pm_name)" in
-        apt-get) CALLS="gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0 gstreamer1.0-gtk4" ;;
-        dnf) CALLS="libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-gtk4" ;;
-        zypper) CALLS="libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad" ;;
-        pacman) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugin-gtk4" ;;
+        apt-get) CALLS="gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pipewire gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0 gstreamer1.0-gtk4" ;;
+        dnf) CALLS="libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free pipewire-gstreamer gstreamer1-plugin-gtk4" ;;
+        zypper) CALLS="libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad pipewire-gstreamer" ;;
+        pacman) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugin-pipewire gst-plugin-gtk4" ;;
         xbps-install) CALLS="libnice gst-plugins-base1 gst-plugins-good1 gst-plugins-bad1 gst-plugins-rs1" ;;
         apk) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad" ;;
         emerge) CALLS="media-libs/libnice media-plugins/gst-plugins-webrtc" ;;
-        pkg) CALLS="libnice gstreamer1-plugins-bad" ;;
-        pkg_add) if [ "$OS" = NetBSD ]; then CALLS="libnice gst-plugins1-bad"
-                 else CALLS="libnice gstreamer1-plugins-bad"; fi ;;
-        pkgin) CALLS="libnice gst-plugins1-bad" ;;
+        pkg) CALLS="libnice gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad" ;;
+        pkg_add) if [ "$OS" = NetBSD ]; then CALLS="libnice gst-plugins1-base gst-plugins1-good gst-plugins1-bad"
+                 else CALLS="libnice gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad"; fi ;;
+        pkgin) CALLS="libnice gst-plugins1-base gst-plugins1-good gst-plugins1-bad" ;;
     esac
     if [ -n "$CALLS" ]; then OPT="$OPT $CALLS"; fi
 }
