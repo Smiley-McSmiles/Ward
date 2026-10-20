@@ -180,7 +180,8 @@ VOID_PACKAGES = {
     "python3", "python3-gobject", "gtk4", "libadwaita", "python3-slixmpp", "python3-markdown-it",
     "python3-cryptography", "gtksourceview5", "libspelling", "libsecret", "python3-Pillow", "python3-mdit-py-plugins",
     "python3-pip", "gnupg", "gst-plugins-good1", "desktop-file-utils", "gtk-update-icon-cache", "zbar", "libnice",
-    "gst-plugins-base1", "gst-plugins-bad1", "gst-plugins-rs1",
+    "gst-plugins-base1", "gst-plugins-bad1", "gst-plugins-rs1", "xdg-desktop-portal",
+    "xdg-desktop-portal-gtk",
 }
 
 

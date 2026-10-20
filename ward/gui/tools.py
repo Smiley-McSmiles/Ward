@@ -8,7 +8,7 @@ from gi.repository import Adw, GLib, Gtk, Pango
 
 from ..core.models import AccountItem
 from ..i18n import _
-from . import widgets
+from . import compat, widgets
 from .dialogs import BaseDialog, online_session
 
 MAX_LINES = 4000
@@ -21,6 +21,7 @@ class XmlConsole(Adw.Window):
         super().__init__(title=_("XML console"), default_width=760, default_height=640, transient_for=window)
         if window.get_application() is not None:
             self.set_application(window.get_application())
+        compat.window_shortcuts(self, window.get_application())
         self.core = window.core
         self.session = None
         self._handler = 0
