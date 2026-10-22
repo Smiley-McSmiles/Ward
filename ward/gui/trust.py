@@ -308,8 +308,12 @@ class DevicesDialog(BaseDialog):
             path = f.get_path() if f is not None else None
             if not path:
                 return
-            with open(path, "rb") as fh:
-                data = fh.read()
+            try:
+                with open(path, "rb") as fh:
+                    data = fh.read()
+            except OSError as e:
+                self.error(_("Could not read the file: %s") % e)
+                return
             widgets.run(self.toasts, self.core.pgp.add_contact_key(self.acc.id, self.jid, data),
                         done=lambda fps: (self.toasts.add_toast(Adw.Toast(title=_("Imported %d keys") % len(fps))),
                                           self.refresh()))

@@ -475,7 +475,7 @@ class OmemoService(GObject.Object):
             with contextlib.suppress(Exception):
                 await m.shutdown()
         await WardStorage(self.core.db, session.account.id).wipe()
-        self._refreshed.pop(session.account.id, None)
+        self._forget_account(session.account.id)
         m = await self.manager(session)
         if old_id is not None:
             with contextlib.suppress(Exception):
@@ -520,9 +520,14 @@ class OmemoService(GObject.Object):
         data = await m._ward_storage.dump()  # type: ignore[attr-defined]
         return await aio.run_in_thread(trust.seal, {"jid": session.jid, "store": data}, passphrase, "device")
 
+    def _forget_account(self, account_id: int) -> None:
+        self._refreshed.pop(account_id, None)
+        self._devices = {k: v for k, v in self._devices.items() if k[0] != account_id}
+
     async def import_device(self, session, blob: bytes, passphrase: str) -> None:
         payload = await aio.run_in_thread(trust.unseal, blob, passphrase, "device")
-        if util.bare(payload.get("jid", "")) != session.jid:
+        jid = payload.get("jid")
+        if not isinstance(jid, str) or util.bare(jid) != session.jid:
             raise trust.BackupError(_("This file belongs to another account"))
         store = payload.get("store")
         if not isinstance(store, dict) or not store or not all(isinstance(k, str) and isinstance(v, str)
@@ -532,10 +537,19 @@ class OmemoService(GObject.Object):
         if m is not None:
             with contextlib.suppress(Exception):
                 await m.shutdown()
-        await WardStorage(self.core.db, session.account.id).replace_all(store)
-        self._refreshed.pop(session.account.id, None)
-        self._devices = {k: v for k, v in self._devices.items() if k[0] != session.account.id}
-        await self.manager(session)
+        storage = WardStorage(self.core.db, session.account.id)
+        previous = await storage.dump()
+        await storage.replace_all(store)
+        self._forget_account(session.account.id)
+        try:
+            await self.manager(session)
+        except Exception:
+            # A backup from an incompatible version must not cost the user the keys already on this device.
+            await storage.replace_all(previous)
+            self._forget_account(session.account.id)
+            with contextlib.suppress(Exception):
+                await self.manager(session)
+            raise
 
     # ================================================================== chat header state
     def describe(self, chat) -> tuple[str, str]:

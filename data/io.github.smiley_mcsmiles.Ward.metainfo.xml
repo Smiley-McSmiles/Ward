@@ -77,6 +77,13 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.1.0" date="2026-10-22">
+      <description>
+        <p>Back up and restore this device's OMEMO identity and sessions, and export OpenPGP public or secret keys,
+        so reinstalling Ward or moving to another computer keeps the same encryption keys. Importing a device backup
+        keeps its device ID, so contacts do not have to approve a new device.</p>
+      </description>
+    </release>
     <release version="1.0.1" date="2026-10-20">
       <description>
         <p>Calls work with Conversations and Snikket, including desktop screen sharing and microphone/speaker selection.
