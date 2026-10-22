@@ -73,6 +73,24 @@ def test_gpgman_export_imports(homes, tmp_path):
     assert ward.get_key(fp, secret=True) is not None
 
 
+def test_export_secret_key(homes):
+    """An exported secret key imports together with its private part and keeps the fingerprint."""
+    old, new = homes("old"), homes("new")
+    fp = old.generate("xmpp:me@example.org", passphrase="")
+    blob = old.export_secret(fp)
+    assert b"BEGIN PGP PRIVATE KEY BLOCK" in blob
+    assert new.import_keys(blob) == [fp]
+    assert new.get_key(fp, secret=True) is not None
+
+
+def test_export_protected_secret_key(homes):
+    """A protected key exports with its passphrase in loopback mode (no pinentry window)."""
+    old, new = homes("old-protected"), homes("new-protected")
+    fp = old.generate("xmpp:me@example.org", passphrase="hunter2")
+    blob = old.export_secret(fp, passphrase="hunter2")
+    assert new.import_keys(blob) == [fp]
+
+
 def test_signcrypt():
     from xml.etree import ElementTree as ET
 

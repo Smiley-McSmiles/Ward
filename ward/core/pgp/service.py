@@ -127,6 +127,20 @@ class PgpService(GObject.Object):
     async def import_text(self, text: str) -> list[str]:
         return await aio.run_in_thread(self.engine().import_keys, text.encode("utf-8"))
 
+    async def export_public_key(self, account_id: int, armor: bool = True) -> bytes:
+        """The account's chosen public key, as an .asc file other people (or Ward on another machine) can import."""
+        fp = self.own_key(account_id)
+        if not fp:
+            raise ValueError(_("Choose an OpenPGP key for this account first"))
+        return await aio.run_in_thread(self.engine().export_public, fp, armor)
+
+    async def export_secret_key(self, account_id: int, passphrase: str | None = None) -> bytes:
+        """The chosen key with its private part, to back it up or move it to another computer."""
+        fp = self.own_key(account_id)
+        if not fp:
+            raise ValueError(_("Choose an OpenPGP key for this account first"))
+        return await aio.run_in_thread(self.engine().export_secret, fp, True, passphrase)
+
     # ================================================================== lifecycle
     def attach(self, session) -> None:
         session.add_feature(NODE_META + "+notify")

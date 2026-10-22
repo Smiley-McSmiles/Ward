@@ -231,6 +231,22 @@ class GnuPG:
             raise GpgError("no such key: %s" % fingerprint)
         return out
 
+    def export_secret(self, fingerprint: str, armor: bool = True, passphrase: str | None = None) -> bytes:
+        """The secret key (with its subkeys), for a backup or moving to another computer.
+
+        With a passphrase, gpg runs in loopback mode so it never opens its own pinentry window; without one it
+        may ask for the key's passphrase through gpg-agent, as every other secret-key operation in Ward does."""
+        args = ["--armor"] if armor else []
+        data = None
+        if passphrase:
+            args += ["--pinentry-mode", "loopback", "--passphrase-fd", "0"]
+            data = passphrase.encode("utf-8")
+        args += ["--export-secret-keys", fingerprint]
+        _c, out, _e = self._run(args, data=data)
+        if not out:
+            raise GpgError("no such key: %s" % fingerprint)
+        return out
+
     def generate(self, uid: str, expire: str = "never", passphrase: str | None = None) -> str:
         """A new Ed25519/Cv25519 key.  gpg-agent asks for the passphrase unless one is given (tests use '').
         Returns its fingerprint."""

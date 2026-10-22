@@ -1,5 +1,5 @@
 """Encryption keys: a contact's (or our own) OMEMO devices and OpenPGP keys, with fingerprints, verification by
-QR code or link, and trust decisions; the trust export and import."""
+QR code or link, and trust decisions; device and trust export and import."""
 
 from __future__ import annotations
 
@@ -115,11 +115,20 @@ class DevicesDialog(BaseDialog):
                 imp.connect("clicked", lambda *_: self._import_pgp())
                 self.pgp_group.set_header_suffix(imp)
         if self.own and omemo_ok:
-            tools = self.group(_("Manage"))
+            tools = self.group(_("Manage"), _("Back up this device's encryption keys before reinstalling Ward or "
+                                              "moving to another computer"))
             rm = Adw.ActionRow(title=_("Remove inactive devices"), activatable=True,
                                subtitle=_("Devices that have not been used for a long time"))
             rm.connect("activated", lambda *_: self._remove_inactive())
             tools.add(rm)
+            expd = Adw.ActionRow(title=_("Export this device…"), activatable=True,
+                                 subtitle=_("Its OMEMO identity and sessions, in a passphrase-protected file"))
+            expd.connect("activated", lambda *_: self._export_device())
+            tools.add(expd)
+            impd = Adw.ActionRow(title=_("Import a device…"), activatable=True,
+                                 subtitle=_("Restore an exported device; use it on one computer only"))
+            impd.connect("activated", lambda *_: self._import_device())
+            tools.add(impd)
             exp = Adw.ActionRow(title=_("Export trust decisions…"), activatable=True,
                                 subtitle=_("A passphrase-protected file to move them to another computer"))
             exp.connect("activated", lambda *_: self._export())
@@ -305,6 +314,83 @@ class DevicesDialog(BaseDialog):
                         done=lambda fps: (self.toasts.add_toast(Adw.Toast(title=_("Imported %d keys") % len(fps))),
                                           self.refresh()))
         dialog.open(self.window, None, done)
+
+    def _export_device(self) -> None:
+        pw = Adw.PasswordEntryRow(title=_("Passphrase"))
+        box = Gtk.ListBox(css_classes=["boxed-list"])
+        box.append(pw)
+
+        def go(resp):
+            if resp != "export":
+                return
+            if not pw.get_text():
+                self.error(_("Choose a passphrase"))
+                return
+
+            async def job():
+                s = online_session(self.core, self.acc)
+                return await self.core.omemo.export_device(s, pw.get_text())
+
+            def save(blob):
+                dialog = Gtk.FileDialog(initial_name="ward-device.warddevice")
+
+                def done(d, res):
+                    try:
+                        f = d.save_finish(res)
+                    except GLib.Error:
+                        return
+                    if f is not None and f.get_path():
+                        try:
+                            widgets.write_private(f.get_path(), blob)
+                        except OSError as e:
+                            self.error(_("Could not save the file: %s") % e)
+                            return
+                        self.toasts.add_toast(Adw.Toast(title=_("Exported")))
+                dialog.save(self.window, None, done)
+            widgets.run(self.toasts, job(), done=save)
+        compat.alert(self.toasts, _("Export this device"),
+                     _("This file holds this device's OMEMO identity and sessions. Anyone with the file and its "
+                       "passphrase can read your messages. Use it on one computer only: two copies of one device "
+                       "break encryption."),
+                     [("cancel", _("Cancel"), ""), ("export", _("Export"), "suggested")], go, extra=box)
+
+    def _import_device(self) -> None:
+        dialog = Gtk.FileDialog(title=_("Import a device"))
+
+        def opened(d, res):
+            try:
+                f = d.open_finish(res)
+            except GLib.Error:
+                return
+            if f is None or not f.get_path():
+                return
+            try:
+                with open(f.get_path(), "rb") as fh:
+                    blob = fh.read()
+            except OSError as e:
+                self.error(_("Could not read the file: %s") % e)
+                return
+            pw = Adw.PasswordEntryRow(title=_("Passphrase"))
+            box = Gtk.ListBox(css_classes=["boxed-list"])
+            box.append(pw)
+
+            def go(resp):
+                if resp != "import":
+                    return
+
+                async def job():
+                    s = online_session(self.core, self.acc)
+                    await self.core.omemo.import_device(s, blob, pw.get_text())
+
+                def done(_r):
+                    self.toasts.add_toast(Adw.Toast(title=_("Device imported")))
+                    self.refresh()
+                widgets.run(self.toasts, job(), done=done)
+            compat.alert(self.toasts, _("Import a device"),
+                         _("This replaces this device's current OMEMO identity and sessions. Use the file on one "
+                           "computer only: two copies of one device break encryption."),
+                         [("cancel", _("Cancel"), ""), ("import", _("Import"), "destructive")], go, extra=box)
+        dialog.open(self.window, None, opened)
 
     def _export(self) -> None:
         pw = Adw.PasswordEntryRow(title=_("Passphrase"))
