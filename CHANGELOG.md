@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1.0 (2026-10-22)
+## v1.0.2 (2026-10-22)
 
 Encryption keys can now be backed up and restored. Preferences > Encryption > Your devices > Manage has **Export
 this device…** and **Import a device…**, which keep this device's OMEMO identity and every session in a

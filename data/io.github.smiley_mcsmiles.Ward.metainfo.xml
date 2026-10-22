@@ -77,7 +77,7 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
-    <release version="1.1.0" date="2026-10-22">
+    <release version="1.0.2" date="2026-10-22">
       <description>
         <p>Back up and restore this device's OMEMO identity and sessions, and export OpenPGP public or secret keys,
         so reinstalling Ward or moving to another computer keeps the same encryption keys. Importing a device backup
