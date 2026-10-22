@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Smiley-McSmiles/Ward/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg?style=flat-square" alt="Version 1.1.0"></a>
+  <a href="https://github.com/Smiley-McSmiles/Ward/releases"><img src="https://img.shields.io/badge/version-1.0.2-blue.svg?style=flat-square" alt="Version 1.0.2"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="MIT License"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.11%2B-blue.svg?style=flat-square" alt="Python 3.11+"></a>
   <a href="https://gtk.org"><img src="https://img.shields.io/badge/toolkit-GTK4%20%7C%20Libadwaita-red.svg?style=flat-square" alt="GTK4 Libadwaita"></a>
@@ -65,11 +65,11 @@ and libadwaita 1.4+**. Download from the [releases page](https://github.com/smil
 
 | System | How |
 | --- | --- |
-| Any Linux with Flatpak | `flatpak install --user ward-1.1.0.flatpak` (everything included) |
-| Any Linux from 2024 on (glibc 2.39+) | `chmod +x ward-1.1.0-x86_64.AppImage`, then run it (everything included) |
-| Debian 13+, Ubuntu 24.04+, Mint 22+, Pop!_OS | `sudo apt install ./ward_1.1.0_all.deb` |
-| Fedora 40+, RHEL 10, openSUSE | `sudo dnf install ./ward-1.1.0-1.noarch.rpm` (`zypper install` on openSUSE) |
-| Arch, Manjaro, EndeavourOS | `sudo pacman -U ward-1.1.0-1-any.pkg.tar.xz`, or the PKGBUILD from `recipes.tar.gz` |
+| Any Linux with Flatpak | `flatpak install --user ward-1.0.2.flatpak` (everything included) |
+| Any Linux from 2024 on (glibc 2.39+) | `chmod +x ward-1.0.2-x86_64.AppImage`, then run it (everything included) |
+| Debian 13+, Ubuntu 24.04+, Mint 22+, Pop!_OS | `sudo apt install ./ward_1.0.2_all.deb` |
+| Fedora 40+, RHEL 10, openSUSE | `sudo dnf install ./ward-1.0.2-1.noarch.rpm` (`zypper install` on openSUSE) |
+| Arch, Manjaro, EndeavourOS | `sudo pacman -U ward-1.0.2-1-any.pkg.tar.xz`, or the PKGBUILD from `recipes.tar.gz` |
 | Void | `xbps-install -R . ward` from a `./package.sh void` build, or the template in the recipes |
 | Alpine, postmarketOS | the APKBUILD in the recipes (`abuild -r`) |
 | Gentoo | the ebuild in the recipes, in a local overlay |
