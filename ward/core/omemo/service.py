@@ -524,11 +524,17 @@ class OmemoService(GObject.Object):
         payload = await aio.run_in_thread(trust.unseal, blob, passphrase, "device")
         if util.bare(payload.get("jid", "")) != session.jid:
             raise trust.BackupError(_("This file belongs to another account"))
+        store = payload.get("store")
+        if not isinstance(store, dict) or not store or not all(isinstance(k, str) and isinstance(v, str)
+                                                               for k, v in store.items()):
+            raise trust.BackupError(_("This file is damaged"))
         m = self.managers.pop(session.account.id, None)
         if m is not None:
             with contextlib.suppress(Exception):
                 await m.shutdown()
-        await WardStorage(self.core.db, session.account.id).replace_all(payload["store"])
+        await WardStorage(self.core.db, session.account.id).replace_all(store)
+        self._refreshed.pop(session.account.id, None)
+        self._devices = {k: v for k, v in self._devices.items() if k[0] != session.account.id}
         await self.manager(session)
 
     # ================================================================== chat header state

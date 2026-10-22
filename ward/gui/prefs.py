@@ -561,6 +561,12 @@ class AccountPage:
         imp = compat.button_row(_("Import a key file (.asc from GPGMan)…"), "document-open-symbolic")
         compat.row_activated(imp, self._import)
         g.add(imp)
+        exp_pub = compat.button_row(_("Export public key…"), "document-save-symbolic")
+        compat.row_activated(exp_pub, self._export_public)
+        g.add(exp_pub)
+        exp_sec = compat.button_row(_("Export secret key (backup)…"), "document-save-symbolic")
+        compat.row_activated(exp_sec, self._export_secret)
+        g.add(exp_sec)
         widgets.run(self.key_row, self._load_keys(), on_error=lambda e: self.key_row.set_subtitle(str(e)),
                     loads=True)
 
@@ -627,6 +633,54 @@ class AccountPage:
                         done=lambda fps: (compat.toast(self.prefs.d, _("Imported %d keys") % len(fps)),
                                           widgets.run(self.prefs.d, self._load_keys())))
         dialog.open(self.window, None, done)
+
+    def _export_public(self) -> None:
+        if not self.core.pgp.own_key(self.acc.id):
+            compat.toast(self.prefs.d, _("Choose an OpenPGP key first"))
+            return
+        widgets.run(self.prefs.d, self.core.pgp.export_public_key(self.acc.id),
+                    done=lambda blob: self._save_key(blob, "ward-openpgp-public.asc"))
+
+    def _export_secret(self) -> None:
+        if not self.core.pgp.own_key(self.acc.id):
+            compat.toast(self.prefs.d, _("Choose an OpenPGP key first"))
+            return
+        pw = Adw.PasswordEntryRow(title=_("Passphrase"))
+        box = Gtk.ListBox(css_classes=["boxed-list"])
+        box.append(pw)
+
+        def go(resp):
+            if resp != "export":
+                return
+            widgets.run(self.prefs.d, self.core.pgp.export_secret_key(self.acc.id, pw.get_text() or None),
+                        done=lambda blob: self._save_key(blob, "ward-openpgp-secret.asc", private=True))
+        compat.alert(self.prefs.d, _("Export your secret key"),
+                     _("The file contains your private key: anyone who has it and its passphrase can read and "
+                       "sign messages as you. Keep it safe. Leave the passphrase empty if the key has none, or "
+                       "to let gpg ask for it in its own window."),
+                     [("cancel", _("Cancel"), ""), ("export", _("Export"), "suggested")], go, extra=box)
+
+    def _save_key(self, blob: bytes, name: str, private: bool = False) -> None:
+        dialog = Gtk.FileDialog(initial_name=name)
+
+        def done(d, res):
+            try:
+                f = d.save_finish(res)
+            except GLib.Error:
+                return
+            if f is None or not f.get_path():
+                return
+            try:
+                if private:
+                    widgets.write_private(f.get_path(), blob)
+                else:
+                    with open(f.get_path(), "wb") as fh:
+                        fh.write(blob)
+            except OSError as e:
+                compat.toast(self.prefs.d, _("Could not save the file: %s") % e)
+                return
+            compat.toast(self.prefs.d, _("Exported to %s") % f.get_path())
+        dialog.save(self.window, None, done)
 
     # ------------------------------------------------------------------ actions
     def _admin(self) -> None:

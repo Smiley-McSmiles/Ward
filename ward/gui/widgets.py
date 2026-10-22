@@ -342,6 +342,17 @@ def open_file(widget: Gtk.Widget, path: str) -> None:
         open_uri(widget, Gio.File.new_for_path(path).get_uri())
 
 
+def write_private(path: str, data: bytes) -> None:
+    """Write a key backup so only the user can read it (0600), whatever the umask is."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def initials_name(name: str) -> str:
     return name or "?"
 
