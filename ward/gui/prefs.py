@@ -622,6 +622,23 @@ class AccountPage:
         if os.path.isdir(exports):
             dialog.set_initial_folder(Gio.File.new_for_path(exports))
 
+        def imported(fps) -> None:
+            compat.toast(self.prefs.d, _("Imported %d keys") % len(fps))
+            if not fps or self.core.pgp.own_key(self.acc.id):
+                widgets.run(self.prefs.d, self._load_keys())
+                return
+
+            async def choose_first():
+                # A fresh install has no key chosen yet: use the secret key that was just restored.
+                secret = {k.fingerprint for k in await self.core.pgp.secret_keys()}
+                for fp in fps:
+                    if fp in secret:
+                        await self.core.pgp.choose_key(self.acc, fp)
+                        return fp
+                return ""
+
+            widgets.run(self.prefs.d, choose_first(), done=lambda _fp: widgets.run(self.prefs.d, self._load_keys()))
+
         def done(d, res):
             try:
                 file = d.open_finish(res)
@@ -629,9 +646,7 @@ class AccountPage:
                 return
             if file is None or not file.get_path():
                 return
-            widgets.run(self.prefs.d, self.core.pgp.import_file(file.get_path()),
-                        done=lambda fps: (compat.toast(self.prefs.d, _("Imported %d keys") % len(fps)),
-                                          widgets.run(self.prefs.d, self._load_keys())))
+            widgets.run(self.prefs.d, self.core.pgp.import_file(file.get_path()), done=imported)
         dialog.open(self.window, None, done)
 
     def _export_public(self) -> None:
