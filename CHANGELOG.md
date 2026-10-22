@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.0 (2026-10-22)
+
+Encryption keys can now be backed up and restored. Preferences > Encryption > Your devices > Manage has **Export
+this device…** and **Import a device…**, which keep this device's OMEMO identity and every session in a
+passphrase-protected file. Restoring it on a new install keeps the same device ID and fingerprint, so contacts do not
+have to approve a new device after an update, a reinstall or a move to another computer.
+
+OpenPGP keys get **Export public key…** and **Export secret key (backup)…** in an account's settings. The secret-key
+file can be protected with the key's own passphrase, and importing it on a fresh account selects it for that account.
+Key backups are written readable only by the user (0600), and importing a damaged or incompatible device backup
+leaves the keys already on the device untouched.
+
 ## v1.0.1 (2026-10-20)
 
 Calls work with Conversations. Ward's calls used a `<jingle-message>` wrapper around the call invitations that no
