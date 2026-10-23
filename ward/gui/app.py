@@ -21,7 +21,7 @@ for _namespace in ("GdkWayland", "GdkX11"):
     except (ImportError, ValueError):
         pass
 
-from .. import APP_ID, APP_NAME, URL, __version__, aio, paths, util
+from .. import APP_ID, APP_NAME, __version__, aio, credits, paths, util
 from .. import log as wardlog
 from ..core import uri as urimod
 from ..core.core import Core
@@ -625,10 +625,10 @@ class WardApplication(Adw.Application):
 
     def show_about(self) -> None:
         self.activate()
-        kw = dict(application_name=APP_NAME, application_icon=APP_ID, version="v" + __version__, website=URL,
-                  issue_url=URL + "/issues", license_type=Gtk.License.MIT_X11, developer_name="Ward contributors",
-                  comments=_("A private, modern XMPP client"),
-                  copyright="© Ward contributors")
+        kw = dict(application_name=APP_NAME, application_icon=APP_ID, version="v" + __version__,
+                  website=credits.WEBSITE, issue_url=credits.ISSUE_URL, support_url=credits.SUPPORT_URL,
+                  license_type=Gtk.License.MIT_X11, developer_name=credits.DEVELOPER_NAME,
+                  developers=credits.DEVELOPERS, comments=_(credits.COMMENTS), copyright=credits.COPYRIGHT_MARKUP)
         if hasattr(Adw, "AboutDialog"):
             d = Adw.AboutDialog(**kw)
             d.add_legal_section("OMEMO", "", Gtk.License.CUSTOM,
@@ -637,3 +637,110 @@ class WardApplication(Adw.Application):
         else:
             d = Adw.AboutWindow(transient_for=self.window, **kw)
             d.present()
+        # The about dialogs have no API for custom rows, so insert one between "Credits" and "Legal"
+        # once the list exists (it is built lazily); give up quietly if the layout differs.
+        tries = {"n": 0}
+
+        def attempt():
+            tries["n"] += 1
+            return not (self._add_donation_row(d) or tries["n"] >= 10)
+        if attempt():
+            GLib.timeout_add(150, attempt)
+
+    @staticmethod
+    def _iter_descendants(widget):
+        child = widget.get_first_child()
+        while child is not None:
+            yield child
+            yield from WardApplication._iter_descendants(child)
+            child = child.get_next_sibling()
+
+    def _add_donation_row(self, dialog) -> bool:
+        try:
+            def row_for(text):
+                for w in self._iter_descendants(dialog):
+                    if isinstance(w, Gtk.Label) and w.get_text().strip() == text:
+                        parent = w.get_parent()
+                        while parent is not None and not isinstance(parent, Gtk.ListBoxRow):
+                            parent = parent.get_parent()
+                        if parent is not None and isinstance(parent.get_parent(), Gtk.ListBox):
+                            return parent
+                return None
+
+            def rows(listbox):
+                n = 0
+                while listbox.get_row_at_index(n) is not None:
+                    n += 1
+                return n
+
+            legal, creds = row_for("Legal"), row_for("Credits")
+            if legal is not None and creds is not None and legal.get_parent() is creds.get_parent():
+                listbox, index = legal.get_parent(), legal.get_index()
+            else:
+                # Libadwaita translates its own row titles, so fall back to its main list: put the donation entry
+                # just before the last row, where Legal sits.
+                boxes = [w for w in self._iter_descendants(dialog)
+                         if isinstance(w, Gtk.ListBox) and rows(w) >= 2]
+                if not boxes:
+                    return False
+                listbox = max(boxes, key=rows)
+                index = rows(listbox) - 1
+            for w in self._iter_descendants(listbox):          # already added (retry race)
+                if getattr(w, "_ward_donate", False):
+                    return True
+            row = Adw.ActionRow(title=_(credits.DONATION_BUTTON_LABEL), activatable=True)
+            row._ward_donate = True
+            row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+            row.connect("activated", lambda _r: self._open_donation_page(dialog))
+            listbox.insert(row, index)
+            return True
+        except Exception as exc:
+            log.warning("could not add the Donate row to the About dialog: %s", exc)
+            return False
+
+    def _donation_content(self) -> Gtk.Widget:
+        group = Adw.PreferencesGroup(description=_("Tap an option to copy it to the clipboard."))
+        for title, text in credits.DONATION_OPTIONS:
+            subtitle = text if len(text) < 40 else text[:18] + "…" + text[-10:]
+            row = Adw.ActionRow(title=title, subtitle=subtitle, activatable=True)
+            row.add_suffix(Gtk.Image.new_from_icon_name("edit-copy-symbolic"))
+            row.connect("activated", lambda _r, t=text: self._copy_donation_text(t))
+            group.add(row)
+        clamp = Adw.Clamp(maximum_size=480, margin_top=18, margin_bottom=18, margin_start=12, margin_end=12)
+        clamp.set_child(group)
+        return clamp
+
+    def _open_donation_page(self, dialog) -> None:
+        """Push a sub-page inside the About dialog, like Credits / Legal."""
+        nav = next((w for w in self._iter_descendants(dialog) if isinstance(w, Adw.NavigationView)), None) \
+            if hasattr(Adw, "NavigationView") else None
+        if nav is not None:
+            toolbar = Adw.ToolbarView()
+            toolbar.add_top_bar(Adw.HeaderBar())
+            scrolled = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
+            scrolled.set_child(self._donation_content())
+            toolbar.set_content(scrolled)
+            nav.push(Adw.NavigationPage.new(toolbar, _(credits.DONATION_PAGE_TITLE)))
+        else:
+            self._donation_window(dialog)
+
+    def _donation_window(self, parent) -> None:
+        win = Adw.Window(transient_for=parent if isinstance(parent, Gtk.Window) else self.window, modal=True,
+                         title=_(credits.DONATION_PAGE_TITLE), default_width=420, default_height=320)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.append(Adw.HeaderBar())
+        scrolled = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scrolled.set_child(self._donation_content())
+        box.append(scrolled)
+        win.set_content(box)
+        ctrl = Gtk.EventControllerKey.new()
+        ctrl.connect("key-pressed", lambda c, k, code, st: win.close() if k == Gdk.KEY_Escape else False)
+        win.add_controller(ctrl)
+        win.present()
+
+    def _copy_donation_text(self, text: str) -> None:
+        display = self.window.get_display() if self.window is not None else Gdk.Display.get_default()
+        if display is not None:
+            display.get_clipboard().set(text)
+        if self.window is not None:
+            self.window.toast(_("Copied to clipboard."))
