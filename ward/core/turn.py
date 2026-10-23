@@ -262,7 +262,11 @@ class TurnService:
         if el is None:
             self._cache[account_id] = (time.time() + CACHE_SECONDS, [])
             return []
-        services = parse_services(el)
+        # session.iq() returns the whole <iq/> result; the services are in its <services/> child.
+        services_el = el.find("{%s}services" % ns)
+        if services_el is None:
+            services_el = next((c for c in el if c.tag.split("}")[-1] == "services"), None)
+        services = parse_services(services_el if services_el is not None else el)
         if not services:
             self._cache[account_id] = (time.time() + CACHE_SECONDS, [])
             return []

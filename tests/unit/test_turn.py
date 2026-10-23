@@ -48,6 +48,31 @@ def test_rest_credentials() -> None:
     assert password == base64.b64encode(hmac.new(b"secret", b"3600:alice", hashlib.sha1).digest()).decode()
 
 
+def test_discovery_reads_services_inside_iq(run):
+    """session.iq() returns the <iq/> result: parse its <services/> child, not the empty top level."""
+    from types import SimpleNamespace
+
+    class Core:
+        settings = FakeSettings({"calls.discover": True})
+
+    class Session:
+        account = SimpleNamespace(id=1)
+        domain = "example.org"
+
+        async def iq(self, _type, _to, *_payload, timeout=15):
+            return ET.fromstring(
+                "<iq xmlns='jabber:client' type='result' id='x'>"
+                "<services xmlns='urn:xmpp:extdisco:2'>"
+                "<service type='turn' host='turn.example.org' port='3478' transport='udp' "
+                "username='u' password='p'/>"
+                "</services></iq>")
+
+    services = run(turn.TurnService(Core()).discovered(Session()), timeout=10)
+    assert len(services) == 1
+    assert services[0].type == "turn" and services[0].host == "turn.example.org"
+    assert services[0].username == "u" and services[0].password == "p"
+
+
 def test_webrtc_uris() -> None:
     settings = FakeSettings({"calls.turn_secret": "", "calls.turn_user": "user", "calls.turn_password": "pass",
                              "calls.relay_only": False, "calls.turn_ttl": 3600})
