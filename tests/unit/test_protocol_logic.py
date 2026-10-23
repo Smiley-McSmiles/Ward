@@ -4,6 +4,7 @@ from xml.etree import ElementTree as ET
 from _fuzz import given, settings, st
 
 from ward.core import colors, forms, search, stanzas, uri
+from ward.core.chat import ChatService
 from ward.core.stanzas import q
 
 
@@ -39,6 +40,41 @@ def test_aesgcm_links():
     assert len(p16.iv) == 16
     assert uri.parse_aesgcm("aesgcm://h/f#abc") is None
     assert uri.parse_aesgcm("https://h/f#" + (iv + key).hex()) is None
+
+
+def test_aesgcm_links_in_message_bodies():
+    frag = (bytes(range(12)) + bytes(range(32))).hex()
+    # Ward for Android: "<name>\n<url>", with the uploaded path ending in .enc
+    body, files = ChatService._body_aesgcm(
+        None, "holiday photo.jpg\naesgcm://upload.example.org/f/holiday%20photo.jpg.enc#" + frag)
+    assert body == ""
+    assert len(files) == 1
+    assert files[0]["name"] == "holiday photo.jpg"
+    assert files[0]["url"].startswith("aesgcm://") and files[0]["aes_key"] and files[0]["aes_iv"]
+    # a caption stays on the message; the name comes from the upload path
+    body, files = ChatService._body_aesgcm(None, "Look at this\naesgcm://upload.example.org/f/cat.jpg#" + frag)
+    assert body == "Look at this"
+    assert len(files) == 1 and files[0]["name"] == "cat.jpg"
+    # only the link, as Ward itself sends
+    body, files = ChatService._body_aesgcm(None, "aesgcm://upload.example.org/f/cat.jpg#" + frag)
+    assert body == "" and len(files) == 1 and files[0]["name"] == "cat.jpg"
+
+
+def test_aesgcm_body_file_gets_a_mime_type():
+    from types import SimpleNamespace
+
+    from ward.core.files import FileService
+
+    class _Files:
+        guess_mime = staticmethod(FileService.guess_mime)
+
+    svc = SimpleNamespace(core=SimpleNamespace(files=_Files()))
+    svc._body_aesgcm = lambda body: ChatService._body_aesgcm(svc, body)
+    frag = (bytes(range(12)) + bytes(range(32))).hex()
+    found, body = ChatService._attachments(
+        svc, stanzas.ParsedMessage(), "cat.jpg\naesgcm://upload.example.org/f/cat.jpg.enc#" + frag)
+    assert body == "" and len(found) == 1
+    assert found[0]["name"] == "cat.jpg" and found[0]["mime"] == "image/jpeg"
 
 
 def test_geo():

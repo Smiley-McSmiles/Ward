@@ -16,6 +16,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
 from gi.repository import GObject
@@ -35,6 +36,7 @@ log = logging.getLogger("ward.chat")
 NS_CARBONS = "urn:xmpp:carbons:2"
 NS_MDS = "urn:xmpp:mds:displayed:0"
 TYPING_TIMEOUT = 30
+AESGCM_RE = re.compile(r"aesgcm://\S+", re.IGNORECASE)
 
 
 def now_ms() -> int:
@@ -224,7 +226,7 @@ class ChatService(GObject.Object):
                 await self._apply_reactions(chat, pm.reactions[0], sender, pm.reactions[1], inc.when)
             return
         body = pm.display_body()
-        files = self._attachments(pm, body)
+        files, body = self._attachments(pm, body)
         if files and len(files) == 1 and body.strip() == files[0]["url"]:
             body = ""
         if not body.strip() and not files and not inc.decrypt_error:
@@ -264,7 +266,7 @@ class ChatService(GObject.Object):
                 stanzas.add_hint(el, "store")
                 session.send(el)
 
-    def _attachments(self, pm: ParsedMessage, body: str) -> list[dict]:
+    def _attachments(self, pm: ParsedMessage, body: str) -> tuple[list[dict], str]:
         out: list[dict[str, Any]] = []
         seen = set()
         for f in pm.files:
@@ -289,16 +291,49 @@ class ChatService(GObject.Object):
             if link is not None:
                 d.update(aes_key=link.key.hex(), aes_iv=link.iv.hex())
             out.append(d)
-        stripped = body.strip()
-        if not out and re.fullmatch(r"aesgcm://\S+", stripped or ""):
-            link = parse_aesgcm(stripped)
-            if link is not None:
-                out.append({"url": stripped, "name": link.https_url.rsplit("/", 1)[-1].split("?")[0],
-                            "aes_key": link.key.hex(), "aes_iv": link.iv.hex()})
+        # XEP-0454 files travel as an aesgcm:// link in the body, since encrypted chats send no metadata.
+        # Ward for Android writes "<name>\n<url>" and encrypts the upload as "name.enc"; other clients
+        # put only the link there, sometimes after a caption.
+        body, in_body = self._body_aesgcm(body)
+        for d in in_body:
+            if d["url"] in seen:
+                continue
+            seen.add(d["url"])
+            out.append(d)
         for d in out:
             if not d.get("mime"):
                 d["mime"] = self.core.files.guess_mime(d.get("name") or d["url"])
-        return out
+        return out, body
+
+    def _body_aesgcm(self, body: str) -> tuple[str, list[dict[str, Any]]]:
+        """Pull aesgcm:// links out of a body and return the remaining text (a caption, if any)."""
+        if "aesgcm://" not in body.lower():
+            return body, []
+        out: list[dict[str, Any]] = []
+        kept: list[str] = []
+        for line in body.splitlines():
+            rest = line
+            for raw in AESGCM_RE.findall(line):
+                url = raw.rstrip(".,;:!?)]}'\"")
+                link = parse_aesgcm(url)
+                if link is None:
+                    continue
+                rest = rest.replace(url, "", 1)
+                name = unquote(link.https_url.rsplit("/", 1)[-1].split("?", 1)[0])
+                if name.lower().endswith(".enc"):
+                    name = name[:-4]
+                    # Android puts the real (unencrypted) file name on the line before the link.
+                    prev = kept[-1].strip() if kept else ""
+                    if prev and len(prev) <= 200:
+                        name = prev
+                        kept.pop()
+                if not name:
+                    name = "file"
+                out.append({"url": url, "name": name, "aes_key": link.key.hex(), "aes_iv": link.iv.hex()})
+            rest = rest.strip()
+            if rest:
+                kept.append(rest)
+        return "\n".join(kept).strip(), out
 
     async def store(self, chat: ChatItem, inc: Incoming, sender: str, sender_jid: str, body: str,
                     files: list[dict], occupant_id: str = "", groupchat: bool = False) -> MessageItem | None:
@@ -637,6 +672,8 @@ class ChatService(GObject.Object):
         msg_id = util.random_id(18)
         body = text
         extra: dict = {}
+        if emoji_only(text):
+            extra["emoji_only"] = emoji_only(text)
         if reply_to is not None:
             author = self.core.names.sender_name(chat, reply_to)
             fallback = stanzas.reply_fallback(reply_to.body, author)

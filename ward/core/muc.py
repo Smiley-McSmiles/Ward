@@ -531,7 +531,7 @@ class MucService(GObject.Object):
                                                        self.core.my_reaction_id(chat), pm.reactions[1], when)
             return
         body = pm.display_body()
-        files = self.core.messaging._attachments(pm, body)
+        files, body = self.core.messaging._attachments(pm, body)
         if files and len(files) == 1 and body.strip() == files[0]["url"]:
             body = ""
         if not body.strip() and not files and not inc.decrypt_error:
