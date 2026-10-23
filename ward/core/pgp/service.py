@@ -255,6 +255,11 @@ class PgpService(GObject.Object):
                                    (trust, account_id, util.bare(jid), fingerprint.upper()))
         self.emit("keys-changed", account_id, util.bare(jid))
 
+    async def forget_contact(self, account_id: int, jid: str) -> int:
+        """Delete Ward's local record of a contact's OpenPGP keys (the keyring itself is untouched)."""
+        return await self.core.db.execute("DELETE FROM pgp_keys WHERE account_id = ? AND jid = ?",
+                                          (account_id, util.bare(jid)))
+
     async def add_contact_key(self, account_id: int, jid: str, data: bytes | str, verified: bool = True) -> list[str]:
         """A key the user got another way (a file from GPGMan, pasted text): imported and marked verified."""
         raw = data.encode("utf-8") if isinstance(data, str) else data

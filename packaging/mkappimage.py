@@ -35,12 +35,15 @@ NAMESPACES = [("Gtk", "4.0"), ("Adw", "1"), ("GdkWayland", "4.0"), ("GdkX11", "4
               ("GstPbutils", "1.0"), ("GtkSource", "5"), ("Secret", "1"), ("Spelling", "1")]
 
 # GStreamer plugins: calls (capture, WebRTC, ICE, DTLS/SRTP, Opus, VP8, playback) and the videos people send
-# (Matroska/WebM, MP4, Ogg, H.264 and friends through libav)
+# (Matroska/WebM, MP4, Ogg, H.264 and friends through libav).  "opengl" matters even more than it looks: GTK's
+# video widget plays through glsinkbin once it has a GL context, and without it Gtk.Video shows nothing on the
+# desktops that can make one.
 GST_PLUGINS = ["coreelements", "app", "audioconvert", "audioresample", "audiotestsrc", "videotestsrc", "volume",
-               "videoconvertscale", "videorate", "playback", "typefindfunctions", "autodetect", "pulseaudio",
-               "pipewire", "alsa", "video4linux2", "webrtc", "nice", "dtls", "srtp", "sctp", "rtp", "rtpmanager",
-               "opus", "opusparse", "vpx", "pbtypes", "matroska", "isomp4", "ogg", "vorbis", "theora", "audioparsers",
-               "videoparsersbad", "id3demux", "wavparse", "flac", "libav", "dav1d", "aom", "webrtcdsp", "gtk4"]
+               "audiofx", "videoconvertscale", "videorate", "playback", "typefindfunctions", "autodetect",
+               "pulseaudio", "pipewire", "alsa", "opengl", "video4linux2", "webrtc", "nice", "dtls", "srtp", "sctp",
+               "rtp", "rtpmanager", "opus", "opusparse", "vpx", "pbtypes", "matroska", "isomp4", "ogg", "vorbis",
+               "theora", "audioparsers", "videoparsersbad", "id3demux", "wavparse", "flac", "libav", "dav1d", "aom",
+               "webrtcdsp", "gtk4"]
 
 # AppImage's excludelist (github.com/AppImageCommunity/pkg2appimage): libraries that must come from the system
 EXCLUDE = {"ld-linux.so.2", "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1", "libanl.so.1", "libBrokenLocale.so.1",

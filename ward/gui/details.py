@@ -11,7 +11,8 @@ from . import compat, widgets
 from .dialogs import BaseDialog, online_session
 
 NOTIFY = (("default", "Default"), ("all", "All messages"), ("mentions", "Mentions and replies"), ("none", "None"))
-ENCRYPTION = (("default", "Default"), ("omemo", "OMEMO"), ("pgp", "OpenPGP"), ("off", "Off"))
+ENCRYPTION = (("default", "Default"), ("omemo", "OMEMO (automatic)"), ("omemo2", "OMEMO 2 only"),
+              ("omemo-legacy", "Legacy OMEMO only"), ("pgp", "OpenPGP"), ("off", "Off"))
 
 
 def DetailsDialog(window, chat: ChatItem, page: str = ""):
@@ -99,7 +100,10 @@ class ContactDetails(BaseDialog):
             sharing.add(add)
 
         sec = self.group(_("Privacy and encryption"))
-        enc_choices = [x for x in ENCRYPTION if x[0] != "pgp" or (self.core.pgp is not None and self.core.pgp.enabled)]
+        enc_choices = [x for x in ENCRYPTION
+                       if (x[0] != "pgp" or (self.core.pgp is not None and self.core.pgp.enabled))
+                       and (x[0] not in ("omemo2", "omemo-legacy")
+                            or (self.core.omemo is not None and self.core.omemo.legacy_installed))]
         sec.add(_combo(_("Encryption"), enc_choices, chat.encryption or "default", self._set_encryption))
         dev = Adw.ActionRow(title=_("Devices and keys"), activatable=True,
                             subtitle=_("Fingerprints and verification"))
@@ -118,6 +122,10 @@ class ContactDetails(BaseDialog):
         clear = Adw.ActionRow(title=_("Clear history…"), activatable=True)
         clear.connect("activated", lambda *_: window.conversation._clear_history())
         danger.add(clear)
+        forget = Adw.ActionRow(title=_("Forget encryption keys…"), activatable=True)
+        forget.add_css_class("error")
+        forget.connect("activated", lambda *_: self._forget_keys())
+        danger.add(forget)
         if c is not None and c.in_roster:
             rm = Adw.ActionRow(title=_("Remove from contacts…"), activatable=True)
             rm.add_css_class("error")
@@ -195,15 +203,38 @@ class ContactDetails(BaseDialog):
                      [("cancel", _("Cancel"), ""), ("block", _("Block"), "destructive")],
                      lambda r: r == "block" and self.run(go(), lambda _r: self.close()))
 
-    def _remove(self) -> None:
+    def _forget_keys(self) -> None:
         jid = self.chat.jid
 
         async def go():
-            await self.core.roster.remove_contact(online_session(self.core, self.acc), jid)
+            session = online_session(self.core, self.acc)
+            n = await self.core.omemo.forget_contact(session, jid) if self.core.omemo is not None else 0
+            if self.core.pgp is not None:
+                n += await self.core.pgp.forget_contact(self.acc.id, jid)
+            return n
+        compat.alert(self.toasts, _("Forget encryption keys?"),
+                     _("The local OMEMO devices, trust decisions and sessions for %s are deleted. The contact's "
+                       "current device list is fetched again the next time you write to them.") % jid,
+                     [("cancel", _("Cancel"), ""), ("forget", _("Forget"), "destructive")],
+                     lambda r: r == "forget" and self.run(go(), lambda _n: self.close()))
+
+    def _remove(self) -> None:
+        jid = self.chat.jid
+        check = Gtk.CheckButton(label=_("Also forget the encryption keys for this contact"))
+        box = Gtk.ListBox(css_classes=["boxed-list"])
+        box.append(check)
+
+        async def go():
+            session = online_session(self.core, self.acc)
+            await self.core.roster.remove_contact(session, jid)
+            if check.get_active() and self.core.omemo is not None:
+                await self.core.omemo.forget_contact(session, jid)
+                if self.core.pgp is not None:
+                    await self.core.pgp.forget_contact(self.acc.id, jid)
         compat.alert(self.toasts, _("Remove %s from your contacts?") % jid,
                      _("You stop sharing your status with each other. The chat stays."),
                      [("cancel", _("Cancel"), ""), ("remove", _("Remove"), "destructive")],
-                     lambda r: r == "remove" and self.run(go(), lambda _r: self.close()))
+                     lambda r: r == "remove" and self.run(go(), lambda _r: self.close()), extra=box)
 
 
 class GroupDetails(BaseDialog):

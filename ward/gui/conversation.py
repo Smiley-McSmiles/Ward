@@ -696,7 +696,10 @@ class ConversationView(Gtk.Box):
         elif state in ("omemo", "pgp"):
             box.append(widgets.label(_("Only the people in this chat can read the messages, not the servers."),
                                      ["dim-label"], wrap=True))
-        choices = [("default", _("Default")), ("omemo", "OMEMO")]
+        choices = [("default", _("Default")), ("omemo", _("OMEMO (automatic)"))]
+        if self.core.omemo is not None and self.core.omemo.legacy_installed:
+            choices.append(("omemo2", _("OMEMO 2 only")))
+            choices.append(("omemo-legacy", _("Legacy OMEMO only")))
         if self.core.pgp is not None and self.core.pgp.enabled and chat.type == "chat":
             choices.append(("pgp", "OpenPGP"))
         choices.append(("off", _("Off")))
@@ -849,12 +852,8 @@ class ConversationView(Gtk.Box):
                     self.open_attachment(m, att)
             widgets.run(self, go(), error=_("Download failed"))
             return
-        if att.is_image:
-            from .dialogs import ImageViewer
-
-            ImageViewer(self, att).present(self)
-        else:
-            widgets.open_file(self, path)
+        # Images open in the user's own viewer: it can zoom, pan and print, and it is the app they chose for them.
+        widgets.open_file(self, path, att.mime)
 
     def save_attachment(self, m: MessageItem | None, att: AttachmentItem) -> None:
         """A copy wherever the user picks (downloaded first when it isn't yet)."""
@@ -1015,9 +1014,22 @@ class ConversationView(Gtk.Box):
 
     def _clear_history(self) -> None:
         chat = self.chat
+        check = Gtk.CheckButton(label=_("Also forget this contact's encryption keys"))
+        check.set_visible(chat.type == "chat")
+        box = Gtk.ListBox(css_classes=["boxed-list"])
+        box.append(check)
+
+        async def go():
+            await self.core.chats.clear_history(chat)
+            if check.get_active() and chat.type == "chat" and self.core.omemo is not None:
+                session = self.core.sessions.get(chat.account_id)
+                if session is not None and session.online:
+                    await self.core.omemo.forget_contact(session, chat.jid)
+                    if self.core.pgp is not None:
+                        await self.core.pgp.forget_contact(chat.account_id, chat.jid)
         compat.alert(self, _("Clear history?"), _("Messages are deleted from this computer only."),
                      [("cancel", _("Cancel"), ""), ("clear", _("Clear"), "destructive")],
-                     lambda r: r == "clear" and widgets.run(self, self.core.chats.clear_history(chat)))
+                     lambda r: r == "clear" and widgets.run(self, go()), extra=box)
 
     def _close_chat(self) -> None:
         chat = self.chat

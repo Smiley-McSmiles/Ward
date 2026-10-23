@@ -160,7 +160,7 @@ packages() {
     # optional: GStreamer WebRTC (webrtcbin) and libnice's ICE plugin for audio and video calls
     CALLS=""
     case "$(pm_name)" in
-        apt-get) CALLS="gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-pipewire gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0 gstreamer1.0-gtk4" ;;
+        apt-get) CALLS="gstreamer1.0-nice gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-gl gstreamer1.0-pipewire gir1.2-gstreamer-1.0 gir1.2-gst-plugins-bad-1.0" ;;
         dnf) CALLS="libnice-gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free pipewire-gstreamer gstreamer1-plugin-gtk4" ;;
         zypper) CALLS="libnice-gstreamer1 gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugins-bad pipewire-gstreamer" ;;
         pacman) CALLS="libnice gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugin-pipewire gst-plugin-gtk4" ;;

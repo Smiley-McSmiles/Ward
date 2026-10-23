@@ -129,6 +129,14 @@ class DevicesDialog(BaseDialog):
                                  subtitle=_("Restore an exported device; use it on one computer only"))
             impd.connect("activated", lambda *_: self._import_device())
             tools.add(impd)
+            cleg = Adw.ActionRow(title=_("Remove legacy OMEMO…"), activatable=True,
+                                 subtitle=_("Delete this device's legacy (0.3) keys, bundle and device list entry"))
+            cleg.connect("activated", lambda *_: self._forget_legacy())
+            tools.add(cleg)
+            rst = Adw.ActionRow(title=_("Reset OMEMO identity…"), activatable=True,
+                                subtitle=_("Start over with a new identity; contacts must verify this device again"))
+            rst.connect("activated", lambda *_: self._reset_identity())
+            tools.add(rst)
             exp = Adw.ActionRow(title=_("Export trust decisions…"), activatable=True,
                                 subtitle=_("A passphrase-protected file to move them to another computer"))
             exp.connect("activated", lambda *_: self._export())
@@ -136,6 +144,14 @@ class DevicesDialog(BaseDialog):
             imp = Adw.ActionRow(title=_("Import trust decisions…"), activatable=True)
             imp.connect("activated", lambda *_: self._import())
             tools.add(imp)
+        if not self.own and omemo_ok:
+            tools = self.group(_("Manage"))
+            forget = Adw.ActionRow(title=_("Forget encryption keys…"), activatable=True,
+                                   subtitle=_("Delete the local OMEMO devices, trust decisions and sessions for "
+                                              "this contact"))
+            forget.add_css_class("error")
+            forget.connect("activated", lambda *_: self._forget_contact())
+            tools.add(forget)
         self.refresh()
 
     # ------------------------------------------------------------------ loading
@@ -192,6 +208,8 @@ class DevicesDialog(BaseDialog):
     def _device_row(self, d: DeviceItem, session) -> Gtk.Widget:
         title = d.label or (_("This device") if d.this_device else _("Device %d") % d.device_id)
         sub = [d.versions] if d.versions else []
+        if not d.fingerprint:
+            sub.append(_("invalid identity key"))
         if d.this_device:
             sub.append(_("this device"))
         elif d.inactive:
@@ -203,6 +221,19 @@ class DevicesDialog(BaseDialog):
             row.add_suffix(widgets.trust_badge(d.trust))
         fp_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_start=12, margin_end=12,
                          margin_top=8, margin_bottom=8)
+        if not d.fingerprint:
+            fp_box.append(widgets.label(_("This device published an identity key that cannot be used. It may be "
+                                          "a buggy or malicious client; messages are not encrypted for it."),
+                                        ["dim-label", "error"], wrap=True))
+            if self.own and not d.this_device:
+                rm = Gtk.Button(icon_name="user-trash-symbolic", tooltip_text=_("Remove this device"),
+                                css_classes=["flat"], halign=Gtk.Align.END)
+                rm.connect("clicked", lambda *_a, dev=d: self._remove_device(session, dev))
+                fp_box.append(rm)
+            holder = Gtk.ListBoxRow(activatable=False)
+            holder.set_child(fp_box)
+            row.add_row(holder)
+            return row
         fp_box.append(widgets.fingerprint_widget(d.fingerprint))
         if not d.this_device:
             buttons = Gtk.Box(spacing=6, halign=Gtk.Align.END)
@@ -271,6 +302,58 @@ class DevicesDialog(BaseDialog):
             return await self.core.omemo.remove_inactive_own_devices(s)
         widgets.run(self.toasts, go(), done=lambda n: (self.toasts.add_toast(Adw.Toast(
             title=_("Removed %d devices") % n)), self.refresh()))
+
+    def _forget_legacy(self) -> None:
+        def go(resp):
+            if resp != "remove":
+                return
+
+            async def job():
+                s = online_session(self.core, self.acc)
+                return await self.core.omemo.forget_legacy(s)
+
+            widgets.run(self.toasts, job(), done=lambda _n: (self.toasts.add_toast(Adw.Toast(
+                title=_("Legacy OMEMO removed and turned off"))), self.refresh()))
+        compat.alert(self.toasts, _("Remove legacy OMEMO?"),
+                     _("Your legacy (OMEMO 0.3) keys, sessions and published bundle are deleted, and legacy "
+                       "OMEMO is turned off. Other apps stop seeing a legacy device for this account. Your "
+                       "OMEMO 2 device and fingerprint stay the same."),
+                     [("cancel", _("Cancel"), ""), ("remove", _("Remove"), "destructive")], go)
+
+    def _reset_identity(self) -> None:
+        def go(resp):
+            if resp != "reset":
+                return
+
+            async def job():
+                s = online_session(self.core, self.acc)
+                await self.core.omemo.reset_identity(s)
+
+            widgets.run(self.toasts, job(), done=lambda _r: (self.toasts.add_toast(Adw.Toast(
+                title=_("New OMEMO identity created"))), self.refresh()))
+        compat.alert(self.toasts, _("Reset OMEMO identity?"),
+                     _("This deletes this device's encryption keys and sessions and creates a new identity. "
+                       "Contacts will see a new device and have to approve it."),
+                     [("cancel", _("Cancel"), ""), ("reset", _("Reset"), "destructive")], go)
+
+    def _forget_contact(self) -> None:
+        def go(resp):
+            if resp != "forget":
+                return
+
+            async def job():
+                s = online_session(self.core, self.acc)
+                n = await self.core.omemo.forget_contact(s, self.jid)
+                if self.core.pgp is not None:
+                    n += await self.core.pgp.forget_contact(self.acc.id, self.jid)
+                return n
+
+            widgets.run(self.toasts, job(), done=lambda _n: (self.toasts.add_toast(Adw.Toast(
+                title=_("Encryption keys forgotten"))), self.refresh()))
+        compat.alert(self.toasts, _("Forget encryption keys?"),
+                     _("The local OMEMO devices, trust decisions and sessions for %s are deleted. The contact's "
+                       "current device list is fetched again the next time you write to them.") % self.jid,
+                     [("cancel", _("Cancel"), ""), ("forget", _("Forget"), "destructive")], go)
 
     def _verify_link(self, text: str) -> None:
         u = urimod.parse_xmpp(text.strip())

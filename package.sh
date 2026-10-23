@@ -115,7 +115,7 @@ build_tar() {
 
 # ---------------------------------------------------------------------------------------------- Debian
 DEB_DEPENDS="python3 (>= 3.11), python3-gi, gir1.2-gtk-4.0 (>= 4.12), gir1.2-adw-1 (>= 1.4), python3-slixmpp (>= 1.8), python3-markdown-it, python3-cryptography"
-DEB_RECOMMENDS="python3-pip, gir1.2-gtksource-5, gir1.2-secret-1, gnupg, python3-pil, python3-linkify-it, python3-mdit-py-plugins, libgtk-4-media-gstreamer, desktop-file-utils, gstreamer1.0-plugins-bad, gir1.2-gst-plugins-bad-1.0, gir1.2-gst-plugins-base-1.0, gstreamer1.0-nice, gstreamer1.0-plugins-good"
+DEB_RECOMMENDS="python3-pip, gir1.2-gtksource-5, gir1.2-secret-1, gnupg, python3-pil, python3-linkify-it, python3-mdit-py-plugins, libgtk-4-media-gstreamer, gstreamer1.0-gl, desktop-file-utils, gstreamer1.0-plugins-bad, gir1.2-gst-plugins-bad-1.0, gir1.2-gst-plugins-base-1.0, gstreamer1.0-nice, gstreamer1.0-plugins-good"
 DEB_SUGGESTS="gir1.2-spelling-1, zbar-tools, gstreamer1.0-gtk4"
 
 build_deb() {
@@ -186,6 +186,8 @@ Recommends:     python3-linkify-it-py
 Recommends:     (gstreamer1-plugins-bad-free or gstreamer-plugins-bad)
 Recommends:     (libnice-gstreamer1 or gstreamer-plugins-libnice)
 Recommends:     (gstreamer1-plugins-good or gstreamer-plugins-good)
+Recommends:     (gstreamer1-plugins-base or gstreamer-plugins-base)
+Recommends:     (gstreamer1-plugins-rs or gstreamer-plugins-rs)
 Suggests:       libspelling
 Suggests:       gstreamer1-plugin-gtk4
 
@@ -645,7 +647,8 @@ APPIMAGE_DEB_DEPS="patchelf squashfs-tools curl ca-certificates python3-pip pyth
 python3-gst-1.0 gir1.2-girepository-2.0 gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 gir1.2-secret-1
 gir1.2-spelling-1 libspelling-1-1 libenchant-2-2 gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0
 gir1.2-gst-plugins-bad-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
-gstreamer1.0-nice gstreamer1.0-libav gstreamer1.0-pipewire gstreamer1.0-alsa libgtk-4-media-gstreamer
+gstreamer1.0-gl gstreamer1.0-nice gstreamer1.0-libav
+gstreamer1.0-pipewire gstreamer1.0-alsa libgtk-4-media-gstreamer
 librsvg2-common adwaita-icon-theme shared-mime-info dconf-gsettings-backend"
 
 appimage_python() {  # the Python whose PyGObject, GTK and GStreamer go into the image
