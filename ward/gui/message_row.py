@@ -9,6 +9,7 @@ import os
 from gi.repository import Gio, GLib, GObject, Gtk, Pango
 
 from ..core import colors
+from ..core.markup.emoji import emoji_only
 from ..core.models import (
     STATUS_DELIVERED,
     STATUS_FAILED,
@@ -334,7 +335,9 @@ class MessageRow(Gtk.Box):
         if action:
             body = "%s %s" % (self.view.display_name(m), body[4:])
         settings = self.view.settings
-        if m.extra.get("emoji_only") and settings["appearance.large_emoji"]:
+        # The body is the source of truth: outgoing messages and older rows may have no emoji_only flag in
+        # their stored extra, and edits change the body without touching it.
+        if emoji_only(m.body) and settings["appearance.large_emoji"]:
             lbl = Gtk.Label(label=body, xalign=0, css_classes=["message-text", "emoji-only"], selectable=True)
             return lbl
         nicks = self.view.mention_names()
