@@ -385,6 +385,23 @@ def test_appimage_bundles_no_system_libraries():
     assert "libXi.so.6" not in mk.EXCLUDE and "libXcursor.so.1" not in mk.EXCLUDE
 
 
+def test_appimage_bundles_the_video_playback_plugins():
+    """GTK plays a video through glsinkbin once it has a GL context: without the opengl plugin, Gtk.Video shows
+    nothing on a desktop where that context exists.  scaletempo (audiofx) removes the media player warning."""
+    mk = _mkappimage()
+    assert "opengl" in mk.GST_PLUGINS
+    assert "audiofx" in mk.GST_PLUGINS
+    assert "isomp4" in mk.GST_PLUGINS and "libav" in mk.GST_PLUGINS
+    with open(os.path.join(ROOT, "package.sh")) as fh:
+        script = fh.read()
+    assert "gstreamer1.0-gl" in script           # the package that brings libgstopengl.so (glsinkbin)
+    assert "libgtk-4-media-gstreamer" in script
+    # gstreamer1.0-gtk4 is not in Ubuntu 24.04 (where the image is built): it would make apt fail
+    appimage_deps = script.split("APPIMAGE_DEB_DEPS=", 1)[1].split("appimage_python", 1)[0]
+    assert "gstreamer1.0-gtk4" not in appimage_deps
+
+
+
 def test_appimage_has_no_package_manager(monkeypatch):
     """Inside the AppImage the system's packages add nothing: no "sudo apt install" hints, and --check says where
     Ward runs from."""

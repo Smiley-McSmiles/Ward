@@ -168,7 +168,7 @@ class ChatItem(Item):
     preview = _prop(str)
     preview_sender = _prop(str)
     typing = _prop(str)                  # "Alex" or "Alex, Sam" while typing
-    encryption = _prop(str, "default")   # the chat's override: default | omemo | pgp | off
+    encryption = _prop(str, "default")   # the chat's override: default | omemo | omemo2 | omemo-legacy | pgp | off
     notify = _prop(str, "default")
     folder = _prop(str)
     avatar = _prop(str)

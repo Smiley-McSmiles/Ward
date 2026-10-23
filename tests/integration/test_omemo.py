@@ -139,6 +139,96 @@ def test_legacy_omemo_and_encrypted_file(trust_test_ca, tmp_path, run):
     run(main(), timeout=150)
 
 
+def test_force_omemo_version_per_chat(trust_test_ca, tmp_path, run):
+    """A chat can be pinned to OMEMO 2 or to legacy OMEMO, whatever the other devices support."""
+    prosody = trust_test_ca
+
+    async def main():
+        EVE = fresh(prosody, "eve")
+        FRANK = fresh(prosody, "frank")
+        eve = await make_core(tmp_path, prosody, EVE, "f-eve")
+        frank = await make_core(tmp_path, prosody, FRANK, "f-frank")
+        try:
+            e, f = account(eve), account(frank)
+            await wait_for(lambda: e.omemo_ready and f.omemo_ready, 20, "OMEMO ready")
+            await befriend(eve, frank)
+            chat = await eve.open_chat(e, f.jid)
+
+            await eve.chats.set_flags(chat, encryption="omemo2")
+            eve.e2e.refresh(chat)
+            assert chat.encryption_state == "omemo"
+            a = await eve.messaging.send_text(chat, "omemo 2 only")
+            assert a.encryption == "omemo2", a.error
+            fchat = await wait_for(lambda: frank.chats.find(f.id, e.jid, "chat"), 20, "chat at frank")
+            fml = await frank.chats.open_messages(fchat)
+            await wait_for(lambda: any(m.body == "omemo 2 only" for m in fml.items()), 20, "omemo2 at frank")
+
+            await eve.chats.set_flags(chat, encryption="omemo-legacy")
+            eve.e2e.refresh(chat)
+            assert chat.encryption_state == "omemo-legacy"
+            b = await eve.messaging.send_text(chat, "legacy only")
+            assert b.encryption == "omemo", b.error
+            await wait_for(lambda: any(m.body == "legacy only" for m in fml.items()), 20, "legacy at frank")
+
+            versions = {m.body: m.encryption for m in fml.items()}
+            assert versions["omemo 2 only"] == "omemo2" and versions["legacy only"] == "omemo"
+
+            # forgetting the contact drops the local device list, trust and sessions
+            n = await eve.omemo.forget_contact(session(eve), f.jid)
+            assert n > 0
+            remaining = await eve.db.fetchall("SELECT key FROM omemo_store WHERE account_id = ? AND key LIKE ?",
+                                              (e.id, "%%/%s/%%" % f.jid))
+            assert remaining == [], [r["key"] for r in remaining]
+            assert await eve.db.fetchall("SELECT * FROM omemo_devices WHERE account_id = ? AND jid = ?",
+                                         (e.id, f.jid)) == []
+        finally:
+            await stop(eve, frank)
+
+    run(main(), timeout=120)
+
+
+def test_forget_legacy_and_force_omemo2(trust_test_ca, tmp_path, run):
+    """Removing legacy OMEMO drops its keys and bundle; forcing OMEMO 2 then reports a legacy-only peer."""
+    prosody = trust_test_ca
+
+    async def main():
+        GINA = fresh(prosody, "gina")
+        HANK = fresh(prosody, "hank")
+        gina = await make_core(tmp_path, prosody, GINA, "g-gina")
+        hank = await make_core(tmp_path, prosody, HANK, "g-hank", _omemo_backends="legacy")
+        try:
+            g, h = account(gina), account(hank)
+            await wait_for(lambda: g.omemo_ready and h.omemo_ready, 20, "OMEMO ready")
+            await befriend(gina, hank)
+            chat = await gina.open_chat(g, h.jid)
+            await gina.chats.set_flags(chat, encryption="omemo-legacy")
+            gina.e2e.refresh(chat)
+            sent = await gina.messaging.send_text(chat, "hello older app")
+            assert sent.encryption == "omemo" and sent.error == "", sent.error
+
+            # forcing OMEMO 2 with a legacy-only peer is refused with a clear reason, even when the account
+            # policy would normally send plain rather than fail
+            await gina.accounts.set_option(g, "encryption", "available")
+            await gina.chats.set_flags(chat, encryption="omemo2")
+            gina.e2e.refresh(chat)
+            await wait_for(lambda: chat.encryption_state == "blocked", what="blocked OMEMO 2 state")
+            refused = await gina.messaging.send_text(chat, "not for you")
+            assert "OMEMO 2" in (refused.error or ""), refused.error
+
+            # removing legacy OMEMO clears the stored legacy keys and turns the setting off
+            n = await gina.omemo.forget_legacy(session(gina))
+            assert n > 0
+            assert gina.settings["encryption.legacy_omemo"] is False
+            assert gina.omemo.legacy_enabled is False
+            removed = await gina.db.fetchall("SELECT key FROM omemo_store WHERE account_id = ? AND key LIKE "
+                                             "'/eu.siacs.conversations.axolotl%'", (g.id,))
+            assert removed == [], [r["key"] for r in removed]
+        finally:
+            await stop(gina, hank)
+
+    run(main(), timeout=120)
+
+
 def test_encrypted_private_group(trust_test_ca, tmp_path, run):
     prosody = trust_test_ca
 

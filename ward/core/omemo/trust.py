@@ -12,21 +12,31 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from dataclasses import dataclass
 
 VERIFIED, TRUSTED, BLIND, UNDECIDED, DISTRUSTED = "VERIFIED", "TRUSTED", "BLIND", "UNDECIDED", "DISTRUSTED"
 ENCRYPT_TO = {VERIFIED, TRUSTED, BLIND}
 
+log = logging.getLogger("ward.omemo")
+
 # what the interface shows
 UI = {VERIFIED: "verified", TRUSTED: "trusted", BLIND: "trusted", UNDECIDED: "undecided", DISTRUSTED: "distrusted"}
 
 
 def fingerprint(identity_key: bytes) -> str:
-    """64 hex characters of the Curve25519 identity key: the format Conversations, Gajim and Dino show."""
+    """64 hex characters of the Curve25519 identity key: the format Conversations, Gajim and Dino show.
+
+    A malformed key (a small-order point, or a device that published garbage) makes the conversion fail.
+    Return "" then: the device is shown as unusable instead of taking the whole devices page down."""
     import xeddsa
 
-    return xeddsa.ed25519_pub_to_curve25519_pub(identity_key).hex()
+    try:
+        return xeddsa.ed25519_pub_to_curve25519_pub(identity_key).hex()
+    except Exception as e:
+        log.warning("cannot fingerprint an identity key: %s", e)
+        return ""
 
 
 def groups(fp: str, size: int = 8) -> list[str]:

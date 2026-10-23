@@ -331,15 +331,78 @@ def open_uri(widget: Gtk.Widget, uri: str) -> None:
         Gtk.show_uri(root if isinstance(root, Gtk.Window) else None, uri, Gdk.CURRENT_TIME)
 
 
-def open_file(widget: Gtk.Widget, path: str) -> None:
+def _content_type_for(path: str, mime: str = "") -> str:
+    """The content type of a cached file: its name/contents, or the attachment's MIME when the name says nothing."""
     from gi.repository import Gio
 
+    try:
+        content_type, _uncertain = Gio.content_type_guess(path, None)
+    except Exception:
+        content_type = ""
+    # A cached file can have a random name without an extension: then the attachment's MIME type is better than
+    # the "application/octet-stream" the guess gives back.
+    if mime and (not content_type or content_type == "application/octet-stream"):
+        return mime
+    return content_type or mime
+
+
+def _default_app_for(path: str, mime: str = ""):
+    """The desktop's default handler for the file's content type, or None."""
+    from gi.repository import Gio
+
+    content_type = _content_type_for(path, mime)
+    try:
+        return Gio.AppInfo.get_default_for_type(content_type, False) if content_type else None
+    except Exception:
+        return None
+
+
+def _launch_with_default(path: str, mime: str = "") -> bool:
+    """Open a file with the desktop's default app for its content type, bypassing GTK's app chooser.
+
+    Gtk.FileLauncher can end up in an app chooser (through the OpenURI portal) even when a default app is set;
+    launching the default ourselves is what "double click in the file manager" does."""
+    from gi.repository import Gio
+
+    app = _default_app_for(path, mime)
+    if app is None:
+        return False
+    display = Gdk.Display.get_default()
+    context = display.get_app_launch_context() if display is not None else None
+    if context is not None:
+        context.set_timestamp(Gdk.CURRENT_TIME)
+    gfile = Gio.File.new_for_path(path)
+    try:
+        if app.supports_uris():
+            return bool(app.launch_uris([gfile.get_uri()], context))
+        if app.supports_files():
+            return bool(app.launch([gfile], context))
+    except GLib.Error:
+        return False
+    return False
+
+
+def open_file(widget: Gtk.Widget, path: str, mime: str = "") -> None:
+    from gi.repository import Gio
+
+    if _launch_with_default(path, mime):
+        return
     root = widget.get_root() if widget is not None else None
     try:
         launcher = Gtk.FileLauncher.new(Gio.File.new_for_path(path))
-        launcher.launch(root if isinstance(root, Gtk.Window) else None, None, None, None)
     except AttributeError:
         open_uri(widget, Gio.File.new_for_path(path).get_uri())
+        return
+    if hasattr(launcher, "set_always_ask"):
+        launcher.set_always_ask(False)
+
+    def done(launcher, result, _data=None):
+        try:
+            launcher.launch_finish(result)
+        except GLib.Error as e:
+            compat.toast(widget, _("Could not open the file: %s") % e.message)
+
+    launcher.launch(root if isinstance(root, Gtk.Window) else None, None, done, None)
 
 
 def write_private(path: str, data: bytes) -> None:

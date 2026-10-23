@@ -31,3 +31,11 @@ def test_private_key_files_are_only_readable_by_the_user(tmp_path):
     widgets.write_private(str(path), b"secret")
     assert path.read_bytes() == b"secret"
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_fingerprint_of_a_malformed_key_is_empty():
+    """A device that published a small-order or garbled identity key must not take the devices page down."""
+    from ward.core.omemo import trust
+
+    assert trust.fingerprint(bytes(32)) == ""
+    assert trust.fingerprint(bytes([255]) * 32) == ""

@@ -32,6 +32,8 @@ class E2E:
         pol = acc.option("encryption") if acc is not None else "default"
         if pol in (None, "", "default"):
             pol = self.core.settings["encryption.default"]
+        if chat.encryption in ("omemo2", "omemo-legacy"):
+            return "always"        # an explicitly chosen OMEMO version must never fall back to plain
         if chat.encryption in ("omemo", "pgp") and pol == "off":
             return "always"
         return pol
@@ -50,7 +52,7 @@ class E2E:
         if meth == "none":
             return "plain", _("Encryption is off for this chat")
         if chat.type == "groupchat" and not chat.encryptable:
-            if self.policy(chat) == "always" and chat.encryption in ("omemo", "pgp"):
+            if self.policy(chat) == "always" and chat.encryption in ("omemo", "omemo2", "omemo-legacy", "pgp"):
                 return "blocked", _("This group cannot be encrypted: it is public or members can't see each "
                                     "other's addresses")
             return "plain", _("Public groups are not encrypted")
@@ -83,7 +85,7 @@ class E2E:
         if meth == "none" or not has_payload:
             return el, ""
         if chat.type == "groupchat" and not chat.encryptable:
-            if policy == "always" and chat.encryption in ("omemo", "pgp"):
+            if policy == "always" and chat.encryption in ("omemo", "omemo2", "omemo-legacy", "pgp"):
                 raise EncryptionBlocked(_("This group cannot be encrypted"))
             return el, ""
         if meth == "pgp":
@@ -104,7 +106,8 @@ class E2E:
                                           "Install the OMEMO libraries or turn encryption off for this chat."))
             return el, ""
         try:
-            return await omemo.encrypt(session, chat, el)
+            force = chat.encryption if chat.encryption in ("omemo2", "omemo-legacy") else ""
+            return await omemo.encrypt(session, chat, el, force=force)
         except EncryptionBlocked:
             if policy == "always":
                 raise

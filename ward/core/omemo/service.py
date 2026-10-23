@@ -40,6 +40,7 @@ from omemo.session_manager import (
     MessageNotForUs,
     NoEligibleDevices,
     SenderDistrusted,
+    SenderNotFound,
     SessionManager,
     StillUndecided,
     TrustDecisionFailed,
@@ -148,6 +149,9 @@ def _manager_class(service: OmemoService, session):
 
         async def _evaluate_custom_trust_level(self, device) -> TrustLevel:
             name = device.trust_level_name
+            if not trust.fingerprint(device.identity_key):
+                # a device with an unusable identity key: never encrypt to it, but still show its messages
+                return TrustLevel.DISTRUSTED if _encrypting.get() else TrustLevel.UNDECIDED
             if name in trust.ENCRYPT_TO:
                 return TrustLevel.TRUSTED
             if name == trust.DISTRUSTED:
@@ -199,6 +203,10 @@ class OmemoService(GObject.Object):
     @property
     def legacy_enabled(self) -> bool:
         return HAVE_OLDMEMO and bool(self.core.settings["encryption.legacy_omemo"])
+
+    @property
+    def legacy_installed(self) -> bool:
+        return HAVE_OLDMEMO
 
     def btbv(self, account_id: int) -> bool:
         return self.core.settings["encryption.trust"] == "btbv"
@@ -357,8 +365,11 @@ class OmemoService(GObject.Object):
             versions.append("OMEMO 2")
         if NS1 in d.namespaces:
             versions.append(_("legacy"))
+        fp = trust.fingerprint(d.identity_key)
+        if not fp:
+            versions.append(_("invalid key"))
         active = any(a for _ns, a in d.active)
-        return DeviceItem(jid=d.bare_jid, device_id=d.device_id, fingerprint=trust.fingerprint(d.identity_key),
+        return DeviceItem(jid=d.bare_jid, device_id=d.device_id, fingerprint=fp,
                           label=d.label or "", trust=trust.UI.get(d.trust_level_name, "undecided"),
                           active=active, inactive=not active, own=d.bare_jid == acc.jid,
                           this_device=own_id is not None and d.device_id == own_id, versions=", ".join(versions))
@@ -426,10 +437,15 @@ class OmemoService(GObject.Object):
 
         m = await self.manager(session)
         own, others = await m.get_own_device_information()
-        fps = {own.device_id: trust.fingerprint(own.identity_key)}
+        own_fp = trust.fingerprint(own.identity_key)
+        fps = {own.device_id: own_fp} if own_fp else {}
         for d in others:
             if d.trust_level_name in (trust.VERIFIED,):
-                fps[d.device_id] = trust.fingerprint(d.identity_key)
+                fp = trust.fingerprint(d.identity_key)
+                if fp:
+                    fps[d.device_id] = fp
+        if not fps:
+            raise ValueError(_("This device has no usable identity key"))
         return build_xmpp(session.jid, omemo=fps)
 
     async def set_label(self, session, label: str) -> None:
@@ -447,12 +463,18 @@ class OmemoService(GObject.Object):
             raise ValueError("cannot remove this device")
         cls = type(m)
         for ns in [NS2] + ([NS1] if HAVE_OLDMEMO else []):
-            lst = dict(await cls._download_device_list(ns, session.jid))
+            try:
+                lst = dict(await cls._download_device_list(ns, session.jid))
+            except Exception as e:
+                log.info("device list %s of %s: %s", ns, session.jid, e)
+                continue
             if device_id in lst:
                 del lst[device_id]
                 await cls._upload_device_list(ns, lst)
-                with contextlib.suppress(Exception):
-                    await m.update_device_list(ns, session.jid, lst)
+            # Always take the downloaded list as the truth, so a device that is already gone online stops being
+            # shown from the local cache too.
+            with contextlib.suppress(Exception):
+                await m.update_device_list(ns, session.jid, lst)
         await self.review(session, session.jid)
 
     async def remove_inactive_own_devices(self, session) -> int:
@@ -462,6 +484,58 @@ class OmemoService(GObject.Object):
                 await self.remove_own_device(session, int(d.device_id))
                 n += 1
         return n
+
+    async def forget_legacy(self, session) -> int:
+        """Drop this account's legacy OMEMO (0.3) keys, sessions and published device, and stop publishing one.
+
+        The legacy device is removed from the PEP device list and bundle, the legacy rows are deleted from the
+        OMEMO storage (they can otherwise come back when the backend is loaded again), and the setting that
+        loads legacy OMEMO is turned off so it does not create a new one.  Returns the number of stored rows
+        that were removed."""
+        acc = session.account
+        storage = WardStorage(self.core.db, acc.id)
+        before = await storage.dump()
+        m = self.managers.pop(acc.id, None)
+        if m is not None:
+            with contextlib.suppress(Exception):
+                await m.purge_backend(NS1)
+            with contextlib.suppress(Exception):
+                await m.shutdown()
+        after = await storage.dump()
+        prefix = "/%s" % NS1
+        keep = {k: v for k, v in after.items() if k != prefix and not k.startswith(prefix + "/")}
+        removed = sum(1 for k in before if k == prefix or k.startswith(prefix + "/"))
+        await storage.replace_all(keep)
+        self.core.settings.set("encryption.legacy_omemo", False)
+        self._forget_account(acc.id)
+        await self.manager(session)      # reloads without legacy, so no stale cache can bring its keys back
+        # Belt and braces: purge_backend can leave the backend's own state behind if it failed halfway, and the
+        # reload must not find any of it.
+        await self.core.db.execute("DELETE FROM omemo_store WHERE account_id = ? AND (key = ? OR key LIKE ?)",
+                                   (acc.id, prefix, prefix + "/%"))
+        return removed
+
+    async def forget_contact(self, session, jid: str) -> int:
+        """Delete every local OMEMO record of a contact: devices, trust decisions and sessions.
+
+        The contact's current device list is fetched again the next time they are used.  Returns the number of
+        stored rows that were removed."""
+        aid = session.account.id
+        jid = util.bare(jid)
+        m = self.managers.pop(aid, None)
+        if m is not None:
+            with contextlib.suppress(Exception):
+                await m.shutdown()
+        storage = WardStorage(self.core.db, aid)
+        data = await storage.dump()
+        inside = "/%s/" % jid
+        keep = {k: v for k, v in data.items() if inside not in k and not k.endswith("/%s" % jid)}
+        removed = len(data) - len(keep)
+        await storage.replace_all(keep)
+        await self.core.db.execute("DELETE FROM omemo_devices WHERE account_id = ? AND jid = ?", (aid, jid))
+        self._forget_account(aid)
+        await self.manager(session)
+        return removed
 
     async def reset_identity(self, session) -> None:
         """Start over with a new identity (contacts will see a new device)."""
@@ -492,7 +566,9 @@ class OmemoService(GObject.Object):
                                                                    "account_id = ?", (acc.id,))}
             for jid in jids:
                 for d in await m.get_device_information(jid):
-                    entries.append(trust.TrustEntry(jid, trust.fingerprint(d.identity_key), d.trust_level_name))
+                    fp = trust.fingerprint(d.identity_key)
+                    if fp:
+                        entries.append(trust.TrustEntry(jid, fp, d.trust_level_name))
         return await aio.run_in_thread(trust.export_trust, entries, passphrase)
 
     async def import_trust(self, blob: bytes, passphrase: str) -> int:
@@ -556,25 +632,44 @@ class OmemoService(GObject.Object):
         acc = self.core.accounts.get(chat.account_id)
         if acc is None or acc.id not in self.managers:
             return "omemo", ""     # optimistic until OMEMO is up; sending will tell
+        forced = chat.encryption if chat.encryption in ("omemo2", "omemo-legacy") else ""
+        if forced == "omemo-legacy" and not self.legacy_enabled:
+            return "blocked", _("Legacy OMEMO is turned off in Preferences > Encryption")
         if chat.type == "groupchat":
-            return "omemo", ""
+            if forced == "omemo-legacy":
+                return "omemo-legacy", _("Forced legacy OMEMO: only the text is encrypted, reactions and replies "
+                                         "are not")
+            return "omemo", _("Forced OMEMO 2") if forced == "omemo2" else ""
         jid = chat.jid if chat.type == "chat" else ""
         devices = self._devices.get((acc.id, jid))
         if devices is None:
-            return "omemo", ""
+            return ("omemo-legacy" if forced == "omemo-legacy" else "omemo"), ""
+        name = chat.name or chat.jid
         usable = [d for d in devices if d.trust_level_name in trust.ENCRYPT_TO and any(a for _n, a in d.active)]
         if not devices:
             return "blocked", _("%s has no encryption keys. They need an app with OMEMO, or you can turn "
-                                "encryption off for this chat.") % (chat.name or chat.jid)
+                                "encryption off for this chat.") % name
         if not usable:
-            return "blocked", _("None of %s's devices is trusted yet. Verify or trust a device to write.") % (
-                chat.name or chat.jid)
+            return "blocked", _("None of %s's devices is trusted yet. Verify or trust a device to write.") % name
+        if forced == "omemo2":
+            supported = [d for d in usable if NS2 in d.namespaces]
+            if not supported:
+                return "blocked", _("None of %s's devices supports OMEMO 2") % name
+            if len(supported) < len(usable):
+                return "omemo", _("Some of %s's devices only support legacy OMEMO and will not get your "
+                                  "messages") % name
+            return "omemo", _("Forced OMEMO 2")
+        if forced == "omemo-legacy":
+            supported = [d for d in usable if NS1 in d.namespaces]
+            if not supported:
+                return "blocked", _("None of %s's devices supports legacy OMEMO") % name
+            return "omemo-legacy", _("Forced legacy OMEMO: only the text is encrypted, reactions and replies "
+                                     "are not")
         legacy_only = [d for d in usable if NS2 not in d.namespaces]
         if legacy_only:
             if not self.legacy_enabled:
                 if len(legacy_only) == len(usable):
-                    return "blocked", _("%s only has devices with legacy OMEMO, which is turned off") % (
-                        chat.name or chat.jid)
+                    return "blocked", _("%s only has devices with legacy OMEMO, which is turned off") % name
                 return "omemo", _("Some devices use legacy OMEMO, which is turned off: they won't get your messages")
             return "omemo-legacy", _("Some devices use legacy OMEMO: only the text is encrypted, reactions and "
                                      "replies are not")
@@ -588,9 +683,11 @@ class OmemoService(GObject.Object):
             return set()
         return {chat.jid}
 
-    async def encrypt(self, session, chat, el: ET.Element) -> tuple[ET.Element, str]:
+    async def encrypt(self, session, chat, el: ET.Element, force: str = "") -> tuple[ET.Element, str]:
         m = await self.manager(session)
         acc = session.account
+        if force == "omemo-legacy" and not self.legacy_enabled:
+            raise EncryptionBlocked(_("Legacy OMEMO is turned off in Preferences > Encryption"))
         recipients = self._recipients(chat)
         if not recipients and chat.type != "groupchat":
             raise EncryptionBlocked(_("Private messages in groups cannot be encrypted"))
@@ -605,11 +702,18 @@ class OmemoService(GObject.Object):
         inside, outside = stanzas.split_content(el)
         body = el.findtext("{%s}body" % stanzas.NS_CLIENT)
         to_jid = chat.jid
-        plaintexts: dict[str, bytes] = {NS2: sce.build([_copy(e) for e in inside], to_jid, acc.jid)}
-        order = [NS2]
-        if self.legacy_enabled and body is not None:
+        plaintexts: dict[str, bytes] = {}
+        order: list[str] = []
+        if force != "omemo-legacy":
+            plaintexts[NS2] = sce.build([_copy(e) for e in inside], to_jid, acc.jid)
+            order.append(NS2)
+        if force != "omemo2" and self.legacy_enabled and body is not None:
             plaintexts[NS1] = body.encode("utf-8")
             order.append(NS1)
+        if not plaintexts:
+            if force == "omemo-legacy":
+                raise EncryptionBlocked(_("Legacy OMEMO can only encrypt a text message"))
+            raise EncryptionBlocked(_("Not sent: nothing could be encrypted"))
         token = _encrypting.set(True)
         try:
             messages, errors = await m.encrypt(frozenset(targets), plaintexts, backend_priority_order=order,
@@ -617,14 +721,24 @@ class OmemoService(GObject.Object):
         except NoEligibleDevices as e:
             if targets == {acc.jid}:
                 raise OnlyThisDevice() from None
-            if body is None and self.legacy_enabled:
+            if body is None and self.legacy_enabled and force != "omemo2":
                 return el, ""       # a reaction for legacy OMEMO users: see below
             names = ", ".join(sorted(getattr(e, "bare_jids", recipients) or recipients))
-            raise EncryptionBlocked(_("Not sent: %s has no trusted device that can receive encrypted messages. "
-                                      "Check the contact's devices, or turn encryption off for this chat.")
-                                    % names) from None
+            if force == "omemo2":
+                why = _("Not sent: %s has no OMEMO 2 device that can receive encrypted messages.") % names
+            elif force == "omemo-legacy":
+                why = _("Not sent: %s has no legacy OMEMO device that can receive encrypted messages.") % names
+            else:
+                why = _("Not sent: %s has no trusted device that can receive encrypted messages. "
+                        "Check the contact's devices, or turn encryption off for this chat.") % names
+            raise EncryptionBlocked(why) from None
         except StillUndecided:
             raise EncryptionBlocked(_("Not sent: decide about the new devices first")) from None
+        except Exception as e:
+            # a malformed bundle or identity key from the other side must not take the send path down with a
+            # traceback: say what happened instead
+            log.warning("OMEMO encryption failed: %s", e)
+            raise EncryptionBlocked(_("OMEMO encryption failed: %s") % e) from None
         finally:
             _encrypting.reset(token)
         for err in errors:
@@ -642,7 +756,7 @@ class OmemoService(GObject.Object):
         if not namespaces:
             if targets == {acc.jid}:
                 raise OnlyThisDevice()
-            if body is None:
+            if body is None and force != "omemo2" and self.legacy_enabled:
                 # a reaction (or other body-less update) for people on legacy OMEMO, which can only encrypt a body:
                 # it goes out unencrypted, as Conversations, Monal and Dino send them
                 return el, ""
@@ -705,17 +819,33 @@ class OmemoService(GObject.Object):
         if not sender:
             inc.decrypt_error = _("Can't decrypt: this group does not show who sent the message")
             return
-        try:
+        if pm.omemo2 is None and pm.omemo is None:
+            return
+        if pm.omemo is not None and pm.omemo2 is None and not HAVE_OLDMEMO:
+            inc.decrypt_error = _("This message uses legacy OMEMO, which is not installed here")
+            return
+        if not inc.outgoing:
+            # A device list can be stale or was forgotten: without the sender's devices, legacy OMEMO cannot
+            # even verify the message ("SenderNotFound").  Refresh before parsing, not after failing.
+            with contextlib.suppress(Exception):
+                await self.refresh(session, sender)
+
+        async def _decrypt_once():
             if pm.omemo2 is not None:
                 message = twomemo.etree.parse_message(pm.omemo2, sender)
-            elif pm.omemo is None:
-                return
             else:
-                if not HAVE_OLDMEMO:
-                    inc.decrypt_error = _("This message uses legacy OMEMO, which is not installed here")
-                    return
                 message = await oldmemo.etree.parse_message(pm.omemo, sender, acc.jid, m)
             plaintext, device, _key = await m.decrypt(message)
+            return message, plaintext, device
+
+        try:
+            try:
+                message, plaintext, device = await _decrypt_once()
+            except SenderNotFound:
+                # the sender's device list really was missing: fetch it and try once more
+                with contextlib.suppress(Exception):
+                    await self.refresh(session, sender, force=True)
+                message, plaintext, device = await _decrypt_once()
         except MessageNotForUs:
             if group and inc.outgoing:
                 inc.decrypt_error = _("Sent from this account before this device was added")
@@ -724,6 +854,10 @@ class OmemoService(GObject.Object):
             return
         except SenderDistrusted:
             inc.decrypt_error = _("Sent from a device you distrusted; not shown")
+            return
+        except SenderNotFound:
+            inc.decrypt_error = _("Could not decrypt: the sender's OMEMO device is not in its published "
+                                  "device list. Ask them to send the message again.")
             return
         except Exception as e:
             log.info("OMEMO decryption failed: %s", e)

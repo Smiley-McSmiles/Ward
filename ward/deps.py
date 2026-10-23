@@ -27,14 +27,14 @@ PACKAGES: dict[str, dict[str, str]] = {
             "source": "gir1.2-gtksource-5", "spelling": "gir1.2-spelling-1", "secret": "gir1.2-secret-1",
             "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it", "mdit": "python3-mdit-py-plugins",
             "linkify": "python3-linkify-it", "crypto": "python3-cryptography", "pillow": "python3-pil",
-            "gpg": "gnupg", "media": "libgtk-4-media-gstreamer", "zbar": "zbar-tools", "pip": "python3-pip",
-            "omemo": "-"},
+            "gpg": "gnupg", "media": "libgtk-4-media-gstreamer gstreamer1.0-gl", "zbar": "zbar-tools",
+            "pip": "python3-pip", "omemo": "-"},
     "dnf": {"python": "python3", "gi": "python3-gobject", "gtk": "gtk4", "adw": "libadwaita",
             "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
             "slixmpp": "python3-slixmpp", "markdown": "python3-markdown-it-py", "mdit": "python3-mdit-py-plugins",
             "linkify": "python3-linkify-it-py", "crypto": "python3-cryptography", "pillow": "python3-pillow",
-            "gpg": "gnupg2", "media": "gstreamer1-plugins-good", "zbar": "zbar", "pip": "python3-pip",
-            "omemo": "-"},
+            "gpg": "gnupg2", "media": "gstreamer1-plugins-good gstreamer1-plugins-base", "zbar": "zbar",
+            "pip": "python3-pip", "omemo": "-"},
     "pacman": {"python": "python", "gi": "python-gobject", "gtk": "gtk4", "adw": "libadwaita",
                "source": "gtksourceview5", "spelling": "libspelling", "secret": "libsecret",
                "slixmpp": "python-slixmpp", "markdown": "python-markdown-it-py", "mdit": "python-mdit_py_plugins",
@@ -88,7 +88,7 @@ PACKAGES: dict[str, dict[str, str]] = {
 # calls: GStreamer's WebRTC (webrtcbin, DTLS, SRTP), ICE (libnice), VP8 and Opus, and the GTK 4 video sink
 CALL_PACKAGES = {
     "apt": "gstreamer1.0-plugins-bad gir1.2-gst-plugins-bad-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-nice "
-           "gstreamer1.0-plugins-good gstreamer1.0-gtk4",
+           "gstreamer1.0-plugins-good gstreamer1.0-gl",
     "dnf": "gstreamer1-plugins-bad-free libnice-gstreamer1 gstreamer1-plugins-good gstreamer1-plugin-gtk4",
     "pacman": "gst-plugins-bad libnice gst-plugins-good gst-plugin-gtk4",
     "zypper": "gstreamer-plugins-bad typelib-1_0-GstWebRTC-1_0 gstreamer-plugins-libnice gstreamer-plugins-good",
@@ -301,8 +301,26 @@ def features() -> list[Feature]:
                 N_("GdkPixbuf is used without it"), ("pillow",)),
         Feature("linkify", N_("Better link detection (linkify-it-py)"), have("linkify"), "", ("linkify",)),
         Feature("zbar", N_("Reading QR codes from images (zbar)"), have("zbar"), "", ("zbar",)),
+        _media_feature(),
         _calls_feature(),
     ]
+
+
+def _media_feature() -> Feature:
+    """Videos and audio in chats: the elements GTK's media player and the typefinders need."""
+    try:
+        import gi
+
+        gi.require_version("Gst", "1.0")
+        from gi.repository import Gst
+
+        Gst.init(None)
+    except Exception as e:  # any broken GStreamer is just an unavailable feature
+        return Feature("media", N_("Videos and audio in chats (GStreamer)"), False, str(e), ("media",))
+    needed = ("playbin", "decodebin", "qtdemux", "glsinkbin")
+    missing = [name for name in needed if Gst.ElementFactory.find(name) is None]
+    return Feature("media", N_("Videos and audio in chats (GStreamer)"), not missing, ", ".join(missing),
+                   ("media",))
 
 
 def _calls_feature() -> Feature:

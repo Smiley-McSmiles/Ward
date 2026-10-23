@@ -428,7 +428,7 @@ class MessageRow(Gtk.Box):
         elif path:
             op = Gtk.Button(icon_name="document-open-symbolic", css_classes=["flat", "circular"],
                             tooltip_text=_("Open"))
-            op.connect("clicked", lambda *_: widgets.open_file(self, path))
+            op.connect("clicked", lambda *_: widgets.open_file(self, path, att.mime))
             card.append(op)
             sv = Gtk.Button(icon_name="document-save-symbolic", css_classes=["flat", "circular"],
                             tooltip_text=_("Save as…"))
