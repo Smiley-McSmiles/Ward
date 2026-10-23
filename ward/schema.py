@@ -140,7 +140,7 @@ SPECS: dict[str, Spec] = {
                                N_("The six emoji in the reaction bar"), page="chats", group=N_("Messages")),
     "chats.recent_emoji": S("list", []),                  # the emoji picker's recently used, newest first
     "chats.emoji_skin_tone": S("int", 0, min=0, max=5),   # the emoji picker's skin tone, 0 the default
-    "chats.markdown_others": S("bool", False, N_("Render Markdown from other apps"),
+    "chats.markdown_others": S("bool", True, N_("Render Markdown from other apps"),
                                N_("Other apps use simpler styling, where *text* is bold instead of italic"),
                                page="chats", group=N_("Messages")),
     "chats.collapse_after": S("int", 25, N_("Collapse long messages after"),

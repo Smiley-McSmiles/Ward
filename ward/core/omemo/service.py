@@ -890,6 +890,7 @@ class OmemoService(GObject.Object):
     @staticmethod
     def _apply_content(inc: Incoming, inner: ET.Element, content: list[ET.Element], replace_all: bool) -> None:
         """Rebuild the message with the decrypted content instead of the encrypted element and fallback body."""
+        outer_markdown = inc.pm.markdown
         new = ET.Element(inner.tag, dict(inner.attrib))
         drop = {"{%s}encrypted" % stanzas.NS_OMEMO2, "{%s}encrypted" % stanzas.NS_OMEMO, "{%s}body" % stanzas.NS_CLIENT,
                 "{%s}encryption" % stanzas.NS_EME}
@@ -901,6 +902,9 @@ class OmemoService(GObject.Object):
         for c in content:
             new.append(c)
         pm = stanzas.parse(new)
+        # Some clients mark Markdown on the outer message instead of inside the SCE content (Ward-Android does):
+        # the re-parse would otherwise lose the flag and show "**bold**" and `code` literally.
+        pm.markdown = pm.markdown or outer_markdown
         pm.wrapper = inc.pm.wrapper
         pm.stanza_ids = inc.pm.stanza_ids or pm.stanza_ids
         pm.delay = inc.pm.delay or pm.delay

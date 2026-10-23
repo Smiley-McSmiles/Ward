@@ -21,6 +21,24 @@ def capture(core):
     return out
 
 
+def test_omemo2_markdown_flag_on_the_outer_message():
+    """Some clients (Ward-Android) mark Markdown outside the SCE envelope; decrypting must not lose it."""
+    import types
+    from xml.etree import ElementTree as ET
+
+    from ward.core import stanzas
+    from ward.core.omemo.service import OmemoService
+
+    el = ET.fromstring("<message xmlns='jabber:client' type='chat'>"
+                       "<markdown xmlns='urn:xmpp:ward:markdown:0'/>"
+                       "<encrypted xmlns='urn:xmpp:omemo:2'><payload>AAAA</payload></encrypted></message>")
+    inc = types.SimpleNamespace(pm=stanzas.parse(el), extra={})
+    body = ET.Element("{jabber:client}body")
+    body.text = "**bold** and `code`"
+    OmemoService._apply_content(inc, el, [body], True)
+    assert inc.pm.markdown is True and inc.pm.body == "**bold** and `code`"
+
+
 def test_omemo2_trust_and_new_devices(trust_test_ca, tmp_path, run):
     prosody = trust_test_ca
 
