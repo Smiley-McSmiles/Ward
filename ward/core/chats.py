@@ -297,7 +297,8 @@ class Chats(GObject.Object):
         else:
             body = m.body[4:] if m.kind == "me" else m.body
             try:
-                text = markup_preview(parse_markup(body, m.is_markdown))
+                text = markup_preview(parse_markup(body, m.is_markdown,
+                                                   markdown_from_others=self.core.settings["chats.markdown_others"]))
             except Exception:
                 text = util.first_line(body)
             if m.kind == "me":

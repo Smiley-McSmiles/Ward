@@ -118,7 +118,8 @@ class Notifier(GObject.Object):
         else:
             text = msg.body[4:] if msg.kind == "me" else msg.body
             try:
-                body = markup_preview(parse_markup(text, msg.is_markdown), 200)
+                body = markup_preview(parse_markup(text, msg.is_markdown,
+                                                   markdown_from_others=self.settings["chats.markdown_others"]), 200)
             except Exception:
                 body = util.first_line(text, 200)
             if msg.kind == "me":
