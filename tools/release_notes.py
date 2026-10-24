@@ -4,6 +4,7 @@
     tools/release_notes.py 1.0.0"""
 
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,7 +16,7 @@ def main() -> int:
         lines = fh.read().splitlines()
     out, inside = [], False
     for line in lines:
-        if line.startswith("## "):
+        if re.match(r"^## v?\d+\.\d+\.\d+\b", line):
             if inside:
                 break
             inside = line[3:].split()[0].lstrip("v") == version
