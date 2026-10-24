@@ -86,6 +86,27 @@ def test_private_group(trust_test_ca, tmp_path, run):
     run(main(), timeout=120)
 
 
+def test_joining_the_group_service_is_not_a_room(trust_test_ca, tmp_path, run):
+    """The service domain (conference.example.org) is not a room; joining it must not send a presence."""
+    prosody = trust_test_ca
+
+    async def main():
+        CAROL = fresh(prosody, "carol")
+        carol = await make_core(tmp_path, prosody, CAROL, "j-carol")
+        try:
+            c = account(carol)
+            service = await wait_for(lambda: carol.disco.muc_service(session(carol)), 20, "group service")
+            assert service
+            from ward.core.muc import MucError
+
+            with pytest.raises(MucError, match="not a group address"):
+                await carol.muc.join(c, service)
+        finally:
+            await stop(carol)
+
+    run(main(), timeout=60)
+
+
 def test_public_channel_is_not_encryptable(trust_test_ca, tmp_path, run):
     prosody = trust_test_ca
 

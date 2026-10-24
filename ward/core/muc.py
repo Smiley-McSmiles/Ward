@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
@@ -51,7 +53,7 @@ JOIN_ERRORS = {
     "forbidden": N_("You are banned from this group"),
     "item-not-found": N_("This group does not exist"),
     "not-allowed": N_("You are not allowed to create groups on this server"),
-    "service-unavailable": N_("This group is full"),
+    "service-unavailable": N_("This group is full or unavailable"),
     "jid-malformed": N_("Your nickname is not valid here"),
     "remote-server-not-found": N_("The group's server could not be reached"),
 }
@@ -68,6 +70,14 @@ PRESETS = {
                "muc#roomconfig_moderatedroom": False, "muc#roomconfig_allowinvites": True,
                "muc#roomconfig_changesubject": False},
 }
+
+
+def room_address(name: str, service: str) -> str:
+    """A suggested room JID from a display name and the server's MUC service, e.g. Blap -> blap@conference..."""
+    text = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode("ascii").lower()
+    text = re.sub(r"[^a-z0-9._-]+", "-", text)
+    text = re.sub(r"[-._]{2,}", "-", text).strip("-._")
+    return "%s@%s" % (text, service) if text and service else ""
 
 
 @dataclass
@@ -222,6 +232,11 @@ class MucService(GObject.Object):
         if session is None or not session.online:
             raise MucError("service-unavailable", _("You are offline"))
         jid = util.bare(jid)
+        if "@" not in jid:
+            # A MUC service domain (conference.example.org) is not a room.  Sending a join presence to the
+            # service itself makes Prosody answer service-unavailable, which looks like a full room.
+            raise MucError("jid-malformed", _("That is not a group address. Enter the room address, for "
+                                              "example room@conference.example.org."))
         chat = await self.core.chats.get_or_create(acc.id, jid, "groupchat")
         room = self.rooms.get((acc.id, jid))
         if room is None:

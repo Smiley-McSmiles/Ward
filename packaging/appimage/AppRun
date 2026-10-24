@@ -17,6 +17,10 @@ export GI_TYPELIB_PATH="$LIB/girepository-1.0"
 export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export GTK_PATH="$LIB/gtk-4.0"
 export GIO_EXTRA_MODULES="$LIB/gio/modules"
+# glib's helper for launching the desktop's default app.  Its compile-time location (/usr/libexec) does not
+# exist on every distribution, so the image carries it here; GIO_LAUNCH_DESKTOP overrides where GIO looks.
+[ -x "$HERE/usr/libexec/gio-launch-desktop" ] &&
+    export GIO_LAUNCH_DESKTOP="$HERE/usr/libexec/gio-launch-desktop"
 export GST_PLUGIN_SYSTEM_PATH_1_0="$LIB/gstreamer-1.0"
 export GST_PLUGIN_SCANNER_1_0="$LIB/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
 unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0 GST_PLUGIN_SYSTEM_PATH

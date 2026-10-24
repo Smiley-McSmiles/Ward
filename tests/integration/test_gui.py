@@ -217,6 +217,8 @@ def test_register_group_and_dialogs(app, prosody, run, errors):
         d = dialogs.NewGroupDialog(w)
         d.present(w)
         d.name.set_text("Planning")
+        await _settle(0.2)
+        assert d.address.get_text() == "planning@conference.localhost"
         d.on_action()
         await wait_for(lambda: w.current_chat is not None and w.current_chat.type == "groupchat" and
                        w.current_chat.joined, 30, "the new group")
@@ -242,6 +244,7 @@ def test_register_group_and_dialogs(app, prosody, run, errors):
 
         # every dialog opens and closes without errors
         opened = [dialogs.StartChatDialog(w), dialogs.AddContactDialog(w), dialogs.JoinGroupDialog(w),
+                  dialogs.ContactPicker(w, acc, set(), lambda _s: None),
                   dialogs.InviteDialog(w, group), dialogs.ProfileDialog(w, acc), dialogs.ChangePasswordDialog(w, acc),
                   dialogs.RequestsDialog(w), dialogs.ChatPicker(w, "Forward", lambda c: None),
                   dialogs.QuickSwitcher(w), details.DetailsDialog(w, group), trust.DevicesDialog(w, acc, acc.jid),

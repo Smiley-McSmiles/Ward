@@ -1,6 +1,6 @@
 """Ward - an XMPP client for the Linux and BSD desktop, encrypted by default."""
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 APP_ID = "io.github.smiley_mcsmiles.Ward"
 APP_NAME = "Ward"
 URL = "https://github.com/Smiley-McSmiles/Ward"

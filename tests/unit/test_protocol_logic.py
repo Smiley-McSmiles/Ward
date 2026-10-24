@@ -5,6 +5,7 @@ from _fuzz import given, settings, st
 
 from ward.core import colors, forms, search, stanzas, uri
 from ward.core.chat import ChatService
+from ward.core.muc import room_address
 from ward.core.stanzas import q
 
 
@@ -29,6 +30,14 @@ def test_xmpp_uri_roundtrip():
     s = uri.build_xmpp("alice@example.org", "message", {"body": "hi & bye; ok?"}, {5: "ab" * 32})
     u = uri.parse_xmpp(s)
     assert u.params["body"] == "hi & bye; ok?" and u.omemo == {5: "ab" * 32}
+
+
+def test_group_address_from_name():
+    service = "conference.example.org"
+    assert room_address("blap", service) == "blap@conference.example.org"
+    assert room_address("My Group!", service) == "my-group@conference.example.org"
+    assert room_address("  Café  ", service) == "cafe@conference.example.org"
+    assert room_address("", service) == ""
 
 
 def test_aesgcm_links():
