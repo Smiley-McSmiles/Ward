@@ -9,7 +9,7 @@ import shutil
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .. import util
-from ..core import register, secrets
+from ..core import muc, register, secrets
 from ..core.models import AccountItem, ChatItem, MessageItem
 from ..i18n import _
 from . import compat, lifetime, widgets
@@ -274,7 +274,9 @@ class JoinGroupDialog(BaseDialog):
 
             u = uri.parse_xmpp(jid)
             jid = u.jid if u else jid
-        if not util.valid_bare_jid(jid):
+        # A bare domain such as "conference.example.org" is the group chat service, not a room; a single word
+        # is search text.  Only room@service addresses can be joined.
+        if not util.valid_bare_jid(jid) or "@" not in jid:
             self._search()
             return
         acc = self.acc.account
@@ -293,6 +295,7 @@ class NewGroupDialog(BaseDialog):
         g = self.group()
         self.acc = AccountChooser(self.core, g, window.sidebar._main_account())
         self.name = entry_row(_("Name"))
+        self.name.connect("changed", lambda *_: self._suggest_address())
         g.add(self.name)
         self.kind = Adw.ComboRow(title=_("Kind"))
         self.kind.set_model(Gtk.StringList.new([_("Private group"), _("Public channel")]))
@@ -300,12 +303,71 @@ class NewGroupDialog(BaseDialog):
         g.add(self.kind)
         self.description = entry_row(_("Description (optional)"))
         g.add(self.description)
-        self.invitees = entry_row(_("Invite (addresses, separated by commas)"))
-        g.add(self.invitees)
+        self.invitees_row = Adw.ActionRow(title=_("Invite contacts"), activatable=True,
+                                          subtitle=_("Choose contacts to invite"))
+        self.invitees_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+        self.invitees_row.connect("activated", lambda *_: self._pick_invitees())
+        g.add(self.invitees_row)
         adv = self.group(_("Advanced"))
         self.address = entry_row(_("Address (optional)"))
+        self.address.connect("changed", self._address_changed)
         adv.add(self.address)
+        self._updating_address = False
+        self._address_edited = False
+        self._invitees: set[str] = set()
+        self.acc.row.connect("notify::selected", lambda *_: self._account_changed())
+        self._suggest_address()
         self._update_kind()
+
+    def _muc_service(self) -> str:
+        acc = self.acc.account
+        session = self.core.sessions.get(acc.id) if acc is not None else None
+        return self.core.disco.muc_service(session) if session is not None else ""
+
+    def _address_changed(self, *_args) -> None:
+        if not self._updating_address:
+            self._address_edited = bool(self.address.get_text().strip())
+
+    def _suggest_address(self) -> None:
+        if self._address_edited:
+            return
+        suggested = muc.room_address(self.name.get_text(), self._muc_service())
+        if suggested == self.address.get_text():
+            return
+        self._updating_address = True
+        self.address.set_text(suggested)
+        self._updating_address = False
+
+    def _account_changed(self) -> None:
+        self._invitees.clear()
+        self._update_invitees()
+        self._suggest_address()
+
+    def _update_invitees(self) -> None:
+        acc = self.acc.account
+        if not self._invitees or acc is None:
+            self.invitees_row.set_subtitle(_("Choose contacts to invite"))
+            return
+        names = []
+        for jid in sorted(self._invitees):
+            contact = self.core.contacts.get(acc.id, jid)
+            names.append(contact.name if contact is not None else jid)
+        if len(names) <= 3:
+            self.invitees_row.set_subtitle(", ".join(names))
+        else:
+            self.invitees_row.set_subtitle(_("%(names)s and %(count)d more")
+                                           % {"names": ", ".join(names[:2]), "count": len(names) - 2})
+
+    def _pick_invitees(self) -> None:
+        acc = self.acc.account
+        if acc is None:
+            return
+
+        def done(jids: set[str]) -> None:
+            self._invitees = set(jids)
+            self._update_invitees()
+
+        ContactPicker(self.window, acc, self._invitees, done).present(self.window)
 
     def _update_kind(self) -> None:
         if self.kind.get_selected() == 0:
@@ -320,7 +382,7 @@ class NewGroupDialog(BaseDialog):
             return
         acc = self.acc.account
         preset = "private" if self.kind.get_selected() == 0 else "public"
-        invitees = [j.strip() for j in self.invitees.get_text().replace(";", ",").split(",") if j.strip()]
+        invitees = sorted(self._invitees)
         bad = [j for j in invitees if not util.valid_bare_jid(j)]
         if bad:
             self.error(_("“%s” is not a valid address") % bad[0])
@@ -389,6 +451,52 @@ class InvitationDialog(BaseDialog):
 
 
 # ================================================================================================ pickers
+class ContactPicker(BaseDialog):
+    """Choose several roster contacts for a new group."""
+
+    def __init__(self, window, acc: AccountItem, selected: set[str], callback):
+        super().__init__(window, _("Invite contacts"), _("Done"), height=560)
+        self.acc = acc
+        self.callback = callback
+        self.selected = set(selected)
+        self.search = Gtk.SearchEntry(placeholder_text=_("Search contacts"))
+        self.search.connect("search-changed", lambda *_: self._fill())
+        g = self.group()
+        g.add(self.search)
+        self.list_group = self.group()
+        self._fill()
+
+    def _fill(self) -> None:
+        widgets.clear(self.list_group)
+        text = self.search.get_text().strip().lower()
+        contacts = [c for c in self.core.contacts.for_account(self.acc.id) if c.in_roster]
+        if text:
+            contacts = [c for c in contacts if text in c.name.lower() or text in c.jid.lower()]
+        contacts.sort(key=lambda c: (c.show == "offline", c.name.lower()))
+        if not contacts:
+            self.list_group.add(Adw.ActionRow(title=_("No contacts found")))
+            return
+        for c in contacts:
+            row = Adw.ActionRow(title=widgets.escape(c.name), subtitle=c.jid)
+            row.add_prefix(widgets.RowAvatar(32, c.name, c.avatar, c.show))
+            check = Gtk.CheckButton(active=c.jid in self.selected, valign=Gtk.Align.CENTER)
+            check.connect("toggled", lambda btn, jid=c.jid: self._toggle(jid, btn.get_active()))
+            row.add_suffix(check)
+            row.set_activatable(True)
+            row.connect("activated", lambda _r, b=check: b.set_active(not b.get_active()))
+            self.list_group.add(row)
+
+    def _toggle(self, jid: str, selected: bool) -> None:
+        if selected:
+            self.selected.add(jid)
+        else:
+            self.selected.discard(jid)
+
+    def on_action(self) -> None:
+        self.callback(set(self.selected))
+        self.close()
+
+
 class AccountPicker(BaseDialog):
     def __init__(self, window, callback):
         super().__init__(window, _("Choose an account"))

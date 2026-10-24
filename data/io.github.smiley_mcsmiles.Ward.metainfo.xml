@@ -77,6 +77,13 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.0.4" date="2026-10-24">
+      <description>
+        <p>Create groups with a suggested room address and invite contacts from a searchable list. Reject
+        group-service domains when joining, with a clear message. The AppImage now opens photos and videos with
+        the desktop's default app on every desktop.</p>
+      </description>
+    </release>
     <release version="1.0.3" date="2026-10-24">
       <description>
         <p>Choose Default (OMEMO) for legacy OMEMO, OMEMO 2, GPG/PGP or Off. Removing a device now deletes its

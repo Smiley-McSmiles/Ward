@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.0.4 (2026-10-24)
+
+Ward 1.0.4 makes creating and joining groups clearer, and fixes opening photos and videos in the AppImage on
+desktops where GLib's default-app helper lives somewhere else.
+
+## New groups
+
+The New group dialog now suggests the room address from the group name and the server's group-chat service, for
+example `blap@conference.example.org`. The advanced address can still be edited by hand.
+
+Instead of typing comma-separated addresses, **Invite contacts** opens a searchable list of roster contacts with
+checkboxes. The chosen contacts are invited after the room is created, and the dialog shows who is selected.
+
+## Joining groups
+
+A group-chat service domain such as `conference.example.org` is not a room. Ward now rejects it with a clear message
+instead of sending a join presence and reporting “This group is full”. The Join group dialog also treats a bare name
+or domain as search text and only joins a full room address such as `room@conference.example.org`.
+
+## AppImage
+
+The AppImage now bundles GLib's `gio-launch-desktop` helper and points `GIO_LAUNCH_DESKTOP` at it. Opening a photo or
+video with the desktop's default app therefore works on Cinnamon, Arch and any other system where the bundled GLib
+would otherwise look for the helper at a path that does not exist.
+
 ## v1.0.3 (2026-10-24)
 
 The encryption menu in a chat is simpler and follows how OMEMO is actually used. **Default (OMEMO)** now means

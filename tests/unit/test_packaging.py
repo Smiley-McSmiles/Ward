@@ -307,10 +307,14 @@ def test_apprun_environment(tmp_path):
     (lib / "gdk-pixbuf-2.0" / "2.10.0").mkdir(parents=True)
     (lib / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache.in").write_text('"@APPDIR@/usr/lib/svg.so"\n')
     (app / "usr" / "bin").mkdir(parents=True)
+    (app / "usr" / "libexec").mkdir(parents=True)
+    helper = app / "usr" / "libexec" / "gio-launch-desktop"
+    helper.write_text("#!/bin/sh\n")
+    helper.chmod(0o755)
     out = tmp_path / "out"
     _fake_bin(app / "usr" / "bin", "python3", 'for v in WARD_APPIMAGE WARD_SHARE_DIR GI_TYPELIB_PATH GTK_PATH '
-              'GST_PLUGIN_SYSTEM_PATH_1_0 GST_PLUGIN_SCANNER_1_0 GDK_PIXBUF_MODULE_FILE PYTHONPATH '
-              'LD_LIBRARY_PATH; do\n'
+              'GST_PLUGIN_SYSTEM_PATH_1_0 GST_PLUGIN_SCANNER_1_0 GDK_PIXBUF_MODULE_FILE GIO_LAUNCH_DESKTOP '
+              'PYTHONPATH LD_LIBRARY_PATH; do\n'
               '    eval "echo $v=\\${$v-unset}"\ndone > "%s"\necho "fd9=$(readlink /proc/$$/fd/9)" >> "%s"\n'
               'echo "args=$*" >> "%s"\n' % (out, out, out))
     shutil.copy(os.path.join(ROOT, "packaging", "appimage", "AppRun"), app / "AppRun")
@@ -324,6 +328,7 @@ def test_apprun_environment(tmp_path):
     assert got["GI_TYPELIB_PATH"] == "%s/girepository-1.0" % lib
     assert got["GST_PLUGIN_SYSTEM_PATH_1_0"] == "%s/gstreamer-1.0" % lib
     assert got["GTK_PATH"] == "%s/gtk-4.0" % lib
+    assert got["GIO_LAUNCH_DESKTOP"] == str(helper)
     assert got["PYTHONPATH"] == got["LD_LIBRARY_PATH"] == "unset"
     assert got["fd9"] == str(lib / "enchant-2")
     with open(got["GDK_PIXBUF_MODULE_FILE"]) as f:
@@ -337,6 +342,26 @@ def test_apprun_finds_certificates():
     for path in ("/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/ca-bundle.pem",
                  "/etc/ssl/cert.pem"):
         assert path in text
+
+
+def test_appimage_bundles_gio_launch_desktop(tmp_path, monkeypatch):
+    """The helper GIO uses to launch desktop files is bundled, because /usr/libexec is not universal."""
+    mk = _mkappimage()
+    b = mk.Bundle.__new__(mk.Bundle)
+    b.usr = str(tmp_path)
+    b.syslib = "/usr/lib/x86_64-linux-gnu"
+    b.elves = set()
+    monkeypatch.setattr(mk.os.path, "exists", lambda p: p.endswith("gio-launch-desktop"))
+
+    def fake_copy(_src, dest):
+        with open(dest, "w") as fh:
+            fh.write("#!/bin/sh\n")
+
+    monkeypatch.setattr(mk.shutil, "copy2", fake_copy)
+    b.gio_launch_desktop()
+    dest = tmp_path / "libexec" / "gio-launch-desktop"
+    assert dest.read_text() == "#!/bin/sh\n"
+    assert str(dest) in b.elves
 
 
 def test_appimage_enchant_looks_in_descriptor_9(tmp_path):

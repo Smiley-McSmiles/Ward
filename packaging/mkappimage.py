@@ -257,6 +257,25 @@ class Bundle:
         with open(os.path.join(self.lib, "gdk-pixbuf-2.0", "2.10.0", "loaders.cache.in"), "w") as fh:
             fh.write(cache.replace(src, rel))
 
+    def gio_launch_desktop(self) -> None:
+        """Bundle GLib's helper for launching desktop files.  GIO otherwise calls a compile-time path such as
+        /usr/libexec/gio-launch-desktop or /usr/lib/x86_64-linux-gnu/glib-2.0/gio-launch-desktop, which is not
+        present on every distribution: opening a photo or video with the desktop's default app then failed with
+        "Failed to execute child process".  AppRun points GIO at this copy."""
+        candidates = ["/usr/libexec/gio-launch-desktop",
+                      os.path.join(self.syslib, "glib-2.0", "gio-launch-desktop"),
+                      "/usr/lib/glib-2.0/gio-launch-desktop",
+                      "/usr/lib64/glib-2.0/gio-launch-desktop"]
+        src = next((p for p in candidates if os.path.exists(p)), "")
+        if not src:
+            log("GIO launch helper: not on this machine")
+            return
+        dest = os.path.join(self.usr, "libexec", "gio-launch-desktop")
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copy2(src, dest)
+        self.elves.add(dest)
+        log("GIO launch helper: %s" % os.path.basename(dest))
+
     def enchant(self) -> None:
         """Enchant looks for its providers only in the folder it was built for.  The bundled copy is pointed at
         /proc/self/fd/9 instead, a folder AppRun opens as descriptor 9: the image's enchant-2 folder."""
@@ -388,6 +407,7 @@ def main() -> None:
     b.nss()
     b.gtk_source()
     b.gtk_modules()
+    b.gio_launch_desktop()
     b.data()
     b.closure()
     b.enchant()
