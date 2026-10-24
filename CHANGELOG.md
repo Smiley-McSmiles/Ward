@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.3 (2026-10-24)
+
+The encryption menu in a chat is simpler and follows how OMEMO is actually used. **Default (OMEMO)** now means
+legacy OMEMO 0.3, the version Conversations, Gajim and Dino use, and **OMEMO 2** is an explicit choice for chats
+where every device supports it. **GPG/PGP** stays available when OpenPGP is enabled, and **Off** sends plain
+messages. Chats saved with the old "OMEMO (automatic)" or "Legacy OMEMO only" values behave like the new default.
+
+Removing one of your other devices now also deletes its published bundles, not just its entry in the device list.
+That matters for clients which treat every bundle item as a device (Ward Android does): they would otherwise keep
+encrypting for a removed device, even one that was lost or stolen. The OMEMO 2 bundle item and the legacy
+per-device bundle node are both deleted. If deleting the device list fails, the bundle is left alone so other
+clients can still reach the device the list says is active.
+
+**Remove inactive devices** now also prunes orphaned OMEMO 2 bundles that older Ward versions left behind. It only
+runs against a non-empty device list, so a failed or empty fetch cannot delete every bundle.
+
+Reactions, edits and other body-less updates keep working when a chat uses legacy OMEMO. Since legacy OMEMO can
+only carry a text body, they are sent without an OMEMO wrapper, the way Conversations sends them.
+
 ## v1.0.2 (2026-10-22)
 
 Encryption keys can now be backed up and restored. Preferences > Encryption > Your devices > Manage has **Export

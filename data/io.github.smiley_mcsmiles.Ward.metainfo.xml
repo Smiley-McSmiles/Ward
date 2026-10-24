@@ -77,6 +77,12 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.0.3" date="2026-10-24">
+      <description>
+        <p>Choose Default (OMEMO) for legacy OMEMO, OMEMO 2, GPG/PGP or Off. Removing a device now deletes its
+        published OMEMO bundles, and Remove inactive devices cleans up orphaned ones.</p>
+      </description>
+    </release>
     <release version="1.0.2" date="2026-10-22">
       <description>
         <p>Back up and restore this device's OMEMO identity and sessions, and export OpenPGP public or secret keys,
