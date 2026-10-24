@@ -696,15 +696,16 @@ class ConversationView(Gtk.Box):
         elif state in ("omemo", "pgp"):
             box.append(widgets.label(_("Only the people in this chat can read the messages, not the servers."),
                                      ["dim-label"], wrap=True))
-        choices = [("default", _("Default")), ("omemo", _("OMEMO (automatic)"))]
-        if self.core.omemo is not None and self.core.omemo.legacy_installed:
-            choices.append(("omemo2", _("OMEMO 2 only")))
-            choices.append(("omemo-legacy", _("Legacy OMEMO only")))
+        choices = [("default", _("Default (OMEMO)"))]
+        if self.core.omemo is not None and self.core.omemo.available:
+            choices.append(("omemo2", _("OMEMO 2")))
         if self.core.pgp is not None and self.core.pgp.enabled and chat.type == "chat":
-            choices.append(("pgp", "OpenPGP"))
+            choices.append(("pgp", _("GPG/PGP")))
         choices.append(("off", _("Off")))
         group = None
         current = chat.encryption or "default"
+        if current in ("omemo", "omemo-legacy"):
+            current = "default"
         for value, label in choices:
             b = Gtk.CheckButton(label=label, active=current == value)
             if group is None:

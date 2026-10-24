@@ -453,10 +453,11 @@ class OmemoService(GObject.Object):
         try:
             await m.set_own_label(label or None)
         except NotImplementedError:
-            raise ValueError(_("Device names need OMEMO 2 only (turn off legacy OMEMO)")) from None
+            raise ValueError(_("Device names need OMEMO 2 (turn off legacy OMEMO)")) from None
 
     async def remove_own_device(self, session, device_id: int) -> None:
-        """Take one of our other devices out of our published device lists."""
+        """Take one of our other devices out of our published device lists, and delete its bundles so
+        nobody can start a new session with it."""
         m = await self.manager(session)
         own = (await m.get_own_device_information())[0]
         if device_id == own.device_id:
@@ -475,7 +476,32 @@ class OmemoService(GObject.Object):
             # shown from the local cache too.
             with contextlib.suppress(Exception):
                 await m.update_device_list(ns, session.jid, lst)
+        # The device list alone is not enough: a client that reads bundle items as devices (Ward Android
+        # does) would keep encrypting for this device as long as its bundle is published.  Update the list
+        # first; if the upload failed above, this is not reached and the bundle stays with the still-listed
+        # device.  Errors here are ignored: item-not-found only means the bundle is already gone.
+        with contextlib.suppress(Exception):
+            await Pep.retract(session, BUNDLES2, str(device_id))
+        if HAVE_OLDMEMO:
+            with contextlib.suppress(Exception):
+                await Pep.delete_node(session, "eu.siacs.conversations.axolotl.bundles:%d" % device_id)
         await self.review(session, session.jid)
+
+    async def prune_orphan_bundles(self, session) -> int:
+        """Delete OMEMO 2 bundle items of our own devices that are no longer in our device list."""
+        m = await self.manager(session)
+        listed = set(dict(await type(m)._download_device_list(NS2, session.jid)))
+        if not listed:
+            return 0                     # never prune against an empty or unreadable list
+        items = await Pep.get_items(session, session.jid, BUNDLES2)
+        n = 0
+        for item in items:
+            iid = item.get("id", "")
+            if iid.isdigit() and int(iid) not in listed:
+                with contextlib.suppress(Exception):
+                    await Pep.retract(session, BUNDLES2, iid)
+                    n += 1
+        return n
 
     async def remove_inactive_own_devices(self, session) -> int:
         n = 0
@@ -632,7 +658,12 @@ class OmemoService(GObject.Object):
         acc = self.core.accounts.get(chat.account_id)
         if acc is None or acc.id not in self.managers:
             return "omemo", ""     # optimistic until OMEMO is up; sending will tell
-        forced = chat.encryption if chat.encryption in ("omemo2", "omemo-legacy") else ""
+        if chat.encryption == "omemo2":
+            forced = "omemo2"
+        elif chat.encryption in ("", "default", "omemo", "omemo-legacy"):
+            forced = "omemo-legacy"
+        else:
+            forced = ""
         if forced == "omemo-legacy" and not self.legacy_enabled:
             return "blocked", _("Legacy OMEMO is turned off in Preferences > Encryption")
         if chat.type == "groupchat":
@@ -712,6 +743,10 @@ class OmemoService(GObject.Object):
             order.append(NS1)
         if not plaintexts:
             if force == "omemo-legacy":
+                if body is None:
+                    # Reactions and other body-less updates cannot be carried by legacy OMEMO; send them the
+                    # way Conversations does, without an OMEMO wrapper.
+                    return el, ""
                 raise EncryptionBlocked(_("Legacy OMEMO can only encrypt a text message"))
             raise EncryptionBlocked(_("Not sent: nothing could be encrypted"))
         token = _encrypting.set(True)

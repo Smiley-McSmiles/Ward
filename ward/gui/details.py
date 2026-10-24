@@ -11,8 +11,7 @@ from . import compat, widgets
 from .dialogs import BaseDialog, online_session
 
 NOTIFY = (("default", "Default"), ("all", "All messages"), ("mentions", "Mentions and replies"), ("none", "None"))
-ENCRYPTION = (("default", "Default"), ("omemo", "OMEMO (automatic)"), ("omemo2", "OMEMO 2 only"),
-              ("omemo-legacy", "Legacy OMEMO only"), ("pgp", "OpenPGP"), ("off", "Off"))
+ENCRYPTION = (("default", "Default (OMEMO)"), ("omemo2", "OMEMO 2"), ("pgp", "GPG/PGP"), ("off", "Off"))
 
 
 def DetailsDialog(window, chat: ChatItem, page: str = ""):
@@ -102,9 +101,11 @@ class ContactDetails(BaseDialog):
         sec = self.group(_("Privacy and encryption"))
         enc_choices = [x for x in ENCRYPTION
                        if (x[0] != "pgp" or (self.core.pgp is not None and self.core.pgp.enabled))
-                       and (x[0] not in ("omemo2", "omemo-legacy")
-                            or (self.core.omemo is not None and self.core.omemo.legacy_installed))]
-        sec.add(_combo(_("Encryption"), enc_choices, chat.encryption or "default", self._set_encryption))
+                       and (x[0] != "omemo2" or (self.core.omemo is not None and self.core.omemo.available))]
+        current = "default" if chat.encryption in ("", "default", "omemo", "omemo-legacy") else chat.encryption
+        if current not in [v for v, _l in enc_choices]:
+            current = "default"
+        sec.add(_combo(_("Encryption"), enc_choices, current, self._set_encryption))
         dev = Adw.ActionRow(title=_("Devices and keys"), activatable=True,
                             subtitle=_("Fingerprints and verification"))
         dev.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))

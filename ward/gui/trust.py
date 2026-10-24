@@ -3,6 +3,7 @@ QR code or link, and trust decisions; device and trust export and import."""
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from gi.repository import Adw, Gdk, GLib, Gtk, Pango
@@ -299,7 +300,13 @@ class DevicesDialog(BaseDialog):
     def _remove_inactive(self) -> None:
         async def go():
             s = online_session(self.core, self.acc)
-            return await self.core.omemo.remove_inactive_own_devices(s)
+            n = await self.core.omemo.remove_inactive_own_devices(s)
+            # A device that was removed earlier can still leave its bundle on the server; deleting the
+            # device list entry alone does not stop clients that read bundle items as devices from
+            # encrypting for it.  This also cleans up what older Ward versions left behind.
+            with contextlib.suppress(Exception):
+                await self.core.omemo.prune_orphan_bundles(s)
+            return n
         widgets.run(self.toasts, go(), done=lambda n: (self.toasts.add_toast(Adw.Toast(
             title=_("Removed %d devices") % n)), self.refresh()))
 

@@ -106,7 +106,15 @@ class E2E:
                                           "Install the OMEMO libraries or turn encryption off for this chat."))
             return el, ""
         try:
-            force = chat.encryption if chat.encryption in ("omemo2", "omemo-legacy") else ""
+            if chat.encryption == "omemo2":
+                force = "omemo2"
+            elif chat.encryption in ("", "default", "omemo", "omemo-legacy"):
+                # "Default" is legacy OMEMO: it interoperates with Conversations, Gajim and Dino, and an
+                # explicit "OMEMO 2" choice is there for chats where every device supports it.  Older chats
+                # still say "omemo" or "omemo-legacy"; both land on the same protocol.
+                force = "omemo-legacy"
+            else:
+                force = ""
             return await omemo.encrypt(session, chat, el, force=force)
         except EncryptionBlocked:
             if policy == "always":

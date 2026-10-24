@@ -56,9 +56,14 @@ def test_omemo2_trust_and_new_devices(trust_test_ca, tmp_path, run):
             wire = capture(alice)
 
             chat = await alice.open_chat(a, b.jid)
+            # "Default" is legacy OMEMO now; this test is about OMEMO 2, so ask for it explicitly.
+            await alice.chats.set_flags(chat, encryption="omemo2")
+            alice.e2e.refresh(chat)
             sent = await alice.messaging.send_text(chat, "the *secret* plan")
             assert sent.error == "" and sent.encryption == "omemo2", sent.error
             bchat = await wait_for(lambda: bob.chats.find(b.id, a.jid, "chat"), what="chat at bob")
+            await bob.chats.set_flags(bchat, encryption="omemo2")
+            bob.e2e.refresh(bchat)
             bml = await bob.chats.open_messages(bchat)
             await wait_for(lambda: bml.items(), what="message at bob")
             got = bml.items()[0]
