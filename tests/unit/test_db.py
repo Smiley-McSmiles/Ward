@@ -61,13 +61,14 @@ def test_migration_backup_and_cleanup(ward_home, tmp_path, monkeypatch):
     d.open()
     d.run_sync(lambda c: c.execute("INSERT INTO kv VALUES ('keep', 'me')"))
     d.close()
+    previous = dbmod.latest_version()
     mig = tmp_path / "migrations"
     shutil.copytree(dbmod.MIGRATIONS, mig)
     (mig / "0099_test.sql").write_text("CREATE TABLE extra (x INTEGER);")
     monkeypatch.setattr(dbmod, "MIGRATIONS", str(mig))
     d = Database()
     d.open()
-    assert d.migrated_from == 1
+    assert d.migrated_from == previous
     backups = os.listdir(paths.backups_dir())
     assert backups == ["ward.db.before-v99"]
     old = sqlite3.connect(os.path.join(paths.backups_dir(), backups[0]))
