@@ -364,6 +364,9 @@ ACCOUNT_SPECS: dict[str, Spec] = {
     "autodownload_mb": S("int", 10, N_("Download automatically up to"),
                          N_("Images and voice messages from contacts"), group=N_("Files"), min=0, max=1000,
                          unit="MB"),
+    "autodownload_files_mb": S("int", 1, N_("Download files automatically up to"),
+                               N_("Documents, archives and other attachments from contacts"), group=N_("Files"),
+                               min=0, max=1000, unit="MB"),
     "allow_large_uploads": S("bool", False, N_("Allow uploads larger than 100 MB"), group=N_("Files")),
     "nickname": S("str", "", N_("Nickname"), group=N_("Profile")),
 }
