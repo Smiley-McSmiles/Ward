@@ -882,6 +882,13 @@ class OmemoService(GObject.Object):
                     await self.refresh(session, sender, force=True)
                 message, plaintext, device = await _decrypt_once()
         except MessageNotForUs:
+            if self._omemo_is_key_exchange(pm):
+                # Empty OMEMO messages only establish a session.  Another device can receive a copy of one
+                # addressed to different devices; there is no content to show, so do not turn it into a red
+                # "not encrypted for this device" message.
+                inc.pm = stanzas.ParsedMessage(type=pm.type, from_jid=pm.from_jid, to_jid=pm.to_jid, id=pm.id,
+                                               wrapper=pm.wrapper)
+                return
             if group and inc.outgoing:
                 inc.decrypt_error = _("Sent from this account before this device was added")
             else:
@@ -921,6 +928,20 @@ class OmemoService(GObject.Object):
             body = ET.Element("{%s}body" % stanzas.NS_CLIENT)
             body.text = plaintext.decode("utf-8", "replace")
             self._apply_content(inc, inner, [body], False)
+
+    @staticmethod
+    def _omemo_is_key_exchange(pm: stanzas.ParsedMessage) -> bool:
+        """An empty OMEMO message: only a header and key material, with no payload to decrypt."""
+        if pm.omemo2 is not None:
+            payload = pm.omemo2.find("{%s}payload" % NS2)
+            return payload is None or not (payload.text or "").strip()
+        if pm.omemo is not None:
+            header = pm.omemo.find("{%s}header" % NS1)
+            payload = pm.omemo.find("{%s}payload" % NS1)
+            iv = header.find("{%s}iv" % NS1) if header is not None else None
+            return (payload is None or not (payload.text or "").strip()
+                    or iv is None or not (iv.text or "").strip())
+        return False
 
     @staticmethod
     def _apply_content(inc: Incoming, inner: ET.Element, content: list[ET.Element], replace_all: bool) -> None:
