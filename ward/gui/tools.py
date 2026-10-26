@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from xml.etree import ElementTree as ET
 
 from gi.repository import Adw, GLib, Gtk, Pango
@@ -33,13 +34,15 @@ class XmlConsole(Adw.Window):
         self.acc_drop = Gtk.DropDown.new_from_strings([a.jid for a in self.accounts] or [_("No accounts")])
         self.acc_drop.connect("notify::selected", lambda *_: self._attach())
         header.pack_start(self.acc_drop)
-        pause = Gtk.ToggleButton(icon_name="media-playback-pause-symbolic", tooltip_text=_("Pause"))
-        pause.connect("toggled", lambda b: setattr(self, "paused", b.get_active()))
+        pause = Gtk.ToggleButton(icon_name="media-playback-pause-symbolic",
+                                 tooltip_text=_("Pause the view; stanzas are still collected"))
+        pause.connect("toggled", self._on_pause)
         header.pack_end(pause)
-        clear = Gtk.Button(icon_name="edit-clear-all-symbolic", tooltip_text=_("Clear"))
-        clear.connect("clicked", lambda *_: self.buffer.set_text(""))
+        clear = Gtk.Button(icon_name="edit-clear-all-symbolic", tooltip_text=_("Clear the collected stanzas"))
+        clear.connect("clicked", lambda *_: self._clear())
         header.pack_end(clear)
         self.filter = Gtk.SearchEntry(placeholder_text=_("Only stanzas containing…"))
+        self.filter.connect("search-changed", lambda *_: self._rebuild())
         header.set_title_widget(self.filter)
 
         paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL, vexpand=True)
@@ -91,6 +94,7 @@ class XmlConsole(Adw.Window):
         self.session = s
         s.console = True
         self._handler = s.connect("xml", self._on_xml)
+        self._rebuild()
 
     def _detach(self) -> None:
         if self.session is not None and self._handler:
@@ -103,16 +107,38 @@ class XmlConsole(Adw.Window):
         self._detach()
         return False
 
+    def _on_pause(self, button: Gtk.ToggleButton) -> None:
+        self.paused = button.get_active()
+        if not self.paused:
+            self._rebuild()
+
+    def _clear(self) -> None:
+        self.buffer.set_text("")
+        if self.session is not None:
+            self.session.clear_xml_history()
+
+    def _rebuild(self) -> None:
+        """Show what the session kept while the console was closed or paused."""
+        self.buffer.set_text("")
+        if self.session is None:
+            return
+        for stamp, incoming, text in self.session.xml_history:
+            self._append(incoming, text, stamp, scroll=False)
+        self._scroll_to_end()
+
     def _on_xml(self, _s, incoming: bool, text: str) -> None:
         if self.paused:
             return
+        self._append(incoming, text)
+
+    def _append(self, incoming: bool, text: str, stamp: float | None = None, scroll: bool = True) -> None:
         f = self.filter.get_text().strip()
         if f and f not in text:
             return
+        when = GLib.DateTime.new_from_unix_local(int(stamp if stamp is not None else time.time()))
         end = self.buffer.get_end_iter()
-        stamp = GLib.DateTime.new_now_local().format("%H:%M:%S")
-        self.buffer.insert_with_tags(end, "%s %s\n" % (stamp, _("received") if incoming else _("sent")),
-                                     self.tag_head)
+        self.buffer.insert_with_tags(end, "%s %s\n" % (when.format("%H:%M:%S"),
+                                                       _("received") if incoming else _("sent")), self.tag_head)
         end = self.buffer.get_end_iter()
         self.buffer.insert_with_tags(end, text + "\n\n", self.tag_in if incoming else self.tag_out)
         if self.buffer.get_line_count() > MAX_LINES:
@@ -120,6 +146,10 @@ class XmlConsole(Adw.Window):
             cut = self.buffer.get_iter_at_line(self.buffer.get_line_count() - MAX_LINES)
             cut = cut[1] if isinstance(cut, tuple) else cut
             self.buffer.delete(start, cut)
+        if scroll:
+            self._scroll_to_end()
+
+    def _scroll_to_end(self) -> None:
         adj = self.scroller.get_vadjustment()
         if adj.get_value() + adj.get_page_size() >= adj.get_upper() - 60:
             GLib.idle_add(lambda: adj.set_value(adj.get_upper()) and False)

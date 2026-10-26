@@ -20,6 +20,7 @@ import os
 import random
 import ssl
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -40,6 +41,7 @@ log = logging.getLogger("ward.session")
 NS_IDLE = "urn:xmpp:idle:1"
 CONNECT_TIMEOUT = 20
 NEGOTIATION_TIMEOUT = 45
+XML_HISTORY_BYTES = 1000 * 1000   # the XML console keeps recent stanzas for debugging, bounded
 
 
 class IqFailed(Exception):
@@ -192,6 +194,8 @@ class AccountSession(GObject.Object):
         self.inactive = False
         self.idle_since: float | None = None
         self.console = False
+        self.xml_history: deque[tuple[float, bool, str]] = deque()   # (time, incoming, masked stanza)
+        self._xml_history_bytes = 0
         self._handlers = handlers or {}          # (namespace, tag) -> callback(session, iq) for iq pushes
         self._connect_task: asyncio.Task | None = None
         self._retry_handle: asyncio.Handle | None = None
@@ -612,16 +616,36 @@ class AccountSession(GObject.Object):
             self.reply_iq(stanza, error="internal-server-error")
 
     def _console_in(self, stanza):
-        if self.console:
-            with contextlib.suppress(Exception):
-                self.emit("xml", True, wardlog.mask(str(stanza)))
+        with contextlib.suppress(Exception):
+            self._keep_xml(True, wardlog.mask(str(stanza)))
         return stanza
 
     def _console_out(self, stanza):
-        if self.console:
-            with contextlib.suppress(Exception):
-                self.emit("xml", False, wardlog.mask(str(stanza)))
+        with contextlib.suppress(Exception):
+            self._keep_xml(False, wardlog.mask(str(stanza)))
         return stanza
+
+    def _keep_xml(self, incoming: bool, text: str) -> None:
+        """Keep the latest stanzas for the XML console, even while its window is closed."""
+        if self.settings is not None and not self.settings.get("advanced.devtools", False):
+            if self.xml_history:
+                self.clear_xml_history()
+            return
+        self.xml_history.append((time.time(), incoming, text))
+        self._xml_history_bytes += len(text.encode("utf-8"))
+        while self._xml_history_bytes > XML_HISTORY_BYTES and self.xml_history:
+            _stamp, _incoming, old = self.xml_history.popleft()
+            self._xml_history_bytes -= len(old.encode("utf-8"))
+        if self.console:
+            self.emit("xml", incoming, text)
+
+    @property
+    def xml_history_size(self) -> int:
+        return self._xml_history_bytes
+
+    def clear_xml_history(self) -> None:
+        self.xml_history.clear()
+        self._xml_history_bytes = 0
 
     # ================================================================== stopping
     async def stop(self, unavailable: bool = True) -> None:
