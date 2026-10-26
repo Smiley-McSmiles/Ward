@@ -437,7 +437,8 @@ class ChatService(GObject.Object):
                 chat.update(last_read_id=msg.id, unread=0, mentions=0)
                 chats.emit("unread-changed")
             await chats.save(chat, "unread", "mentions", "last_read_id", "last_activity", "open")
-            if not msg.outgoing and msg.kind != "system":
+            if msg.kind != "system":
+                # Also files sent from another device (a carbon or Note to self): they are not local here.
                 await self.core.files.auto_download(chat, msg)
         else:
             ml = chats.lists.get(chat.id)

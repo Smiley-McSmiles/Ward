@@ -60,6 +60,11 @@ class Accounts(GObject.Object):
         acc = AccountItem(id=row["id"], jid=row["jid"], label=row["label"], color=row["color"],
                           enabled=bool(row["enabled"]))
         acc.options = opts if isinstance(opts, dict) else {}
+        # Images/voice and other files once had separate limits.  Keep the file limit when the media limit was
+        # never changed, then drop the old key the next time the account's options are saved.
+        legacy_file_limit = acc.options.pop("autodownload_files_mb", None)
+        if legacy_file_limit is not None and "autodownload_mb" not in acc.options:
+            acc.options["autodownload_mb"] = legacy_file_limit
         if row["resource"]:
             acc.options.setdefault("resource", row["resource"])
         acc.nickname = acc.options.get("nickname", "")

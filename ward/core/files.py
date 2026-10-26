@@ -354,12 +354,13 @@ class FileService(GObject.Object):
                                                             thumb, att.id))
             att.update(local_path=dest, state="done", mime=mime, size=size, width=w or att.width,
                        height=h or att.height, thumbnail=thumb or att.thumbnail)
-            msg.attachments_rev += 1
+            self._sync_attachment(chat, msg, att)
             aio.spawn(self.enforce_limits())
             return dest
         except Exception as e:
             log.info("download of %s failed: %s", https_url, e)
             att.update(state="failed", error=str(e))
+            self._sync_attachment(chat, msg, att)
             for p in (tmp, dest + ".part", tmp + ".part"):
                 with contextlib.suppress(OSError):
                     os.unlink(p)
@@ -367,27 +368,40 @@ class FileService(GObject.Object):
         finally:
             self.transfers.pop(att.id, None)
 
+    def _sync_attachment(self, chat: ChatItem, msg: MessageItem, att: AttachmentItem) -> None:
+        """An auto-download may have started before the chat loaded its own copy of the message."""
+        ml = self.core.chats.lists.get(chat.id)
+        cur = ml.get(msg.id) if ml is not None else None
+        if cur is None or cur is msg:
+            msg.attachments_rev += 1
+            return
+        for other in cur.attachments:
+            if other.id == att.id:
+                other.update(local_path=att.local_path, state=att.state, mime=att.mime, size=att.size,
+                             width=att.width, height=att.height, thumbnail=att.thumbnail, error=att.error)
+                cur.attachments_rev += 1
+                break
+
     async def auto_download(self, chat: ChatItem, msg: MessageItem) -> None:
-        """Media and small files from contacts, each up to the account's limits; nothing from strangers."""
+        """Media and other files from contacts, each up to the account's limit; nothing from strangers."""
         if not msg.attachments:
             return
         acc = self.core.accounts.get(chat.account_id)
         if acc is None:
             return
-        media_limit = int(acc.option("autodownload_mb") or 0) * 1000 * 1000
-        file_limit = int(acc.option("autodownload_files_mb") or 0) * 1000 * 1000
-        if media_limit <= 0 and file_limit <= 0:
+        limit = int(acc.option("autodownload_mb") or 0) * 1000 * 1000
+        if limit <= 0:
             return
         if chat.is_request and not self.core.settings["privacy.stranger_media"]:
             return
-        if chat.type == "chat":
+        if chat.type == "chat" and not msg.outgoing:
             c = self.core.roster.contacts.get(chat.account_id, chat.jid)
             if (c is None or not c.in_roster) and not self.core.settings["privacy.stranger_media"]:
                 return
         for att in msg.attachments:
-            media = att.mime.startswith("image/") or att.mime.startswith("audio/")
-            limit = media_limit if media else file_limit
-            if limit <= 0:
+            if att.local_path and os.path.exists(att.local_path):
+                continue
+            if att.state in ("downloading", "uploading"):
                 continue
             if att.size and att.size > limit:
                 continue
