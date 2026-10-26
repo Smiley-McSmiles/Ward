@@ -368,14 +368,15 @@ class FileService(GObject.Object):
             self.transfers.pop(att.id, None)
 
     async def auto_download(self, chat: ChatItem, msg: MessageItem) -> None:
-        """Images and voice messages from contacts, up to the account's limit; nothing from strangers."""
+        """Media and small files from contacts, each up to the account's limits; nothing from strangers."""
         if not msg.attachments:
             return
         acc = self.core.accounts.get(chat.account_id)
         if acc is None:
             return
-        limit = int(acc.option("autodownload_mb") or 0) * 1000 * 1000
-        if limit <= 0:
+        media_limit = int(acc.option("autodownload_mb") or 0) * 1000 * 1000
+        file_limit = int(acc.option("autodownload_files_mb") or 0) * 1000 * 1000
+        if media_limit <= 0 and file_limit <= 0:
             return
         if chat.is_request and not self.core.settings["privacy.stranger_media"]:
             return
@@ -384,7 +385,9 @@ class FileService(GObject.Object):
             if (c is None or not c.in_roster) and not self.core.settings["privacy.stranger_media"]:
                 return
         for att in msg.attachments:
-            if not (att.mime.startswith("image/") or att.mime.startswith("audio/")):
+            media = att.mime.startswith("image/") or att.mime.startswith("audio/")
+            limit = media_limit if media else file_limit
+            if limit <= 0:
                 continue
             if att.size and att.size > limit:
                 continue
