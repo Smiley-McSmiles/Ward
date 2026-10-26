@@ -24,6 +24,7 @@ log = logging.getLogger("ward.calls")
 NS_EXTDISCO2 = "urn:xmpp:extdisco:2"
 NS_EXTDISCO1 = "urn:xmpp:extdisco:1"
 DEFAULT_TURN_PORT = 3478
+DEFAULT_TURNS_PORT = 5349
 DEFAULT_STUN_PORT = 3478
 CACHE_SECONDS = 300
 
@@ -116,21 +117,29 @@ def parse_services(el, now: float | None = None) -> list[Service]:
     for child in el:
         if child.tag.split("}")[-1] != "service":
             continue
-        kind = (child.get("type") or "").lower()
-        if kind not in ("stun", "turn"):
+        raw_kind = (child.get("type") or "").lower()
+        if raw_kind == "turns":
+            # Some servers advertise TURN-over-TLS as its own service type.  GStreamer's webrtcbin takes
+            # turns:// URIs, so keep it as a TURN service with transport tls.
+            kind, default_transport, default_port = "turn", "tls", DEFAULT_TURNS_PORT
+        elif raw_kind == "turn":
+            kind, default_transport, default_port = "turn", "udp", DEFAULT_TURN_PORT
+        elif raw_kind == "stun":
+            kind, default_transport, default_port = "stun", "udp", DEFAULT_STUN_PORT
+        else:
             continue
         host = child.get("host") or ""
         if not host:
             continue
         try:
-            port = int(child.get("port") or (DEFAULT_TURN_PORT if kind == "turn" else DEFAULT_STUN_PORT))
+            port = int(child.get("port") or default_port)
         except ValueError:
             continue
-        transport = (child.get("transport") or "udp").lower()
-        if transport in ("udp", "tcp"):
-            pass
-        elif transport.startswith("tls"):
+        transport = (child.get("transport") or default_transport).lower()
+        if raw_kind == "turns" or transport.startswith("tls"):
             transport = "tls"
+        elif transport in ("udp", "tcp"):
+            pass
         else:
             transport = "udp"
         expires = _expiry(child.get("expires") or "")
