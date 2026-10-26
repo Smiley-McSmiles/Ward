@@ -42,6 +42,19 @@ def test_xep_0215_services() -> None:
     assert services[1].type == "stun"
 
 
+def test_xep_0215_turns_service() -> None:
+    el = ET.fromstring(
+        "<services xmlns='urn:xmpp:extdisco:2'>"
+        "<service type='turns' host='turn.example.org'/>"
+        "</services>")
+    services = turn.parse_services(el, now=1000)
+    assert [(s.type, s.host, s.port, s.transport) for s in services] == [
+        ("turn", "turn.example.org", 5349, "tls")]
+    settings = FakeSettings({"calls.relay_only": False})
+    _stun, turn_uris = turn.webrtc_uris(services, settings)
+    assert turn_uris and turn_uris[0].startswith("turns://turn.example.org:5349")
+
+
 def test_rest_credentials() -> None:
     username, password = turn.time_limited_credentials("secret", 3600, "alice", now=0)
     assert username == "3600:alice"

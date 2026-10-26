@@ -679,6 +679,7 @@ class CallService(GObject.Object):
 
     def _media_state(self, call: Call, state: str) -> None:
         log.info("call %s: media %s -> %s", call.sid, call.ms.state if call.ms is not None else "?", state)
+        self._trace(call, "media state -> %s" % state)
         if state == "connected" and call.state == "connecting":
             call.started_at = time.time()
             self._cancel_timer(call)
