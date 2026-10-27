@@ -77,6 +77,12 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.0.5" date="2026-10-26">
+      <description>
+        <p>Deleting a message now takes its photo or video with it, and destroying a group removes the room from
+        Ward instead of leaving an empty group behind. Clearing a history deletes the cached media too.</p>
+      </description>
+    </release>
     <release version="1.0.4" date="2026-10-24">
       <description>
         <p>Create groups with a suggested room address and invite contacts from a searchable list. Reject

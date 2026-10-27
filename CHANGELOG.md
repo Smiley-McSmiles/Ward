@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.5 (2026-10-26)
+
+Ward 1.0.5 makes deleting mean deleting: a deleted message takes its photo or video with it, and destroying a group
+removes the room from Ward instead of leaving an empty group in the sidebar for good.
+
+## Deleting a message
+
+Deleting your own message, or a group moderator deleting someone else's, now removes the image bubble along with the
+message and deletes the cached media and thumbnail it had downloaded. Before, the tombstone stayed behind with the
+photo still under it, the bytes still on disk.
+
+## Deleting a group
+
+Destroying a group as its owner now removes it locally as well: the sidebar entry, the conversation, the search index
+rows and every cached photo and video the group held. The room is gone on the server, so nothing could ever reopen it,
+and keeping the row only left an empty group behind.
+
+Clearing a chat's history now also removes the media those messages left in the cache.
+
 ## v1.0.4 (2026-10-24)
 
 Ward 1.0.4 makes creating and joining groups clearer, and fixes opening photos and videos in the AppImage on
