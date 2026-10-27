@@ -2,8 +2,8 @@
 
 ## v1.0.5 (2026-10-26)
 
-Ward 1.0.5 makes deleting mean deleting: a deleted message takes its photo or video with it, and destroying a group
-removes the room from Ward instead of leaving an empty group in the sidebar for good.
+Ward 1.0.5 makes deleting mean deleting, downloads the files that used to sit there waiting, keeps a record of stanzas
+you did not watch, and fixes calls on servers that offer TURN over TLS.
 
 ## Deleting a message
 
@@ -18,6 +18,28 @@ rows and every cached photo and video the group held. The room is gone on the se
 and keeping the row only left an empty group behind.
 
 Clearing a chat's history now also removes the media those messages left in the cache.
+
+## Downloads
+
+Small files from contacts are downloaded automatically, using one size limit per account (1 MB by default) instead of
+a limit that only covered files; the old file-only setting is carried over. Files sent by another of your own devices
+are downloaded too, and an open chat now shows a file once a background download finishes.
+
+## XML console
+
+The XML console keeps up to 1 MB of recent stanzas per account while its window is closed, so opening it shows what
+happened before you looked. Clear, pause and the stanza filter work on that history.
+
+## Calls
+
+XEP-0215 `turns` services are accepted as TURN over TLS on port 5349, which servers such as Prosody advertise instead
+of a plain TURN entry. ICE media state changes are written to the call trace, so a call that never connects says where
+it stopped.
+
+## Encryption
+
+Key-exchange stanzas carry no payload; when one is addressed to another of your devices Ward no longer reports it as
+an empty message it could not decrypt. A migration removes the empty errors earlier versions stored.
 
 ## v1.0.4 (2026-10-24)
 
