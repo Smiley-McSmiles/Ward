@@ -676,6 +676,9 @@ class MucService(GObject.Object):
             ET.SubElement(d, "{%s}reason" % NS_MUC_OWNER).text = reason
         await session.iq("set", chat.jid, q)
         await self.leave(chat)
+        # The room is gone for everyone: drop the local chat too, or an empty group
+        # stays in the sidebar (with its history and media) for good.
+        await self.core.chats.delete(chat)
 
     # ================================================================== moderation and settings
     async def _admin(self, chat: ChatItem, item: dict, reason: str = "") -> None:

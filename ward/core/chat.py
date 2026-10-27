@@ -24,7 +24,7 @@ from gi.repository import GObject
 from .. import aio, util
 from ..i18n import _
 from . import stanzas
-from .chats import find_message_job, insert_message_job, message_from_row
+from .chats import cached_attachment_paths, find_message_job, insert_message_job, message_from_row
 from .markup.emoji import emoji_only
 from .models import STATUS_DELIVERED, STATUS_FAILED, STATUS_PENDING, STATUS_READ, STATUS_SENT, ChatItem, MessageItem
 from .session import NotConnected
@@ -552,8 +552,9 @@ class ChatService(GObject.Object):
                     cur = {}
                 cur.update(extra)
                 conn.execute("UPDATE messages SET extra = ? WHERE id = ?", (json.dumps(cur), message_id))
-            return [r[0] for r in conn.execute("SELECT local_path FROM attachments WHERE message_id = ?",
-                                               (message_id,))]
+            # Media *and* thumbnail: leaving the thumbnail behind kept the image on
+            # screen (and the bytes on disk) for a message that no longer exists.
+            return cached_attachment_paths(conn, message_id)
 
         paths_ = await self.core.db.run(job)
         self.core.files.forget(paths_)

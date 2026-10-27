@@ -30,6 +30,29 @@ def now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def cached_attachment_paths(conn: sqlite3.Connection, message_id: int) -> list[str]:
+    """Files a message's attachments put in the cache: the media and its thumbnail.
+
+    Callers pass the result to ``Files.forget`` (which only ever unlinks paths under
+    the cache directory), so a user's own outgoing file is never touched.
+    """
+    paths_: list[str] = []
+    for row in conn.execute("SELECT local_path, thumbnail FROM attachments WHERE message_id = ?",
+                            (message_id,)):
+        paths_.extend(p for p in (row["local_path"], row["thumbnail"]) if p)
+    return paths_
+
+
+def chat_attachment_paths(conn: sqlite3.Connection, chat_id: int) -> list[str]:
+    """Every cached file a chat's history owns, across all its messages."""
+    paths_: list[str] = []
+    for row in conn.execute(
+            "SELECT a.local_path, a.thumbnail FROM attachments a"
+            " JOIN messages m ON m.id = a.message_id WHERE m.chat_id = ?", (chat_id,)):
+        paths_.extend(p for p in (row["local_path"], row["thumbnail"]) if p)
+    return paths_
+
+
 def chat_from_row(r: sqlite3.Row) -> ChatItem:
     c = ChatItem(id=r["id"], account_id=r["account_id"], jid=r["jid"], type=r["type"], name=r["name"],
                  pinned=bool(r["pinned"]), muted_until=r["muted_until"], archived=bool(r["archived"]),
@@ -243,7 +266,23 @@ class Chats(GObject.Object):
             await self.db.update("chats", values, "id = ?", (chat.id,))
 
     async def delete(self, chat: ChatItem) -> None:
-        await self.db.execute("DELETE FROM chats WHERE id = ?", (chat.id,))
+        """Remove a chat locally: its row, its history, its search rows and its media.
+
+        A destroyed group is gone for everyone on the server, so keeping the row
+        would leave an empty room in the sidebar (and its history in the DB) that
+        nothing can ever reopen.
+        """
+        def job(conn):
+            paths_ = chat_attachment_paths(conn, chat.id)
+            # FTS is a standalone virtual table keyed by rowid; the cascade does not
+            # reach it, so its rows have to go first.
+            conn.execute("DELETE FROM messages_fts WHERE rowid IN"
+                         " (SELECT id FROM messages WHERE chat_id = ?)", (chat.id,))
+            conn.execute("DELETE FROM chats WHERE id = ?", (chat.id,))
+            return paths_
+
+        paths_ = await self.db.run(job)
+        self.core.files.forget(paths_)
         self.by_id.pop(chat.id, None)
         self.by_key.pop((chat.account_id, chat.jid, chat.type), None)
         self.lists.pop(chat.id, None)
@@ -418,15 +457,29 @@ class Chats(GObject.Object):
             conn.execute("UPDATE messages SET retracted = 2, body = '' WHERE id = ?", (m.id,))
             conn.execute("DELETE FROM messages_fts WHERE rowid = ?", (m.id,))
             conn.execute("DELETE FROM message_edits WHERE message_id = ?", (m.id,))
-        await self.db.run(job)
-        m.update(retracted=2, body="")
+            conn.execute("DELETE FROM reactions WHERE message_id = ?", (m.id,))
+            return cached_attachment_paths(conn, m.id)
+
+        paths_ = await self.db.run(job)
+        # The photo goes with the message: a deleted message must not leave the
+        # downloaded file (or its thumbnail) behind in the cache.
+        self.core.files.forget(paths_)
+        fresh = await self.reload_message(chat, m.id)
+        if fresh is None:
+            m.update(retracted=2, body="")
 
     async def clear_history(self, chat: ChatItem) -> None:
         def job(conn):
+            paths_ = [p for row in conn.execute(
+                "SELECT a.local_path, a.thumbnail FROM attachments a JOIN messages m ON m.id = a.message_id"
+                " WHERE m.chat_id = ?", (chat.id,)) for p in row if p]
             conn.execute("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE chat_id = ?)",
                          (chat.id,))
             conn.execute("DELETE FROM messages WHERE chat_id = ?", (chat.id,))
-        await self.db.run(job)
+            return paths_
+
+        paths_ = await self.db.run(job)
+        self.core.files.forget(paths_)
         ml = self.lists.get(chat.id)
         if ml is not None:
             ml.store.remove_all()

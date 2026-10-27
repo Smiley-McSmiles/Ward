@@ -204,8 +204,11 @@ class MessageRow(Gtk.Box):
         if m.reply_to and m.retracted == 0:
             col.append(self._reply_preview(m))
         col.append(self._content(m))
-        for att in m.attachments:
-            col.append(self._attachment(m, att))
+        # A deleted message keeps no media: the attachments (and the image bubble they
+        # draw) belong to the message that was there, not to its tombstone.
+        if not m.retracted:
+            for att in m.attachments:
+                col.append(self._attachment(m, att))
         if m.reactions:
             col.append(self._reactions(m))
         if m.status == STATUS_FAILED and m.outgoing:
@@ -248,8 +251,9 @@ class MessageRow(Gtk.Box):
         line.append(name)
         line.append(self._content(m))
         self.row.append(line)
-        for att in m.attachments:
-            self.row.append(self._attachment(m, att))
+        if not m.retracted:
+            for att in m.attachments:
+                self.row.append(self._attachment(m, att))
         self._add_hover_bar(m)
 
     def _name_markup(self, m: MessageItem) -> str:
