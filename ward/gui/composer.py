@@ -163,6 +163,13 @@ class Composer(Gtk.Box):
         row.append(self.send_button)
 
         self.buffer.connect("changed", self._on_changed)
+        # Right-clicking a word has to put the cursor on it: libspelling builds its suggestions from
+        # the word at the cursor and drops a correction while a selection exists, which is why
+        # picking a suggestion after highlighting the word did nothing.
+        right_click = Gtk.GestureClick(button=3)
+        right_click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        right_click.connect("pressed", self._on_right_click)
+        self.text.add_controller(right_click)
         keys = Gtk.EventControllerKey()
         keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         keys.connect("key-pressed", self._on_key)
@@ -254,6 +261,32 @@ class Composer(Gtk.Box):
         self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC if natural > MAX_HEIGHT
                                  else Gtk.PolicyType.EXTERNAL)
         return False
+
+    def _on_right_click(self, _gesture, _n_press: int, x: float, y: float) -> None:
+        """Put the cursor on the word under the pointer before the menu opens.
+
+        libspelling lists corrections for the word at the cursor and refuses to replace
+        anything while a selection exists, so a right-click on a highlighted word showed
+        suggestions that did nothing when picked.
+        """
+        ok, it = self.text.get_iter_at_location(x, y)
+        if not ok:
+            return
+        begin = it.copy()
+        if not begin.starts_word():
+            if not begin.inside_word():
+                return
+            begin.backward_word_start()
+        end = it.copy()
+        if not end.ends_word():
+            end.forward_word_end()
+        if begin.equal(end):
+            return
+        self.buffer.place_cursor(begin)     # also clears the selection
+        if self._spell is not None:
+            # refresh at once rather than after the 100ms cursor timeout, so the popup opens with
+            # corrections for the word that was clicked
+            self._spell.update_corrections()
 
     def _on_changed(self, _buf) -> None:
         GLib.idle_add(self._fit)
