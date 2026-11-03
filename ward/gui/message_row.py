@@ -407,7 +407,8 @@ class MessageRow(Gtk.Box):
             btn.set_tooltip_text(att.name)
             btn.connect("clicked", lambda *_: self.view.open_attachment(m, att))
             return btn
-        if path and (att.is_audio or att.is_video):
+        external_audio = att.is_audio and (att.mime == "audio/mpeg" or path.lower().endswith(".mp3"))
+        if path and (att.is_audio or att.is_video) and not external_audio:
             return video.attachment(path, att.is_video, lambda: self.view.save_attachment(m, att))
         card = Gtk.Box(spacing=10, css_classes=["attachment-card"], halign=Gtk.Align.START)
         gicon = Gio.content_type_get_symbolic_icon(Gio.content_type_from_mime_type(att.mime or "") or "")
@@ -433,8 +434,14 @@ class MessageRow(Gtk.Box):
             cancel.connect("clicked", lambda *_: self.view.core.files.cancel(att))
             card.append(cancel)
         elif path:
-            op = Gtk.Button(icon_name="document-open-symbolic", css_classes=["flat", "circular"],
-                            tooltip_text=_("Open"))
+            # GTK's Gtk.Video feeds audio through GStreamer's decodebin3. In some GStreamer
+            # releases an MP3 without a collection triggers an assertion there and aborts the
+            # whole app. Play MP3 in the system player instead; OGG/Opus and video keep the
+            # in-app player.
+            op = Gtk.Button(
+                icon_name="media-playback-start-symbolic" if external_audio else "document-open-symbolic",
+                css_classes=["flat", "circular"],
+                tooltip_text=_("Play in system player") if external_audio else _("Open"))
             op.connect("clicked", lambda *_: widgets.open_file(self, path, att.mime))
             card.append(op)
             sv = Gtk.Button(icon_name="document-save-symbolic", css_classes=["flat", "circular"],
