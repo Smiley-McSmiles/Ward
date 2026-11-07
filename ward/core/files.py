@@ -7,6 +7,7 @@ out in the clear."""
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import logging
@@ -103,6 +104,9 @@ class FileService(GObject.Object):
         super().__init__()
         self.core = core
         self.transfers: dict[int, http.Transfer] = {}
+        # One upload at a time: sending six photos should not open six PUTs that fight for the
+        # same upstream link and finish in random order.
+        self._upload_lock = None
 
     # ------------------------------------------------------------------ small helpers
     @staticmethod
@@ -215,6 +219,12 @@ class FileService(GObject.Object):
         return msg
 
     async def _upload_and_send(self, session, chat: ChatItem, msg: MessageItem) -> None:
+        if self._upload_lock is None:
+            self._upload_lock = asyncio.Lock()
+        async with self._upload_lock:
+            await self._upload_and_send_locked(session, chat, msg)
+
+    async def _upload_and_send_locked(self, session, chat: ChatItem, msg: MessageItem) -> None:
         att = msg.attachments[0]
         transfer = http.Transfer(total=att.size)
         self.transfers[att.id] = transfer
