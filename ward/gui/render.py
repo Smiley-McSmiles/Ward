@@ -270,17 +270,25 @@ class Renderer:
         return sc
 
 
+def _wheel_step(page_size: float) -> float:
+    """How far one wheel detent scrolls, matching GtkScrolledWindow (page_size ** 2/3)."""
+    if page_size <= 0:
+        return 48.0
+    return page_size ** (2.0 / 3.0)
+
+
 def _forward_vertical_scroll(widget: Gtk.Widget, dy: float) -> bool:
     """Wheel events over a horizontal-only scroller should scroll the message list, not disappear.
 
-    GTK 4.14 (the AppImage) does not hand an unconsumed vertical wheel event up from a ScrolledWindow whose
-    vertical policy is NEVER, while newer GTK does.  Do it explicitly for code blocks and tables."""
+    GTK 4.14 (the AppImage) drops an unconsumed vertical wheel event instead of handing it to the message
+    list; newer GTK propagates it itself.  This is only installed for the older behaviour, see
+    _wheel_needs_forwarding()."""
     parent = widget.get_parent()
     while parent is not None:
         if isinstance(parent, Gtk.ScrolledWindow):
             adjustment = parent.get_vadjustment()
             if adjustment is not None and adjustment.get_upper() > adjustment.get_page_size():
-                step = max(adjustment.get_step_increment(), adjustment.get_page_increment() / 8, 24)
+                step = _wheel_step(adjustment.get_page_size())
                 value = adjustment.get_value() + dy * step
                 value = max(adjustment.get_lower(), min(value, adjustment.get_upper() - adjustment.get_page_size()))
                 adjustment.set_value(value)
@@ -289,7 +297,18 @@ def _forward_vertical_scroll(widget: Gtk.Widget, dy: float) -> bool:
     return False
 
 
+def _wheel_needs_forwarding() -> bool:
+    """True when the running GTK still needs the manual hand-off to the message list.
+
+    Forwarding it *and* letting GTK propagate it made the list jump about twice as far per detent, which
+    is what made scrolling over an expanded code block feel so fast."""
+    from .compat import GTK
+    return GTK < (4, 16)
+
+
 def _forward_wheel_to_parent(widget: Gtk.Widget) -> None:
+    if not _wheel_needs_forwarding():
+        return
     controller = Gtk.EventControllerScroll.new(Gtk.EventControllerScrollFlags.VERTICAL)
     controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
     controller.connect("scroll", lambda _c, _dx, dy: _forward_vertical_scroll(widget, dy))
