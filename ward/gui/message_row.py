@@ -46,6 +46,7 @@ class MessageRow(Gtk.Box):
         self.msg: MessageItem | None = None
         self._handlers: list[int] = []
         self._att_handlers: list[tuple[AttachmentItem, int]] = []
+        self._rebuild_queued = False
         # the content is wrapped so a newly sent or received message can slide up into its place
         self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE, transition_duration=200,
                                    overflow=Gtk.Overflow.HIDDEN)
@@ -103,8 +104,18 @@ class MessageRow(Gtk.Box):
         self.msg = None
 
     def _changed(self, *_a) -> None:
+        # One rebuild per frame: sending a message changes status, trust and error in turn, and each of those
+        # used to rebuild the whole row on its own.
+        if self.msg is None or self._rebuild_queued:
+            return
+        self._rebuild_queued = True
+        GLib.idle_add(self._rebuild)
+
+    def _rebuild(self) -> bool:
+        self._rebuild_queued = False
         if self.msg is not None:
             self._build(self.view.previous(self.msg))
+        return False
 
     def animate_in(self) -> None:
         """Slide this message up into its place when it is sent or received."""
@@ -129,6 +140,13 @@ class MessageRow(Gtk.Box):
     # ------------------------------------------------------------------ building
     def _build(self, prev: MessageItem | None) -> None:
         m = self.msg
+        # Every build creates new widgets and connects a fresh handler to each attachment. Dropping the old
+        # ones here matters: a row is rebuilt on every status or reaction change, and the handlers used to pile
+        # up on the attachment (each one pointing at a widget that no longer exists), so one more rebuild ran
+        # for every past rebuild.
+        for att, handler in self._att_handlers:
+            att.disconnect(handler)
+        self._att_handlers = []
         self.view._layout_changing()
         widgets.clear(self.separator)
         widgets.clear(self.row)
