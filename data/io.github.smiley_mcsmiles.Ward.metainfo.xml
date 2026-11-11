@@ -77,6 +77,14 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.0.6" date="2026-11-10">
+      <description>
+        <ul>
+          <li>Scrolling over a code block or table no longer moves the conversation at double speed</li>
+          <li>The wheel is only forwarded manually on GTK versions that drop it, and then by the same step as the list</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.5" date="2026-10-26">
       <description>
         <p>Deleting a message now takes its photo or video with it, and destroying a group removes the room from

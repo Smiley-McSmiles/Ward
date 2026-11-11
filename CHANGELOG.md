@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.0.6 (2026-11-10)
+
+Ward 1.0.6 fixes scrolling over a code block or table, which moved the conversation about twice as fast as anywhere
+else in the chat.
+
+## Scrolling
+
+Scrolling with the pointer inside a fully expanded code block, or over a table, jumped the message list roughly
+twice as far per wheel detent as scrolling over ordinary text. Ward forwards the wheel to the message list itself
+for GTK 4.14, which drops the event, but newer GTK already passes it on, so both ran: the manual jump plus the
+scrolled window's own step.
+
+The forwarder is now only installed below GTK 4.16, where the event would otherwise be lost, and when it does run
+it uses the same step as GtkScrolledWindow, so the distance matches the rest of the list.
+
 ## v1.0.5 (2026-10-26)
 
 Ward 1.0.5 makes deleting mean deleting, downloads the files that used to sit there waiting, keeps a record of stanzas
