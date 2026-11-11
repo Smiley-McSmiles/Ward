@@ -68,6 +68,8 @@ class ConversationView(Gtk.Box):
         self._menu_selection = ""
         self._code_toast: Adw.Toast | None = None
         self._last_value = 0.0          # the adjustment, to tell the user scrolling from the list relaying out
+        self._unstick_source = 0        # the one pending "did the user scroll away?" check
+        self._jump_visible = False
         self._auto_until = 0            # a programmatic scroll: its layout settling is not the user scrolling
         self._layout_until = 0          # rows being rebuilt: their measurement moves the view too
 
@@ -442,7 +444,7 @@ class ConversationView(Gtk.Box):
                         self._animate_ids.add(newest.id)
                 GLib.idle_add(self.scroll_to_bottom)
             else:
-                self.jump_button.set_visible(True)
+                self._set_jump(True)
 
     def _update_empty(self) -> None:
         if self.stack.get_visible_child_name() == "results":
@@ -470,31 +472,39 @@ class ConversationView(Gtk.Box):
         now = GLib.get_monotonic_time()
         if self._at_bottom():
             self._stick = True
-        elif value < previous - 1 and now > self._auto_until:
-            GLib.timeout_add(120, self._maybe_unstick)
+        elif value < previous - 1 and now > self._auto_until and not self._unstick_source:
+            # One check at a time: this runs for every pixel of a smooth scroll, and it used to queue a
+            # timer per event, all of them asking the same question.
+            self._unstick_source = GLib.timeout_add(120, self._maybe_unstick)
         if self._stick and (now <= self._layout_until or now <= self._auto_until) and not self._at_bottom():
             self._settle_bottom()
-        self.jump_button.set_visible(not self._stick)
+        self._set_jump(not self._stick)
         if self._stick and self.chat is not None and self.chat.unread and self.core.window_focused:
             self.core.set_active_chat(self.chat)
         if adj.get_value() < adj.get_page_size() * 0.6 and self.ml is not None and self.ml.has_older:
             widgets.run(self, self._load_older())
 
+    def _set_jump(self, visible: bool) -> None:
+        if visible != self._jump_visible:
+            self._jump_visible = visible
+            self.jump_button.set_visible(visible)
+
     def _maybe_unstick(self) -> bool:
         """The view stayed above the bottom: the user scrolled there.  Not while a row is being measured, though."""
+        self._unstick_source = 0
         if self.get_root() is None:         # the window was let go while the check was pending
             return False
         now = GLib.get_monotonic_time()
         if not self._at_bottom() and now > self._auto_until and now > self._layout_until:
             self._stick = False
-            self.jump_button.set_visible(True)
+            self._set_jump(True)
         return False
 
     def _on_upper(self, *_a) -> None:
         if self._stick:
             self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
         else:
-            self.jump_button.set_visible(not self._at_bottom())
+            self._set_jump(not self._at_bottom())
 
     def scroll_to_bottom(self) -> bool:
         self._stick = True
@@ -503,7 +513,7 @@ class ConversationView(Gtk.Box):
         if n:
             self.list.scroll_to(n - 1, Gtk.ListScrollFlags.NONE, None)
         self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
-        self.jump_button.set_visible(False)
+        self._set_jump(False)
         # once more after the new rows have their real heights
         for delay in (50, 250):
             GLib.timeout_add(delay, self._settle_bottom)
@@ -512,7 +522,7 @@ class ConversationView(Gtk.Box):
     def _settle_bottom(self) -> bool:
         if self._stick:
             self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
-            self.jump_button.set_visible(False)
+            self._set_jump(False)
         return False
 
     def _scroll_to_index(self, idx: int, focus: bool = True) -> bool:

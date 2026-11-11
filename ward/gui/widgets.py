@@ -55,7 +55,17 @@ IMAGE_PIXELS = 640         # images in the chat are shown at most 320 px wide
 def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
     """An image as a texture, decoded at no more than max_side pixels a side (0: full size, not cached).  A photo
     used as an avatar decoded at full size takes tens of MB, in memory and again on the graphics card."""
-    if not path or not os.path.exists(path):
+    if not path:
+        return None
+    # Cache first: a cached avatar is looked up for every row that is built, and it used to stat the file
+    # (or three) before finding it in the cache.
+    key = (path, max_side)
+    if max_side:
+        t = _textures.get(key)
+        if t is not None:
+            _textures.move_to_end(key)
+            return t
+    if not os.path.exists(path):
         return None
     if not max_side:
         try:
@@ -79,11 +89,6 @@ def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
                                              GLib.Bytes.new(data), im.width * 4)
         except (ImportError, OSError, ValueError):
             return None
-    key = (path, max_side)
-    t = _textures.get(key)
-    if t is not None:
-        _textures.move_to_end(key)
-        return t
     try:
         from gi.repository import GdkPixbuf
 
