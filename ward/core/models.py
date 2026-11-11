@@ -455,8 +455,12 @@ class MessageList(GObject.Object):
         return self.store.get_item(i - 1) if i > 0 else None
 
     def find_ref(self, ref: str) -> MessageItem | None:
+        if not ref:
+            return None
+        # Compared by hand rather than through ref_ids(): this walks the whole list for every reply,
+        # reaction and receipt, and a set per message was a lot of garbage for three string compares.
         for m in reversed(self.items()):
-            if ref in m.ref_ids():
+            if ref == m.stanza_id or ref == m.origin_id or ref == m.msg_id:
                 return m
         return None
 
