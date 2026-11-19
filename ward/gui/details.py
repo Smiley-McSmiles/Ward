@@ -228,8 +228,9 @@ class ContactDetails(BaseDialog):
         async def go():
             session = online_session(self.core, self.acc)
             await self.core.roster.remove_contact(session, jid)
-            if check.get_active() and self.core.omemo is not None:
-                await self.core.omemo.forget_contact(session, jid)
+            if check.get_active():
+                if self.core.omemo is not None:
+                    await self.core.omemo.forget_contact(session, jid)
                 if self.core.pgp is not None:
                     await self.core.pgp.forget_contact(self.acc.id, jid)
         compat.alert(self.toasts, _("Remove %s from your contacts?") % jid,

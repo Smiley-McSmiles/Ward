@@ -6,6 +6,7 @@ no rotation."""
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import os
@@ -118,20 +119,23 @@ def prepare_for_upload(path: str, quality: str = "balanced", strip: bool = True)
         return path, False
     max_side = QUALITY_SIDE.get(quality, 0)
     needs_scale = max_side and max(w, h) > max_side
-    with open(path, "rb") as fh:
-        data = fh.read()
-    if mime == "image/jpeg" and not needs_scale:
-        if not strip:
-            return path, False
-        if jpeg_orientation(data) == 1:
-            fd, tmp = tempfile.mkstemp(suffix=".jpg")
-            with os.fdopen(fd, "wb") as out:
-                out.write(strip_jpeg(data))
-            return tmp, True
     if not needs_scale and not strip:
         return path, False
     if not needs_scale and mime not in ("image/jpeg", "image/webp", "image/tiff", "image/heic", "image/heif"):
         return path, False   # PNG and friends rarely carry location data
+    if mime == "image/jpeg" and not needs_scale:
+        with open(path, "rb") as fh:
+            data = fh.read()
+        if jpeg_orientation(data) == 1:
+            fd, tmp = tempfile.mkstemp(suffix=".jpg")
+            try:
+                with os.fdopen(fd, "wb") as out:
+                    out.write(strip_jpeg(data))
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
+                raise
+            return tmp, True
     return _reencode(path, mime, max_side or max(w, h)), True
 
 
@@ -141,30 +145,35 @@ def _reencode(path: str, mime: str, max_side: int) -> str:
     suffix = ".png" if keep_png else ".jpg"
     fd, tmp = tempfile.mkstemp(suffix=suffix)
     os.close(fd)
-    if Image is not None:
-        with Image.open(path) as im:
-            im = ImageOps.exif_transpose(im)
-            im.thumbnail((max_side, max_side))
-            if keep_png:
-                im.save(tmp, "PNG", optimize=True)
-            else:
-                im.convert("RGB").save(tmp, "JPEG", quality=85, optimize=True)
+    try:
+        if Image is not None:
+            with Image.open(path) as im:
+                im = ImageOps.exif_transpose(im)
+                im.thumbnail((max_side, max_side))
+                if keep_png:
+                    im.save(tmp, "PNG", optimize=True)
+                else:
+                    im.convert("RGB").save(tmp, "JPEG", quality=85, optimize=True)
+            return tmp
+        GdkPixbuf = _pixbuf()
+        pb = GdkPixbuf.Pixbuf.new_from_file(path)
+        pb = pb.apply_embedded_orientation() or pb
+        w, h = pb.get_width(), pb.get_height()
+        if max(w, h) > max_side:
+            scale = max_side / max(w, h)
+            pb = pb.scale_simple(max(1, int(w * scale)), max(1, int(h * scale)), GdkPixbuf.InterpType.BILINEAR)
+        if keep_png:
+            pb.savev(tmp, "png", [], [])
+        else:
+            if pb.get_has_alpha():
+                pb = pb.composite_color_simple(pb.get_width(), pb.get_height(), GdkPixbuf.InterpType.NEAREST, 255, 8,
+                                               0xFFFFFF, 0xFFFFFF)
+            pb.savev(tmp, "jpeg", ["quality"], ["85"])   # GdkPixbuf never writes the original metadata back
         return tmp
-    GdkPixbuf = _pixbuf()
-    pb = GdkPixbuf.Pixbuf.new_from_file(path)
-    pb = pb.apply_embedded_orientation() or pb
-    w, h = pb.get_width(), pb.get_height()
-    if max(w, h) > max_side:
-        scale = max_side / max(w, h)
-        pb = pb.scale_simple(max(1, int(w * scale)), max(1, int(h * scale)), GdkPixbuf.InterpType.BILINEAR)
-    if keep_png:
-        pb.savev(tmp, "png", [], [])
-    else:
-        if pb.get_has_alpha():
-            pb = pb.composite_color_simple(pb.get_width(), pb.get_height(), GdkPixbuf.InterpType.NEAREST, 255, 8,
-                                           0xFFFFFF, 0xFFFFFF)
-        pb.savev(tmp, "jpeg", ["quality"], ["85"])   # GdkPixbuf never writes the original metadata back
-    return tmp
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def thumbnail(path: str, max_side: int = 400, fmt: str = "jpeg") -> bytes | None:

@@ -256,7 +256,7 @@ class Sidebar(Gtk.Box):
             self._selecting = False
 
     def _reselect(self) -> None:
-        GLib.idle_add(lambda: self.select(self.window.current_chat) and False)
+        GLib.idle_add(lambda: hasattr(self, "window") and self.select(self.window.current_chat) and False)
 
     def _on_right_click(self, gesture, _n, x, y) -> None:
         row = self.list.pick(x, y, Gtk.PickFlags.DEFAULT)

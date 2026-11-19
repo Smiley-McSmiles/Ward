@@ -299,6 +299,7 @@ class Database:
                 conn.backup(target)
             finally:
                 target.close()
+                conn.execute("BEGIN")
         await self.run(job)
 
 

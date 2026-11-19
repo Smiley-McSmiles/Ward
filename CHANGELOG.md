@@ -1,19 +1,36 @@
 # Changelog
 
-## v1.0.6 (2026-11-10)
+## v1.0.6 (2026-11-19)
 
-Ward 1.0.6 fixes scrolling over a code block or table, which moved the conversation about twice as fast as anywhere
-else in the chat.
+Ward 1.0.6 fixes scrolling over code blocks and tables, improves message-list performance, and includes a broad set of security, resource-handling, and widget-lifetime fixes.
 
-## Scrolling
+### Scrolling & Performance
 
-Scrolling with the pointer inside a fully expanded code block, or over a table, jumped the message list roughly
-twice as far per wheel detent as scrolling over ordinary text. Ward forwards the wheel to the message list itself
-for GTK 4.14, which drops the event, but newer GTK already passes it on, so both ran: the manual jump plus the
-scrolled window's own step.
+- Scrolling with the pointer inside a fully expanded code block, or over a table, no longer moves the conversation at double speed on GTK 4.16+; the wheel forwarder is now only installed below GTK 4.16 and matches `GtkScrolledWindow` step size.
+- Trim hot paths in the message list, cache `org.gnome.desktop.interface` `Gio.Settings` lookups, and stop message rows from piling up attachment signal handlers.
+- Upload files sequentially, play MP3 attachments in the system player, and replace the clicked word on spellcheck suggestions.
 
-The forwarder is now only installed below GTK 4.16, where the event would otherwise be lost, and when it does run
-it uses the same step as GtkScrolledWindow, so the distance matches the rest of the list.
+### Security & Input Validation
+
+- Validate avatar SHA-1 hashes before building cache paths to prevent path traversal, and write avatar files atomically via `tempfile.mkstemp`.
+- Reject CR/LF/whitespace in HTTP proxy `CONNECT` target hosts, enforce SOCKS5 username/password length limits, cap HTTP proxy response header reads, validate `Content-Length` headers (including negative values), and cache `SSLContext` instances.
+- Strip `\r` as well as `\n` from HTTP upload `PUT` headers.
+- Reject direct Jingle `session-initiate` calls and ignore MUC room invites from blocked contacts.
+
+### Resource, Database & Lifetime Fixes
+
+- Remove duplicate `os.dup()` on the PipeWire fd from `Gio.UnixFDList.get()` in the screen-sharing portal, close portal sessions on failure, and clear timeouts cleanly.
+- Clean up temporary upload and re-encoded image files in `try/finally` / `try/except` blocks if validation or copying fails.
+- Restore the SQLite transaction (`BEGIN`) after `Database.backup_to()` so subsequent transactions succeed.
+- Close sockets reliably across all paths in `probe_certificate()`, preserve the active proxy when probing failed certificates, and handle `ET.ParseError` in account registration streams.
+- Guard GTK callbacks, idle/timeout handlers, and `MediaSession` signal connections against dismantled windows, dialogs, composer, message rows, members panel, sidebar, and XML console.
+
+### Messaging, Encryption & Parser Fixes
+
+- Cap quote nesting depth (`_MAX_QUOTE_DEPTH = 32`) and track unmatched inline markers in `ward.core.markup.styling` to prevent deep recursion and quadratic scanning.
+- Guard `ChatService.mark_read()` against concurrent reentrancy, track `reply_to_me`, and match groupchat error stanzas properly.
+- Ensure message retention cleanup also forgets cached attachment files and removes expired rows from in-memory `MessageList` instances.
+- Check MUC room features in `HistoryService.supported()`, refresh missing OpenPGP sender keys before trust evaluation, and surface clearer errors when no other group members have OMEMO keys.
 
 ## v1.0.5 (2026-10-26)
 

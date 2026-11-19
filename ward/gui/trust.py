@@ -507,8 +507,11 @@ class DevicesDialog(BaseDialog):
                     except GLib.Error:
                         return
                     if f is not None and f.get_path():
-                        with open(f.get_path(), "wb") as fh:
-                            fh.write(blob)
+                        try:
+                            widgets.write_private(f.get_path(), blob)
+                        except OSError as e:
+                            self.toasts.add_toast(Adw.Toast(title=_("Could not save file: %s") % e.strerror))
+                            return
                         self.toasts.add_toast(Adw.Toast(title=_("Exported")))
                 dialog.save(self.window, None, done)
             widgets.run(self.toasts, job(), done=save)
@@ -525,8 +528,12 @@ class DevicesDialog(BaseDialog):
                 return
             if f is None or not f.get_path():
                 return
-            with open(f.get_path(), "rb") as fh:
-                blob = fh.read()
+            try:
+                with open(f.get_path(), "rb") as fh:
+                    blob = fh.read()
+            except OSError as e:
+                self.toasts.add_toast(Adw.Toast(title=_("Could not read file: %s") % e.strerror))
+                return
             pw = Adw.PasswordEntryRow(title=_("Passphrase"))
             box = Gtk.ListBox(css_classes=["boxed-list"])
             box.append(pw)

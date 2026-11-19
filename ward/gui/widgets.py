@@ -181,23 +181,36 @@ def _dt_local(ms: int) -> _dt.datetime:
     return _dt.datetime.fromtimestamp(ms / 1000)
 
 
+_desktop_iface = None
+_desktop_iface_checked = False
+
+
+def _system_clock_format() -> str:
+    global _desktop_iface, _desktop_iface_checked
+    if not _desktop_iface_checked:
+        _desktop_iface_checked = True
+        try:
+            from gi.repository import Gio
+
+            schema = Gio.SettingsSchemaSource.get_default()
+            if schema is not None and schema.lookup("org.gnome.desktop.interface", True) is not None:
+                _desktop_iface = Gio.Settings.new("org.gnome.desktop.interface")
+        except Exception:
+            _desktop_iface = None
+    if _desktop_iface is not None:
+        try:
+            return "12" if _desktop_iface.get_string("clock-format") == "12h" else "24"
+        except Exception:
+            pass
+    return "24"
+
+
 def clock(ms: int, settings=None, seconds: bool | None = None) -> str:
     d = _dt_local(ms)
     fmt = settings["appearance.time_format"] if settings is not None else "system"
     secs = settings["appearance.time_seconds"] if seconds is None and settings is not None else bool(seconds)
     if fmt == "system":
-        try:
-            gs = Gtk.Settings.get_default()
-            fmt = "24"
-            if gs is not None:
-                from gi.repository import Gio
-
-                schema = Gio.SettingsSchemaSource.get_default()
-                if schema is not None and schema.lookup("org.gnome.desktop.interface", True) is not None:
-                    fmt = "12" if Gio.Settings.new("org.gnome.desktop.interface").get_string("clock-format") == \
-                        "12h" else "24"
-        except Exception:
-            fmt = "24"
+        fmt = _system_clock_format() if Gtk.Settings.get_default() is not None else "24"
     if fmt == "12":
         return d.strftime("%I:%M:%S %p" if secs else "%I:%M %p").lstrip("0")
     return d.strftime("%H:%M:%S" if secs else "%H:%M")

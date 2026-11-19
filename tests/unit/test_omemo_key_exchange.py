@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from xml.etree import ElementTree as ET
+
+import pytest
 
 pytest.importorskip("omemo")
 

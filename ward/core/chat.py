@@ -81,6 +81,7 @@ class ChatService(GObject.Object):
         self.workers: dict[int, asyncio.Task] = {}
         self._typing_timers: dict[tuple[int, str], asyncio.TimerHandle] = {}
         self._sent_state: dict[int, str] = {}      # chat id -> last chat state we sent
+        self._marking_read: set[int] = set()
         core.pep.register(NS_MDS, self._on_mds)
 
     # ================================================================== plumbing
@@ -456,6 +457,8 @@ class ChatService(GObject.Object):
         name = self.core.names.sender_name(chat, target)
         preview = util.first_line(target.body if not target.retracted else _("Deleted message"), 100)
         msg.extra.update(reply_preview=preview, reply_author=name, reply_target=target.id)
+        if target.outgoing:
+            msg.extra["reply_to_me"] = True
         msg.update(reply_preview=preview, reply_author=name, reply_target=target.id)
         await self.core.chats.update_message_fields(msg.id, extra=msg.extra)
 
@@ -614,7 +617,8 @@ class ChatService(GObject.Object):
         peer = util.bare(pm.from_jid)
         cond, text = pm.error or ("", "")
         for chat in (self.core.chats.find(session.account.id, peer, "chat"),
-                     self.core.chats.find(session.account.id, pm.from_jid, "pm")):
+                     self.core.chats.find(session.account.id, pm.from_jid, "pm"),
+                     self.core.chats.find(session.account.id, peer, "groupchat")):
             if chat is None or not pm.id:
                 continue
             row = await self._find(chat, pm.id, direction=1)
@@ -862,32 +866,38 @@ class ChatService(GObject.Object):
     # ------------------------------------------------------------------ reading
     async def mark_read(self, chat: ChatItem) -> None:
         """The user saw the chat: clear the unread count, send a read marker, sync our other devices."""
-        row = await self.core.db.fetchone(
-            "SELECT * FROM messages WHERE chat_id = ? AND direction = 0 AND retracted = 0 AND kind != 'system' "
-            "ORDER BY timestamp DESC, id DESC LIMIT 1", (chat.id,))
-        changed = chat.unread or chat.mentions
-        latest = await self._latest_id(chat)
-        chat.update(unread=0, mentions=0, last_read_id=max(chat.last_read_id, latest))
-        if changed:
-            self.core.chats.emit("unread-changed")
-        await self.core.chats.save(chat, "unread", "mentions", "last_read_id")
-        if row is None or chat.options.get("marker_sent") == row["id"]:
+        if chat.id in self._marking_read:
             return
-        session = self.core.sessions.get(chat.account_id)
-        if session is None or not session.online:
-            return
-        chat.options["marker_sent"] = row["id"]
-        await self.core.chats.save(chat, "options")
-        group = chat.type == "groupchat"
-        ref = row["stanza_id"] if group else row["msg_id"]
-        if self.core.settings["chats.send_markers"] and ref and not chat.is_request:
-            el = session.new_message(chat.jid, "groupchat" if group else "chat", util.random_id())
-            stanzas.add_marker(el, "displayed", ref)
-            stanzas.add_hint(el, "store")
-            with contextlib.suppress(Exception):
-                await self._send_element(session, chat, el, None)
-        if row["stanza_id"]:
-            await self._publish_mds(session, chat, row["stanza_id"])
+        self._marking_read.add(chat.id)
+        try:
+            row = await self.core.db.fetchone(
+                "SELECT * FROM messages WHERE chat_id = ? AND direction = 0 AND retracted = 0 AND kind != 'system' "
+                "ORDER BY timestamp DESC, id DESC LIMIT 1", (chat.id,))
+            changed = chat.unread or chat.mentions
+            latest = await self._latest_id(chat)
+            chat.update(unread=0, mentions=0, last_read_id=max(chat.last_read_id, latest))
+            if changed:
+                self.core.chats.emit("unread-changed")
+            await self.core.chats.save(chat, "unread", "mentions", "last_read_id")
+            if row is None or chat.options.get("marker_sent") == row["id"]:
+                return
+            session = self.core.sessions.get(chat.account_id)
+            if session is None or not session.online:
+                return
+            chat.options["marker_sent"] = row["id"]
+            await self.core.chats.save(chat, "options")
+            group = chat.type == "groupchat"
+            ref = row["stanza_id"] if group else row["msg_id"]
+            if self.core.settings["chats.send_markers"] and ref and not chat.is_request:
+                el = session.new_message(chat.jid, "groupchat" if group else "chat", util.random_id())
+                stanzas.add_marker(el, "displayed", ref)
+                stanzas.add_hint(el, "store")
+                with contextlib.suppress(Exception):
+                    await self._send_element(session, chat, el, None)
+            if row["stanza_id"]:
+                await self._publish_mds(session, chat, row["stanza_id"])
+        finally:
+            self._marking_read.discard(chat.id)
 
     async def _publish_mds(self, session, chat: ChatItem, stanza_id: str) -> None:
         """XEP-0490: tell our other devices how far we read (stored privately on our server)."""

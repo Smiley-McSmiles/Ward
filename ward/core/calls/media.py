@@ -386,7 +386,7 @@ class MediaSession(GObject.Object):
 
     def _screen_source(self):
         if os.environ.get("WAYLAND_DISPLAY") and _have("pipewiresrc"):
-            from .portal import screencast
+            from ..portal import screencast
 
             try:
                 fd, node, session = screencast()
@@ -600,7 +600,7 @@ class MediaSession(GObject.Object):
         self.webrtc.emit("add-ice-candidate", mline, candidate)
 
     def _on_ice_candidate(self, _webrtc, mline: int, candidate: str) -> None:
-        GLib.idle_add(lambda: (self.emit("local-candidate", mline, candidate), False)[1])
+        GLib.idle_add(lambda: (self.state != "closed" and self.emit("local-candidate", mline, candidate), False)[1])
 
     def _on_connection_state(self, *_a) -> None:
         state = self.webrtc.get_property("connection-state").value_nick
@@ -664,7 +664,7 @@ class MediaSession(GObject.Object):
             return
         self.state = "closed"
         if self._portal_session:
-            from .portal import close_session
+            from ..portal import close_session
 
             close_session(self._portal_session)
             self._portal_session = ""

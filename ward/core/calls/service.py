@@ -385,6 +385,10 @@ class CallService(GObject.Object):
         if action == "session-initiate":
             if call is None:
                 # a call without Jingle Message Initiation (some clients start with Jingle directly)
+                contact = self.core.roster.contacts.get(session.account.id, util.bare(frm))
+                if contact is not None and contact.blocked:
+                    session.reply_iq(stanza, error="service-unavailable")
+                    return
                 media = jingle.media_of(j)
                 if not media or not self.available() or not self.core.settings["calls.enabled"]:
                     session.reply_iq(stanza, error="feature-not-implemented")
@@ -499,6 +503,8 @@ class CallService(GObject.Object):
             return
         self._learn_local(call, offer)
         await self._gather(call)
+        if not call.active:
+            return
         contents = jingle.sdp_to_jingle(offer, True, with_candidates=False)
         self._embed_candidates(contents, call)
         j = jingle.jingle_element("session-initiate", call.sid, initiator=session.bound_jid or session.jid)
@@ -552,6 +558,8 @@ class CallService(GObject.Object):
             return
         call.described = True
         await self._gather(call)
+        if not call.active:
+            return
         contents = jingle.sdp_to_jingle(answer, False, with_candidates=False)
         names = self._match_names(contents, call.remote_names)
         self._learn_local(call, answer, names)
@@ -734,7 +742,7 @@ class CallService(GObject.Object):
             call.timer = None
             if call.active:
                 aio.spawn(action())
-        call.timer = asyncio.get_event_loop().call_later(seconds, fire)
+        call.timer = asyncio.get_running_loop().call_later(seconds, fire)
 
     def _cancel_timer(self, call: Call) -> None:
         if call.timer is not None:

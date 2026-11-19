@@ -56,12 +56,19 @@ class Transfer:
             self.on_progress(self.done, self.total)
 
 
+_ssl_ctx_cache: dict[str, ssl.SSLContext] = {}
+
+
 def ssl_context() -> ssl.SSLContext:
+    extra = os.environ.get("WARD_EXTRA_CA") or ""
+    cached = _ssl_ctx_cache.get(extra)
+    if cached is not None:
+        return cached
     ctx = ssl.create_default_context()
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    extra = os.environ.get("WARD_EXTRA_CA")
     if extra and os.path.isfile(extra):
         ctx.load_verify_locations(cafile=extra)
+    _ssl_ctx_cache[extra] = ctx
     return ctx
 
 
@@ -74,16 +81,20 @@ def _connection(url: str, prox: proxymod.Proxy | None, timeout: float) -> tuple[
     path = parts.path or "/"
     if parts.query:
         path += "?" + parts.query
-    if parts.scheme == "https":
-        conn: http.client.HTTPConnection = http.client.HTTPSConnection(host, port, timeout=timeout,
-                                                                      context=ssl_context())
+    ctx = ssl_context() if parts.scheme == "https" else None
+    if ctx is not None:
+        conn: http.client.HTTPConnection = http.client.HTTPSConnection(host, port, timeout=timeout, context=ctx)
     else:
         conn = http.client.HTTPConnection(host, port, timeout=timeout)
     if prox is not None:
         sock = proxymod.open_socket_sync(prox, host, port, timeout)
-        if parts.scheme == "https":
-            sock = ssl_context().wrap_socket(sock, server_hostname=host)
-        sock.settimeout(timeout)
+        try:
+            if ctx is not None:
+                sock = ctx.wrap_socket(sock, server_hostname=host)
+            sock.settimeout(timeout)
+        except BaseException:
+            sock.close()
+            raise
         conn.sock = sock
     return conn, path
 
@@ -127,9 +138,14 @@ def request(method: str, url: str, headers: dict[str, str] | None = None, body: 
                 if urlsplit(current).scheme == "https" and urlsplit(nxt).scheme != "https":
                     raise HttpError("redirect to an unencrypted address refused")
                 current = nxt
-                resp.read()
+                resp.read(65536)
                 continue
-            length = int(rh.get("content-length") or 0)
+            try:
+                length = int(rh.get("content-length") or 0)
+            except ValueError:
+                raise HttpError("invalid Content-Length header from server", resp.status) from None
+            if length < 0:
+                raise HttpError("invalid Content-Length header from server", resp.status)
             if max_bytes is not None and length > max_bytes:
                 raise HttpError("the file is larger than allowed (%d bytes)" % length, resp.status)
             if transfer is not None and out_file is not None:

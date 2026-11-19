@@ -63,7 +63,7 @@ def spec_row(spec: schema.Spec, value, on_change) -> Gtk.Widget | None:
             row.set_subtitle(fam or _("Default"))
             on_change(fam or "")
         btn.connect("notify::font-desc", font_set)
-        reset.connect("clicked", lambda *_: (row.set_subtitle(_("Default")), on_change("")))
+        reset.connect("clicked", lambda *_: (btn.set_font_desc(None), row.set_subtitle(_("Default")), on_change("")))
         row.add_suffix(btn)
         row.add_suffix(reset)
         if value:
@@ -395,8 +395,8 @@ class Preferences:
         async def do_compact():
             await self.core.db.compact()
             await sizes()
-        clear.connect("clicked", lambda *_: widgets.run(self.window, do_clear()))
-        compact.connect("clicked", lambda *_: widgets.run(self.window, do_compact()))
+        clear.connect("clicked", lambda *_: widgets.run(self.d, do_clear()))
+        compact.connect("clicked", lambda *_: widgets.run(self.d, do_compact()))
 
     def _page_advanced(self, page, groups) -> None:
         g = Adw.PreferencesGroup(title=_("About this installation"))

@@ -32,7 +32,10 @@ def parse_styling(text: str, nicknames: frozenset[str] | set[str] | None = None)
     return Document(blocks, markdown=False)
 
 
-def _blocks(lines: list[str], nicks, counter) -> list[Block]:
+_MAX_QUOTE_DEPTH = 32
+
+
+def _blocks(lines: list[str], nicks, counter, depth: int = 0) -> list[Block]:
     out: list[Block] = []
     para: list[str] = []
 
@@ -49,14 +52,14 @@ def _blocks(lines: list[str], nicks, counter) -> list[Block]:
     i = 0
     while i < len(lines):
         line = lines[i]
-        if line.startswith(">"):
+        if line.startswith(">") and depth < _MAX_QUOTE_DEPTH:
             flush()
             quoted = []
             while i < len(lines) and lines[i].startswith(">"):
                 q = lines[i][1:]
                 quoted.append(q[1:] if q.startswith(" ") else q)
                 i += 1
-            out.append(Quote(_blocks(quoted, nicks, counter)))
+            out.append(Quote(_blocks(quoted, nicks, counter, depth + 1)))
             continue
         if line.startswith("```"):
             flush()
@@ -93,10 +96,11 @@ def _find_close(s: str, i: int) -> int | None:
 def spans(s: str, styles: frozenset[str] = frozenset()) -> Inlines:
     out: Inlines = []
     buf: list[str] = []
+    dead: set[str] = set()
     i = 0
     while i < len(s):
         c = s[i]
-        if c in _STYLE and _can_open(s, i):
+        if c in _STYLE and c not in dead and _can_open(s, i):
             j = _find_close(s, i)
             if j is not None:
                 if buf:
@@ -112,6 +116,7 @@ def spans(s: str, styles: frozenset[str] = frozenset()) -> Inlines:
                 out.append(Run(c, styles | {DIRECTIVE}))
                 i = j + 1
                 continue
+            dead.add(c)
         buf.append(c)
         i += 1
     if buf:

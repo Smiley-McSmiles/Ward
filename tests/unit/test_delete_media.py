@@ -1,6 +1,5 @@
 """Deleting a message takes its media with it: the cached file, its thumbnail, and the image bubble."""
 
-import os
 import sqlite3
 
 from ward.core.chats import cached_attachment_paths

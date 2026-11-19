@@ -130,7 +130,7 @@ class Core(GObject.Object):
             for acc in self.accounts.list():
                 if acc.enabled and acc.option("autoconnect"):
                     aio.spawn(self.connect_account(acc))
-        aio.spawn(self._retention())
+        self._track(aio.spawn(self._retention()))
 
     async def load_omemo(self) -> None:
         """Create the OMEMO service once its libraries have loaded.  The application starts that import in the

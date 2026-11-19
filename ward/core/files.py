@@ -171,7 +171,7 @@ class FileService(GObject.Object):
         for h in put.findall("{%s}header" % NS_UPLOAD):
             n = (h.get("name") or "").strip()
             if n.lower() in ALLOWED_PUT_HEADERS and h.text:
-                headers[n] = h.text.replace("\n", " ").strip()
+                headers[n] = h.text.replace("\r", " ").replace("\n", " ").strip()
         return put.get("url", ""), headers, get.get("url", "")
 
     async def send_file(self, chat: ChatItem, path: str, caption: str = "") -> MessageItem:
@@ -183,16 +183,22 @@ class FileService(GObject.Object):
         strip = self.core.settings["privacy.strip_metadata"]
         upload_path, temporary = await aio.run_in_thread(images.prepare_for_upload, path,
                                                          acc.option("image_quality"), strip)
-        if temporary and upload_path.endswith(".jpg") and not name.lower().endswith((".jpg", ".jpeg")):
-            name = os.path.splitext(name)[0] + ".jpg"
-            mime = "image/jpeg"
-        size = os.path.getsize(upload_path)
-        if size > LARGE and not acc.option("allow_large_uploads"):
-            raise UploadError(_("Files larger than 100 MB are turned off for this account (Preferences > Accounts)"))
-        img_mime, w, h = await aio.run_in_thread(images.probe, upload_path)
-        # keep our own copy, so the message keeps working after the original moves
-        local = os.path.join(paths.ensure(paths.files_cache()), "%s-%s" % (util.random_id(8), name))
-        await aio.run_in_thread(shutil.copyfile, upload_path, local)
+        try:
+            if temporary and upload_path.endswith(".jpg") and not name.lower().endswith((".jpg", ".jpeg")):
+                name = os.path.splitext(name)[0] + ".jpg"
+                mime = "image/jpeg"
+            size = os.path.getsize(upload_path)
+            if size > LARGE and not acc.option("allow_large_uploads"):
+                raise UploadError(
+                    _("Files larger than 100 MB are turned off for this account (Preferences > Accounts)"))
+            img_mime, w, h = await aio.run_in_thread(images.probe, upload_path)
+            # keep our own copy, so the message keeps working after the original moves
+            local = os.path.join(paths.ensure(paths.files_cache()), "%s-%s" % (util.random_id(8), name))
+            await aio.run_in_thread(shutil.copyfile, upload_path, local)
+        finally:
+            if temporary:
+                with contextlib.suppress(OSError):
+                    os.unlink(upload_path)
         thumb_path = ""
         if img_mime:
             data = await aio.run_in_thread(images.thumbnail, local, 400)
@@ -212,9 +218,6 @@ class FileService(GObject.Object):
         mid = await self.core.db.run(lambda conn: insert_message_job(conn, values, [att]))
         msg = await self.core.chats.reload_message(chat, mid)
         self.core.chats.show_message(chat, msg)
-        if temporary:
-            with contextlib.suppress(OSError):
-                os.unlink(upload_path)
         aio.spawn(self._upload_and_send(session, chat, msg))
         return msg
 
@@ -461,3 +464,6 @@ class FileService(GObject.Object):
         if removed:
             await self.core.db.executemany("UPDATE attachments SET local_path = '', state = 'remote' WHERE "
                                            "local_path = ? AND url != ''", [(p,) for p in removed])
+            thumbs = [(p,) for p in removed if p.endswith(".thumb")]
+            if thumbs:
+                await self.core.db.executemany("UPDATE attachments SET thumbnail = '' WHERE thumbnail = ?", thumbs)

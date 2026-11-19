@@ -502,10 +502,23 @@ class Chats(GObject.Object):
             elif account_id is not None:
                 where += " AND chat_id IN (SELECT id FROM chats WHERE account_id = ?)"
                 params.append(account_id)
+            expired = conn.execute("SELECT id, chat_id FROM messages WHERE %s" % where, params).fetchall()
+            paths_ = [p for row in conn.execute(
+                "SELECT a.local_path, a.thumbnail FROM attachments a WHERE a.message_id IN "
+                "(SELECT id FROM messages WHERE %s)" % where, params) for p in row if p]
             conn.execute("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE %s)" % where,
                          params)
-            return conn.execute("DELETE FROM messages WHERE %s" % where, params).rowcount
-        return await self.db.run(job)
+            deleted = conn.execute("DELETE FROM messages WHERE %s" % where, params).rowcount
+            return deleted, paths_, [(r["chat_id"], r["id"]) for r in expired]
+
+        deleted, paths_, expired = await self.db.run(job)
+        if paths_:
+            self.core.files.forget(paths_)
+        for cid, mid in expired:
+            ml = self.lists.get(cid)
+            if ml is not None:
+                ml.remove(mid)
+        return deleted
 
     def total_unread(self) -> int:
         return sum(c.unread for c in self.items() if c.open and not c.muted(now_ms()))

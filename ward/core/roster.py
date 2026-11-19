@@ -13,6 +13,8 @@ import hashlib
 import json
 import logging
 import os
+import re
+import tempfile
 import time
 from xml.etree import ElementTree as ET
 
@@ -129,19 +131,35 @@ class Contacts(GObject.Object):
                     break
 
 
+_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _valid_sha1(sha1: str) -> str:
+    clean = (sha1 or "").strip().lower()
+    return clean if _SHA1_RE.fullmatch(clean) else ""
+
+
 def avatar_path(sha1: str) -> str:
-    return os.path.join(paths.avatars_cache(), sha1 + ".img")
+    clean = _valid_sha1(sha1)
+    if not clean:
+        return ""
+    return os.path.join(paths.avatars_cache(), clean + ".img")
 
 
 def save_avatar(data: bytes) -> tuple[str, str]:
     sha1 = hashlib.sha1(data).hexdigest()
     p = avatar_path(sha1)
     if not os.path.exists(p):
-        paths.ensure(paths.avatars_cache())
-        tmp = p + ".tmp"
-        with open(tmp, "wb") as fh:
-            fh.write(data)
-        os.replace(tmp, p)
+        cache_dir = paths.ensure(paths.avatars_cache())
+        fd, tmp = tempfile.mkstemp(dir=cache_dir, prefix=sha1 + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, p)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
     return sha1, p
 
 
@@ -481,7 +499,11 @@ class RosterService(GObject.Object):
         if not own and target is None:
             return
         assert own or target is not None
-        if not sha1:
+        if sha1:
+            sha1 = _valid_sha1(sha1)
+            if not sha1:
+                return
+        else:
             if target is None:
                 acc.avatar = ""
             else:
@@ -510,8 +532,10 @@ class RosterService(GObject.Object):
         key = (c.account_id, c.jid)
         if key in self._vcard_fetching:
             return
-        if os.path.exists(avatar_path(sha1)):
-            c.update(avatar=avatar_path(sha1), avatar_hash=sha1)
+        sha1 = _valid_sha1(sha1)
+        p = avatar_path(sha1) if sha1 else ""
+        if p and os.path.exists(p):
+            c.update(avatar=p, avatar_hash=sha1)
             await self.contacts.save(c)
             return
         self._vcard_fetching.add(key)

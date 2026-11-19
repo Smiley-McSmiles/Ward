@@ -77,11 +77,12 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
-    <release version="1.0.6" date="2026-11-10">
+    <release version="1.0.6" date="2026-11-19">
       <description>
         <ul>
           <li>Scrolling over a code block or table no longer moves the conversation at double speed</li>
-          <li>The wheel is only forwarded manually on GTK versions that drop it, and then by the same step as the list</li>
+          <li>Message-list performance optimizations, sequential file uploads, and spellcheck replacement fixes</li>
+          <li>Security hardening, resource and portal fd cleanup, and widget-lifetime fixes</li>
         </ul>
       </description>
     </release>

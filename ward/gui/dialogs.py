@@ -82,10 +82,17 @@ class BaseDialog:
         self.busy(True)
 
         def ok(res):
+            if not hasattr(self, "toasts"):
+                return
             self.busy(False)
             if done is not None:
                 done(res)
-        return widgets.run(self.toasts, coro, done=ok, on_error=self.error)
+
+        def err(exc):
+            if not hasattr(self, "toasts"):
+                return
+            self.error(exc)
+        return widgets.run(self.toasts, coro, done=ok, on_error=err)
 
 
 def entry_row(title: str, text: str = "", password: bool = False) -> Adw.EntryRow:
@@ -464,17 +471,22 @@ class ContactPicker(BaseDialog):
         g = self.group()
         g.add(self.search)
         self.list_group = self.group()
+        self._rows: list[Gtk.Widget] = []
         self._fill()
 
     def _fill(self) -> None:
-        widgets.clear(self.list_group)
+        for r in self._rows:
+            self.list_group.remove(r)
+        self._rows.clear()
         text = self.search.get_text().strip().lower()
         contacts = [c for c in self.core.contacts.for_account(self.acc.id) if c.in_roster]
         if text:
             contacts = [c for c in contacts if text in c.name.lower() or text in c.jid.lower()]
         contacts.sort(key=lambda c: (c.show == "offline", c.name.lower()))
         if not contacts:
-            self.list_group.add(Adw.ActionRow(title=_("No contacts found")))
+            row = Adw.ActionRow(title=_("No contacts found"))
+            self.list_group.add(row)
+            self._rows.append(row)
             return
         for c in contacts:
             row = Adw.ActionRow(title=widgets.escape(c.name), subtitle=c.jid)
@@ -485,6 +497,7 @@ class ContactPicker(BaseDialog):
             row.set_activatable(True)
             row.connect("activated", lambda _r, b=check: b.set_active(not b.get_active()))
             self.list_group.add(row)
+            self._rows.append(row)
 
     def _toggle(self, jid: str, selected: bool) -> None:
         if selected:
@@ -562,6 +575,7 @@ class QuickSwitcher:
         box.append(sc)
         view.set_content(box)
         self.dialog.set_child(view)
+        lifetime.forget_when_closed(self, self.dialog.widget)
         self._fill()
 
     def _candidates(self):

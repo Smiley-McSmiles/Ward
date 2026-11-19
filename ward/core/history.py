@@ -49,10 +49,15 @@ class HistoryService:
     def query(self, queryid: str) -> Query | None:
         return self.queries.get(queryid)
 
-    @staticmethod
-    def supported(session, archive: str | None = None) -> bool:
-        feats = session.account_features if archive in (None, session.jid) else \
-            session.services.get(archive, {}).get("features", set())
+    def supported(self, session, archive: str | None = None) -> bool:
+        if archive in (None, session.jid):
+            feats = session.account_features
+        else:
+            feats = session.services.get(archive, {}).get("features", set())
+            if NS_MAM not in feats:
+                room = self.core.muc.rooms.get((session.account.id, util.bare(archive)))
+                if room is not None:
+                    feats = room.features
         return NS_MAM in feats
 
     async def _page(self, session, archive: str | None, mode: str, muc: bool = False, with_: str = "",

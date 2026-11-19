@@ -130,8 +130,13 @@ async def probe_certificate(host: str, port: int, direct_tls: bool, domain: str,
     if direct_tls:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(ssl=ctx, server_hostname=domain, **kw),
                                                 CONNECT_TIMEOUT)
-    else:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(**kw), CONNECT_TIMEOUT)
+        try:
+            der = writer.get_extra_info("ssl_object").getpeercert(True)
+        finally:
+            writer.close()
+        return der
+    reader, writer = await asyncio.wait_for(asyncio.open_connection(**kw), CONNECT_TIMEOUT)
+    try:
         writer.write(("<?xml version='1.0'?><stream:stream to='%s' xmlns='jabber:client' "
                       "xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>" % domain).encode())
         await writer.drain()
@@ -142,7 +147,6 @@ async def probe_certificate(host: str, port: int, direct_tls: bool, domain: str,
                 raise OSError("the server closed the connection")
             buf += chunk
         if b"starttls" not in buf:
-            writer.close()
             raise OSError("the server does not offer encryption (STARTTLS)")
         writer.write(b"<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>")
         await writer.drain()
@@ -153,7 +157,6 @@ async def probe_certificate(host: str, port: int, direct_tls: bool, domain: str,
                 raise OSError("STARTTLS failed")
             buf += chunk
         await asyncio.wait_for(writer.start_tls(ctx, server_hostname=domain), CONNECT_TIMEOUT)
-    try:
         der = writer.get_extra_info("ssl_object").getpeercert(True)
     finally:
         writer.close()
@@ -202,6 +205,7 @@ class AccountSession(GObject.Object):
         self._negotiation_timer: asyncio.TimerHandle | None = None
         self._attempt = 0
         self._candidate: resolver.Candidate | None = None
+        self._active_proxy: proxymod.Proxy | None = None
         self._pinned_fp: str | None = None       # set while connecting with a pinned certificate
         self._cert_error: CertInfo | None = None
         self._last_error = ""
@@ -399,6 +403,7 @@ class AccountSession(GObject.Object):
             if not self.wanted:
                 return
             self._candidate = cand
+            self._active_proxy = prox if isinstance(prox, proxymod.Proxy) else None
             self._direct = cand.direct_tls
             self.account.step = "connecting"
             try:
@@ -515,7 +520,7 @@ class AccountSession(GObject.Object):
         if cand is None:
             return
         self._cert_error = CertInfo(cand.host, cand.port, self.domain, "", error=_ssl_error_text(exc))
-        aio.spawn(self._certificate_failed(cand, None, _ssl_error_text(exc)))
+        aio.spawn(self._certificate_failed(cand, self._active_proxy, _ssl_error_text(exc)))
 
     def _slixmpp_reconnect(self, wait: float = 2.0, reason: str = "Reconnecting") -> None:
         log.info("%s: reconnecting (%s)", self.jid, reason)

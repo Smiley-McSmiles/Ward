@@ -352,7 +352,8 @@ class MucService(GObject.Object):
             if room.joining is not None and not room.joining.done():
                 room.joining.set_exception(MucError(cond, text))
             return
-        is_self = 110 in status or (nick == room.nick and room.joining is not None)
+        is_self = 110 in status or (nick == room.nick and (room.joining is not None or (
+            ptype == "unavailable" and room.joined)))
         occ_el = el.find("{%s}occupant-id" % NS_OCCUPANT_ID)
         occ_id = occ_el.get("id", "") if occ_el is not None else ""
         if ptype == "unavailable":
@@ -437,6 +438,9 @@ class MucService(GObject.Object):
             room.initial = False
             if room.joining is not None and not room.joining.done():
                 room.joining.set_result(True)
+            session = self.core.sessions.get(room.account_id)
+            if session is not None and session.online:
+                aio.spawn(self.core.messaging.flush_outbox(session))
         room.chat.member_count = room.occupants.get_n_items()
         self.emit("occupants-changed", room.chat)
 
@@ -540,6 +544,8 @@ class MucService(GObject.Object):
             row = await self.core.messaging._find(chat, pm.retraction_of)
             if row is not None and (row["occupant_id"] == occ_id if occ_id else row["sender"] == nick):
                 await self.core.messaging.retract_row(chat, row["id"], 1)
+            elif row is None:
+                await self.core.messaging._pending(chat, pm.retraction_of, "retraction", {"mode": 1})
             return
         if pm.reactions is not None:
             await self.core.messaging._apply_reactions(chat, pm.reactions[0], sender if not ours else
@@ -591,6 +597,9 @@ class MucService(GObject.Object):
     async def on_mediated_invite(self, session, pm: ParsedMessage) -> None:
         mu = pm.muc_user
         if mu is None or not mu.invite_from:
+            return
+        c = self.core.roster.contacts.get(session.account.id, util.bare(mu.invite_from))
+        if c is not None and c.blocked:
             return
         self.emit("invite", session.account, {"room": util.bare(pm.from_jid), "from": util.bare(mu.invite_from),
                                               "reason": mu.invite_reason, "password": mu.password})

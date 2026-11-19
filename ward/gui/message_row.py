@@ -101,6 +101,8 @@ class MessageRow(Gtk.Box):
             att.disconnect(h)
         self._handlers = []
         self._att_handlers = []
+        self._expanded = False
+        self._rebuild_queued = False
         self.msg = None
 
     def _changed(self, *_a) -> None:
@@ -112,6 +114,8 @@ class MessageRow(Gtk.Box):
         GLib.idle_add(self._rebuild)
 
     def _rebuild(self) -> bool:
+        if not hasattr(self, "msg"):
+            return False
         self._rebuild_queued = False
         if self.msg is not None:
             self._build(self.view.previous(self.msg))
@@ -134,7 +138,8 @@ class MessageRow(Gtk.Box):
         GLib.idle_add(self._reveal_content)
 
     def _reveal_content(self) -> bool:
-        self.reveal.set_reveal_child(True)
+        if hasattr(self, "reveal"):
+            self.reveal.set_reveal_child(True)
         return False
 
     # ------------------------------------------------------------------ building
@@ -187,8 +192,9 @@ class MessageRow(Gtk.Box):
         if layout == "compact":
             self._build_compact(m)
             return
+        chat_type = self.view.chat.type if self.view.chat is not None else "chat"
         show_avatar = settings["appearance.avatars"] == "always" or (
-            settings["appearance.avatars"] == "groups" and self.view.chat.type == "groupchat")
+            settings["appearance.avatars"] == "groups" and chat_type == "groupchat")
         if show_avatar or layout == "bubbles":
             if not cont and (show_avatar and not (layout == "bubbles" and m.outgoing)):
                 av = widgets.Avatar(36, self.view.display_name(m), self.view.avatar_path(m))
@@ -217,7 +223,7 @@ class MessageRow(Gtk.Box):
         else:
             self.row.append(col)
         bubbles = layout == "bubbles"
-        if not cont and (not bubbles or (self.view.chat.type == "groupchat" and not m.outgoing)):
+        if not cont and (not bubbles or (chat_type == "groupchat" and not m.outgoing)):
             col.append(self._header(m, with_meta=not bubbles))
         if m.reply_to and m.retracted == 0:
             col.append(self._reply_preview(m))
@@ -277,7 +283,8 @@ class MessageRow(Gtk.Box):
     def _name_markup(self, m: MessageItem) -> str:
         name = self.view.display_name(m)
         if self.view.settings["appearance.nick_colors"]:
-            key = m.sender_jid or m.sender if self.view.chat.type != "groupchat" else m.sender
+            chat_type = self.view.chat.type if self.view.chat is not None else "chat"
+            key = m.sender_jid or m.sender if chat_type != "groupchat" else m.sender
             col = colors.hex_color(key or name, style.is_dark())
             return "<span foreground='%s'>%s</span>" % (col, widgets.escape(name))
         return widgets.escape(name)

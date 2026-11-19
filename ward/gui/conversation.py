@@ -481,7 +481,8 @@ class ConversationView(Gtk.Box):
         self._set_jump(not self._stick)
         if self._stick and self.chat is not None and self.chat.unread and self.core.window_focused:
             self.core.set_active_chat(self.chat)
-        if adj.get_value() < adj.get_page_size() * 0.6 and self.ml is not None and self.ml.has_older:
+        if adj.get_value() < adj.get_page_size() * 0.6 and self.ml is not None and self.ml.has_older and \
+                not self._loading_older:
             widgets.run(self, self._load_older())
 
     def _set_jump(self, visible: bool) -> None:
@@ -520,7 +521,7 @@ class ConversationView(Gtk.Box):
         return False
 
     def _settle_bottom(self) -> bool:
-        if self._stick:
+        if getattr(self, "_stick", False):
             self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
             self._set_jump(False)
         return False
@@ -847,7 +848,7 @@ class ConversationView(Gtk.Box):
         self._scroll_to_index(self.ml.index(target))
 
         def clear():
-            if self.highlight_id == target.id:
+            if getattr(self, "highlight_id", 0) == target.id:
                 self.highlight_id = 0
                 if target.id in self.rows:
                     self.rows[target.id]._changed()
@@ -1032,12 +1033,12 @@ class ConversationView(Gtk.Box):
 
         async def go():
             await self.core.chats.clear_history(chat)
-            if check.get_active() and chat.type == "chat" and self.core.omemo is not None:
+            if check.get_active() and chat.type == "chat":
                 session = self.core.sessions.get(chat.account_id)
-                if session is not None and session.online:
+                if session is not None and session.online and self.core.omemo is not None:
                     await self.core.omemo.forget_contact(session, chat.jid)
-                    if self.core.pgp is not None:
-                        await self.core.pgp.forget_contact(chat.account_id, chat.jid)
+                if self.core.pgp is not None:
+                    await self.core.pgp.forget_contact(chat.account_id, chat.jid)
         compat.alert(self, _("Clear history?"), _("Messages are deleted from this computer only."),
                      [("cancel", _("Cancel"), ""), ("clear", _("Clear"), "destructive")],
                      lambda r: r == "clear" and widgets.run(self, go()), extra=box)
@@ -1182,7 +1183,8 @@ class ConversationView(Gtk.Box):
         GLib.idle_add(self._reveal_chat)
 
     def _reveal_chat(self) -> bool:
-        self.reveal.set_reveal_child(True)
+        if hasattr(self, "reveal"):
+            self.reveal.set_reveal_child(True)
         return False
 
     def _on_setting(self, _s, key: str) -> None:

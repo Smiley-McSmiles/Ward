@@ -225,7 +225,8 @@ class Composer(Gtk.Box):
             self.core.chats.set_draft(self.chat, self._text())
 
     def grab_focus_text(self) -> bool:
-        self.text.grab_focus()
+        if hasattr(self, "text"):
+            self.text.grab_focus()
         return False
 
     def _text(self) -> str:
@@ -251,6 +252,8 @@ class Composer(Gtk.Box):
 
     # ================================================================== typing
     def _fit(self) -> bool:
+        if not hasattr(self, "scroller"):
+            return False
         width = self.scroller.get_width()
         if width <= 0:
             return False
@@ -305,6 +308,8 @@ class Composer(Gtk.Box):
         self._update_completion()
 
     def _paused(self) -> bool:
+        if not hasattr(self, "chat"):
+            return False
         self._pause_timer = 0
         self._set_state("paused")
         return False

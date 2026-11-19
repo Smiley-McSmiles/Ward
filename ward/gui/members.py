@@ -62,6 +62,8 @@ class MembersPanel(Gtk.Box):
             self._refresh_pending = GLib.timeout_add(250, self._refresh_later)
 
     def _refresh_later(self) -> bool:
+        if not hasattr(self, "list"):
+            return False
         self._refresh_pending = 0
         self.refresh()
         return False

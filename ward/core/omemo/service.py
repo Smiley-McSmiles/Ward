@@ -729,7 +729,8 @@ class OmemoService(GObject.Object):
             targets.add(acc.jid)
         for jid in targets | {acc.jid}:
             await self.refresh(session, jid)
-            await self.review(session, jid)
+            if (acc.id, jid) not in self._devices:
+                await self.review(session, jid)
         inside, outside = stanzas.split_content(el)
         body = el.findtext("{%s}body" % stanzas.NS_CLIENT)
         to_jid = chat.jid
@@ -756,6 +757,10 @@ class OmemoService(GObject.Object):
         except NoEligibleDevices as e:
             if targets == {acc.jid}:
                 raise OnlyThisDevice() from None
+            if not recipients and chat.type == "groupchat":
+                raise EncryptionBlocked(
+                    _("No other members in this group have an encryption key yet. "
+                      "They need to open the group first, or turn encryption off for this group.")) from None
             if body is None and self.legacy_enabled and force != "omemo2":
                 return el, ""       # a reaction for legacy OMEMO users: see below
             names = ", ".join(sorted(getattr(e, "bare_jids", recipients) or recipients))

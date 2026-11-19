@@ -9,7 +9,7 @@ from gi.repository import Adw, GLib, Gtk, Pango
 
 from ..core.models import AccountItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .dialogs import BaseDialog, online_session
 
 MAX_LINES = 4000
@@ -105,6 +105,7 @@ class XmlConsole(Adw.Window):
 
     def _on_close(self, *_a) -> bool:
         self._detach()
+        lifetime.dismantle(self)
         return False
 
     def _on_pause(self, button: Gtk.ToggleButton) -> None:

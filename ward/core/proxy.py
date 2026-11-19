@@ -91,6 +91,8 @@ _SOCKS_ERRORS = {1: "general failure", 2: "not allowed by ruleset", 3: "network 
 
 
 def _http_request(host: str, port: int, proxy: Proxy) -> bytes:
+    if any(c in host for c in ("\r", "\n", " ", "\t")):
+        raise ProxyError("invalid proxy target host")
     req = "CONNECT %s:%d HTTP/1.1\r\nHost: %s:%d\r\n" % (host, port, host, port)
     if proxy.user:
         cred = base64.b64encode(("%s:%s" % (proxy.user, proxy.password)).encode()).decode()
@@ -128,6 +130,8 @@ async def open_socket(proxy: Proxy, host: str, port: int, timeout: float = 30) -
                 raise ProxyError("the SOCKS5 proxy refused our authentication methods")
             if method == 2:
                 u, p = proxy.user.encode(), proxy.password.encode()
+                if len(u) > 255 or len(p) > 255:
+                    raise ProxyError("SOCKS5 user name or password is too long")
                 await loop.sock_sendall(sock, b"\x01" + bytes([len(u)]) + u + bytes([len(p)]) + p)
                 _v, status = await recv_exact(2)
                 if status != 0:
@@ -184,6 +188,8 @@ def open_socket_sync(proxy: Proxy, host: str, port: int, timeout: float = 30) ->
                 raise ProxyError("the SOCKS5 proxy refused our authentication methods")
             if method == 2:
                 u, p = proxy.user.encode(), proxy.password.encode()
+                if len(u) > 255 or len(p) > 255:
+                    raise ProxyError("SOCKS5 user name or password is too long")
                 sock.sendall(b"\x01" + bytes([len(u)]) + u + bytes([len(p)]) + p)
                 if recv_exact(2)[1] != 0:
                     raise ProxyError("the SOCKS5 proxy rejected the user name or password")
@@ -201,6 +207,8 @@ def open_socket_sync(proxy: Proxy, host: str, port: int, timeout: float = 30) ->
                 if not chunk:
                     raise ProxyError("proxy closed the connection")
                 buf += chunk
+                if len(buf) > 16384:
+                    raise ProxyError("bad answer from the HTTP proxy")
             if buf.split(b"\r\n", 1)[0].split(b" ")[1:2] != [b"200"]:
                 raise ProxyError("HTTP proxy: %s" % buf.split(b"\r\n", 1)[0].decode("latin-1"))
         return sock

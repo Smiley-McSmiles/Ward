@@ -202,7 +202,10 @@ async def test_service(service: Service, settings, timeout: float = 5):
     from . import stun
 
     if service.type == "stun":
-        return await stun.binding(service, timeout)
+        try:
+            return await stun.binding(service, timeout)
+        except Exception as e:
+            return stun.Binding(False, message=str(e) or e.__class__.__name__)
     username, password = credentials_for(service, settings)
     try:
         return await stun.allocate(service, username, password, timeout)

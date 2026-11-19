@@ -83,8 +83,12 @@ class _Stream:
             chunk = await asyncio.wait_for(self.reader.read(65536), timeout)
             if not chunk:
                 raise RegistrationError(_("The server closed the connection"))
-            self.parser.feed(chunk)
-            for ev, el in self.parser.read_events():
+            try:
+                self.parser.feed(chunk)
+                events = self.parser.read_events()
+            except ET.ParseError as e:
+                raise RegistrationError(_("The server sent invalid XML")) from e
+            for ev, el in events:
                 if ev == "start":
                     self.depth += 1
                 elif ev == "end":
@@ -160,7 +164,9 @@ async def _connect(domain: str, options: dict, pinned_sha256: str = "") -> _Stre
         except ssl.SSLCertVerificationError as e:
             await stream.close()
             try:
-                der = await probe_certificate(cand.host, cand.port, cand.direct_tls, domain)
+                factory = (lambda c=cand, p=prox: proxymod.open_socket(p, c.host, c.port)) if isinstance(
+                    prox, proxymod.Proxy) else None
+                der = await probe_certificate(cand.host, cand.port, cand.direct_tls, domain, factory)
                 info = cert_info_from_der(der, cand.host, cand.port, domain, getattr(e, "verify_message", str(e)))
             except Exception:
                 info = None

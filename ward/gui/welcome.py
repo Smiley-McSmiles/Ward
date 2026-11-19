@@ -321,6 +321,8 @@ class WelcomePage(Gtk.Box):
         button = Gtk.Button(label=_("Create account"), css_classes=["pill", "suggested-action"],
                             halign=Gtk.Align.CENTER)
         box.append(button)
+        self.progress = Gtk.Label(css_classes=["dim-label"], wrap=True)
+        box.append(self.progress)
 
         def create(*_a):
             username = user.get_text().strip().lower()
@@ -351,8 +353,7 @@ class WelcomePage(Gtk.Box):
             def failed(e):
                 button.set_sensitive(True)
                 self._failed(e)
-            self.progress = Gtk.Label(css_classes=["dim-label"], wrap=True)
-            box.append(self.progress)
+            self.progress.set_text("")
             widgets.run(self, go(), on_error=failed)
         button.connect("clicked", create)
         return self._page(rf.domain, box, "register")

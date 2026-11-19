@@ -137,6 +137,7 @@ class CallWindow(Adw.Window):
         self.core = ui.core
         self.call = call
         self._timer = 0
+        self._ms_handlers: list[tuple[object, int]] = []
         name = self.core.names.contact_name(call.account_id, call.peer) or call.peer
         self.set_title(name)
         contact = self.core.roster.contacts.get(call.account_id, call.peer)
@@ -252,7 +253,7 @@ class CallWindow(Adw.Window):
     def _media(self) -> None:
         ms = self.call.ms
         if ms is not None:
-            ms.connect("remote-video", lambda _m, paintable: self._show_media())
+            self._ms_handlers.append((ms, ms.connect("remote-video", lambda _m, paintable: self._show_media())))
 
     def _show_media(self) -> None:
         ms = self.call.ms
@@ -325,5 +326,8 @@ class CallWindow(Adw.Window):
         for h in self._handlers:
             self.call.disconnect(h)
         self._handlers = []
+        for ms, h in self._ms_handlers:
+            ms.disconnect(h)
+        self._ms_handlers = []
         self.remote.set_paintable(None)
         self.local.set_paintable(None)

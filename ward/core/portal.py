@@ -108,13 +108,19 @@ def _request(bus, proxy, method: str, parameters, timeout: int = 180):
         result.update(values)
         loop.quit()
 
+    def on_timeout() -> bool:
+        nonlocal timeout_id
+        timeout_id = 0
+        loop.quit()
+        return False
+
     subscription = bus.signal_subscribe(PORTAL, REQUEST, "Response", path, None,
                                         Gio.DBusSignalFlags.NONE, on_response, None)
     timeout_id = 0
     try:
         proxy.call_sync(method, parameters, Gio.DBusCallFlags.NONE, timeout * 1000, None)
         if not response["done"]:
-            timeout_id = GLib.timeout_add_seconds(timeout, loop.quit)
+            timeout_id = GLib.timeout_add_seconds(timeout, on_timeout)
             loop.run()
     finally:
         if timeout_id:
@@ -147,28 +153,32 @@ def screencast(parent_window: str | None = None) -> tuple[int, int, str]:
     if not session:
         raise PortalError("The screen-sharing portal did not create a session")
 
-    _request(bus, proxy, "SelectSources", GLib.Variant("(oa{sv})", (session, {
-        "handle_token": GLib.Variant("s", _token()),
-        "types": GLib.Variant("u", 3),             # monitors and windows
-        "multiple": GLib.Variant("b", False),
-        "cursor_mode": GLib.Variant("u", 2),       # embedded cursor
-    })))
-
-    started = _request(bus, proxy, "Start", GLib.Variant("(osa{sv})", (session, parent_window, {
-        "handle_token": GLib.Variant("s", _token()),
-    })))
-    streams = started.get("streams") or []
-    if not streams:
-        raise PortalError("The screen-sharing portal returned no stream")
-    node = int(streams[0][0])
-
     try:
-        variant, fds = proxy.call_with_unix_fd_list_sync(
-            "OpenPipeWireRemote", GLib.Variant("(oa{sv})", (session, {})), Gio.DBusCallFlags.NONE, -1, None, None)
-        index = variant.unpack()[0]
-        fd = os.dup(fds.get(index))
-    except (GLib.Error, TypeError, IndexError) as e:
-        raise PortalError("Could not open the PipeWire screen stream") from e
+        _request(bus, proxy, "SelectSources", GLib.Variant("(oa{sv})", (session, {
+            "handle_token": GLib.Variant("s", _token()),
+            "types": GLib.Variant("u", 3),             # monitors and windows
+            "multiple": GLib.Variant("b", False),
+            "cursor_mode": GLib.Variant("u", 2),       # embedded cursor
+        })))
+
+        started = _request(bus, proxy, "Start", GLib.Variant("(osa{sv})", (session, parent_window, {
+            "handle_token": GLib.Variant("s", _token()),
+        })))
+        streams = started.get("streams") or []
+        if not streams:
+            raise PortalError("The screen-sharing portal returned no stream")
+        node = int(streams[0][0])
+
+        try:
+            variant, fds = proxy.call_with_unix_fd_list_sync(
+                "OpenPipeWireRemote", GLib.Variant("(oa{sv})", (session, {})), Gio.DBusCallFlags.NONE, -1, None, None)
+            index = variant.unpack()[0]
+            fd = fds.get(index)
+        except (GLib.Error, TypeError, IndexError) as e:
+            raise PortalError("Could not open the PipeWire screen stream") from e
+    except BaseException:
+        close_session(session)
+        raise
     return fd, node, session
 
 

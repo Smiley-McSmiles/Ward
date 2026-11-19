@@ -335,13 +335,19 @@ class PgpService(GObject.Object):
         except (ValueError, ET.ParseError) as e:
             inc.decrypt_error = _("Rejected an OpenPGP message: %s") % e
             return
+        if res.key_missing and sender != acc.jid:
+            await self.refresh(session, sender)
+            try:
+                res2 = await aio.run_in_thread(self.engine().decrypt_verify, data)
+            except (ValueError, gnupg.GpgError):
+                res2 = None
+            if res2 is not None and not res2.key_missing:
+                res = res2
         if not res.signature_ok:
             inc.trust = "distrusted" if not res.key_missing else "undecided"
         elif sender == acc.jid and res.signer == self.own_key(acc.id):
             inc.trust = "verified"
         else:
-            if res.key_missing:
-                await self.refresh(session, sender)
             rows = await self.core.db.fetchall("SELECT * FROM pgp_keys WHERE account_id = ? AND jid = ?",
                                                (acc.id, sender))
             match = [r for r in rows if r["fingerprint"] == res.signer]
