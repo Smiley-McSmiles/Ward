@@ -69,6 +69,8 @@ class ConversationView(Gtk.Box):
         self._code_toast: Adw.Toast | None = None
         self._last_value = 0.0          # the adjustment, to tell the user scrolling from the list relaying out
         self._unstick_source = 0        # the one pending "did the user scroll away?" check
+        self._scroll_idle = 0
+        self._settle_sources: list[int] = []
         self._jump_visible = False
         self._auto_until = 0            # a programmatic scroll: its layout settling is not the user scrolling
         self._layout_until = 0          # rows being rebuilt: their measurement moves the view too
@@ -386,12 +388,13 @@ class ConversationView(Gtk.Box):
             idx = ml.index(ml.get(self.first_unread_id))
             GLib.idle_add(self._scroll_to_index, idx, False)
         else:
-            GLib.idle_add(self.scroll_to_bottom)
+            self._queue_scroll_to_bottom()
         self.core.set_active_chat(chat)
         if len(ml) < 30 and ml.has_older:
             await self._load_older()
 
     def _detach(self) -> None:
+        self._cancel_scroll_timers()
         for obj, h in self._chat_handlers:
             try:
                 obj.disconnect(h)
@@ -432,7 +435,7 @@ class ConversationView(Gtk.Box):
         self._update_empty()
         if added and pos + added == store.get_n_items():
             newest = store.get_item(store.get_n_items() - 1)
-            if newest is not None and newest.outgoing:
+            if (newest is not None and newest.outgoing) or self._at_bottom():
                 self._stick = True
             if self._stick:
                 # a message sent or received while the list follows the bottom slides up into place
@@ -442,7 +445,7 @@ class ConversationView(Gtk.Box):
                         row.animate_in()
                     else:
                         self._animate_ids.add(newest.id)
-                GLib.idle_add(self.scroll_to_bottom)
+                self._queue_scroll_to_bottom()
             else:
                 self._set_jump(True)
 
@@ -472,7 +475,10 @@ class ConversationView(Gtk.Box):
         now = GLib.get_monotonic_time()
         if self._at_bottom():
             self._stick = True
-        elif value < previous - 1 and now > self._auto_until and not self._unstick_source:
+            if self._unstick_source:
+                GLib.source_remove(self._unstick_source)
+                self._unstick_source = 0
+        elif value < previous - 1 and now > self._auto_until and now > self._layout_until and not self._unstick_source:
             # One check at a time: this runs for every pixel of a smooth scroll, and it used to queue a
             # timer per event, all of them asking the same question.
             self._unstick_source = GLib.timeout_add(120, self._maybe_unstick)
@@ -507,21 +513,45 @@ class ConversationView(Gtk.Box):
         else:
             self._set_jump(not self._at_bottom())
 
+    def _cancel_scroll_timers(self) -> None:
+        if getattr(self, "_scroll_idle", 0):
+            GLib.source_remove(self._scroll_idle)
+            self._scroll_idle = 0
+        if getattr(self, "_unstick_source", 0):
+            GLib.source_remove(self._unstick_source)
+            self._unstick_source = 0
+        for sid in getattr(self, "_settle_sources", ()):
+            GLib.source_remove(sid)
+        self._settle_sources = []
+
+    def _queue_scroll_to_bottom(self) -> None:
+        if not self._scroll_idle:
+            self._scroll_idle = GLib.idle_add(self.scroll_to_bottom)
+
     def scroll_to_bottom(self) -> bool:
+        self._scroll_idle = 0
+        if not hasattr(self, "vadj"):
+            return False
+        self._cancel_scroll_timers()
         self._stick = True
         self._auto_until = GLib.get_monotonic_time() + 400_000     # the list settles within this
         n = self.ml.store.get_n_items() if self.ml is not None else 0
-        if n:
+        if n and not self._at_bottom():
             self.list.scroll_to(n - 1, Gtk.ListScrollFlags.NONE, None)
         self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
         self._set_jump(False)
         # once more after the new rows have their real heights
         for delay in (50, 250):
-            GLib.timeout_add(delay, self._settle_bottom)
+            self._settle_sources.append(GLib.timeout_add(delay, self._settle_bottom))
         return False
 
     def _settle_bottom(self) -> bool:
-        if getattr(self, "_stick", False):
+        src = GLib.main_current_source()
+        if src is not None:
+            sid = src.get_id()
+            if sid in getattr(self, "_settle_sources", ()):
+                self._settle_sources.remove(sid)
+        if getattr(self, "_stick", False) and hasattr(self, "vadj"):
             self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
             self._set_jump(False)
         return False

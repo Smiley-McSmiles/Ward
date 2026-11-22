@@ -47,9 +47,11 @@ class MessageRow(Gtk.Box):
         self._handlers: list[int] = []
         self._att_handlers: list[tuple[AttachmentItem, int]] = []
         self._rebuild_queued = False
+        self._reveal_idle = 0
         # the content is wrapped so a newly sent or received message can slide up into its place
         self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE, transition_duration=200,
                                    overflow=Gtk.Overflow.HIDDEN)
+        self.reveal.connect("notify::child-revealed", self._on_revealed)
         self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.reveal.set_child(self.content)
         self.reveal.set_reveal_child(True)
@@ -103,6 +105,9 @@ class MessageRow(Gtk.Box):
         self._att_handlers = []
         self._expanded = False
         self._rebuild_queued = False
+        if self._reveal_idle:
+            GLib.source_remove(self._reveal_idle)
+            self._reveal_idle = 0
         self.msg = None
 
     def _changed(self, *_a) -> None:
@@ -132,15 +137,23 @@ class MessageRow(Gtk.Box):
             self.reveal.set_reveal_child(True)
             return
         # collapse without animating that, then reveal in the next frame so the slide starts at the bottom
+        if self._reveal_idle:
+            GLib.source_remove(self._reveal_idle)
+            self._reveal_idle = 0
         self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
         self.reveal.set_reveal_child(False)
         self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
-        GLib.idle_add(self._reveal_content)
+        self._reveal_idle = GLib.idle_add(self._reveal_content)
 
     def _reveal_content(self) -> bool:
-        if hasattr(self, "reveal"):
+        self._reveal_idle = 0
+        if hasattr(self, "reveal") and self.msg is not None:
             self.reveal.set_reveal_child(True)
         return False
+
+    def _on_revealed(self, *_a) -> None:
+        if hasattr(self, "reveal") and self.reveal.get_child_revealed() and getattr(self.view, "_stick", False):
+            self.view._settle_bottom()
 
     # ------------------------------------------------------------------ building
     def _build(self, prev: MessageItem | None) -> None:
