@@ -4,8 +4,9 @@ registration with its form and CAPTCHA), or use an invite link."""
 from __future__ import annotations
 
 import logging
+import weakref
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, GLib, GObject, Gtk
 
 from .. import APP_ID, APP_NAME, util
 from ..core import register
@@ -33,8 +34,23 @@ class WelcomePage(Gtk.Box):
         self.append(self.toasts)
         self._acc = None
         self._acc_handlers: list[int] = []
+        self._closed = False
         self.preauth = ""
         self.nav.add(self._start_page())
+        ref = weakref.ref(self)
+        lifetime.when_unrooted(self, lambda: (p := ref()) is not None and p._cleanup())
+        if dialog is not None:
+            dialog.on_closed(lambda: (p := ref()) is not None and p._on_dialog_closed())
+            lifetime.forget_when_closed(self, dialog.widget)
+
+    def _on_dialog_closed(self) -> None:
+        self._closed = True
+        self._cleanup()
+
+    def _cleanup(self) -> None:
+        if getattr(self, "_acc", None) is not None:
+            self._disconnect(self._acc)
+            self._acc = None
 
     # ================================================================== pages
     def _page(self, title: str, child: Gtk.Widget, tag: str, action: Gtk.Widget | None = None) -> Adw.NavigationPage:
@@ -94,7 +110,16 @@ class WelcomePage(Gtk.Box):
         box.append(self.signin_button)
         self.progress = Gtk.Label(css_classes=["dim-label"], wrap=True, justify=Gtk.Justification.CENTER)
         box.append(self.progress)
-        GLib.idle_add(lambda: (self.jid_row if not jid else self.pw_row).grab_focus() and False)
+        ref = weakref.ref(self)
+
+        def focus_entry() -> bool:
+            p = ref()
+            if p is not None and not getattr(p, "_closed", False) and hasattr(p, "jid_row") \
+                    and p.get_root() is not None:
+                (p.jid_row if not jid else p.pw_row).grab_focus()
+            return False
+
+        GLib.idle_add(focus_entry)
         return self._page(_("Sign in"), box, "signin")
 
     def _connection_group(self) -> Adw.PreferencesGroup:
@@ -154,8 +179,13 @@ class WelcomePage(Gtk.Box):
         widgets.run(self, self._add_account(jid, pw, opts), on_error=self._failed)
 
     async def _add_account(self, jid: str, pw: str, opts: dict) -> None:
+        if self._acc is not None:
+            self._disconnect(self._acc)
+            self._acc = None
         mode = opts.pop("store_password", "keyring")
         acc = await self.core.add_account(jid, pw, mode, dict(opts, store_password=mode), connect=False)
+        if getattr(self, "_closed", False) or not hasattr(self, "core"):
+            return
         self._acc = acc
         self._acc_handlers = [lifetime.watch(acc, "notify::state", self._on_state),
                               lifetime.watch(acc, "notify::step", self._on_state)]
@@ -189,7 +219,8 @@ class WelcomePage(Gtk.Box):
 
     def _disconnect(self, acc) -> None:
         for h in self._acc_handlers:
-            acc.disconnect(h)
+            if GObject.signal_handler_is_connected(acc, h):
+                acc.disconnect(h)
         self._acc_handlers = []
 
     def _done(self, acc) -> None:
@@ -235,11 +266,14 @@ class WelcomePage(Gtk.Box):
         widgets.run(self, register.fetch_providers(), done=lambda ps: self._fill_providers(
             [p for p in ps if p.in_band is not False and p.category in ("", "A", "B")][:20] or
             [register.Provider(d) for d in SUGGESTED]), on_error=lambda _e: self._fill_providers(
-            [register.Provider(d) for d in SUGGESTED]))
+            [register.Provider(d) for d in SUGGESTED]), loads=True)
         return self._page(_("Create an account"), box, "servers")
 
     def _fill_providers(self, providers, loading: bool = False) -> None:
+        if getattr(self, "_closed", False) or not hasattr(self, "providers"):
+            return
         for r in self._provider_rows:
+            lifetime.release(r)
             self.providers.remove(r)
         self._provider_rows = []
         for p in providers:
@@ -250,7 +284,8 @@ class WelcomePage(Gtk.Box):
                 sub.append(_("history kept %d days") % p.archive_days)
             if p.locations:
                 sub.append(", ".join(p.locations))
-            row = Adw.ActionRow(title=p.domain, subtitle=" · ".join(sub), activatable=True)
+            row = Adw.ActionRow(title=widgets.escape(p.domain), subtitle=widgets.escape(" · ".join(sub)),
+                                activatable=True)
             row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
             row.connect("activated", lambda _r, d=p.domain: self._get_form(d))
             self.providers.add(row)

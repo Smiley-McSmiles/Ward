@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import logging
 import os
+import weakref
 from collections import OrderedDict
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from .. import deps, paths, schema, util
 from ..core.models import AccountItem
@@ -145,7 +146,8 @@ def _sound_row(spec: schema.Spec, title: str, value, on_change) -> Gtk.Widget:
             if f is not None and f.get_path():
                 set_value(f.get_path())
                 play()
-        dialog.open(row.get_root(), None, done)
+        root = row.get_root()
+        dialog.open(root if isinstance(root, Gtk.Window) else None, None, done)
 
     preview = Gtk.Button(icon_name="media-playback-start-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
                          tooltip_text=_("Play"))
@@ -302,10 +304,16 @@ class Preferences:
         self._account_rows: list[Gtk.Widget] = []
         self._fill_accounts()
         h = self.core.accounts.store.connect("items-changed", lambda *_: self._fill_accounts())
-        lifetime.on_closed(self.d, lambda: self.core.accounts.store.disconnect(h))
+
+        def disconnect_accounts() -> None:
+            if GObject.signal_handler_is_connected(self.core.accounts.store, h):
+                self.core.accounts.store.disconnect(h)
+
+        lifetime.on_closed(self.d, disconnect_accounts)
 
     def _fill_accounts(self) -> None:
         for r in self._account_rows:
+            lifetime.release(r)
             self.accounts_group.remove(r)
         self._account_rows = []
         for acc in self.core.accounts.list():
@@ -383,6 +391,8 @@ class Preferences:
         async def sizes():
             usage = await self.core.files.cache_usage()
             size = await self.core.db.size()
+            if cache.get_root() is None:
+                return
             cache.set_subtitle(util.human_size(usage))
             db.set_subtitle(util.human_size(size))
 
@@ -446,8 +456,8 @@ class AccountPage:
         self.connect_button.connect("clicked", lambda *_: self._toggle_connection())
         state.add_suffix(self.connect_button)
         top.add(state)
-        h = acc.connect("notify::state", lambda *_: self._update_state())
-        lifetime.on_closed(prefs.d, lambda: acc.disconnect(h))
+        self_ref = weakref.ref(self)
+        h = acc.connect("notify::state", lambda *_: (ap := self_ref()) is not None and ap._update_state())
         self._update_state()
 
         specs = [(k, s) for k, s in schema.ACCOUNT_SPECS.items() if s.type != "json" and k not in ("pgp_key",)]
@@ -476,6 +486,27 @@ class AccountPage:
             r.connect("activated", lambda *_a, cb=cb: cb())
             actions.add(r)
         self.page = compat.subpage(acc.jid, page)
+        acc_ref = weakref.ref(acc)
+        page_ref = weakref.ref(self.page)
+        state_hid = [h]
+
+        def cleanup_page() -> None:
+            hid = state_hid[0]
+            if not hid:
+                return
+            state_hid[0] = 0
+            a = acc_ref()
+            if a is not None and GObject.signal_handler_is_connected(a, hid):
+                a.disconnect(hid)
+            p = page_ref()
+            if p is not None:
+                lifetime.disconnect_all(p)
+            ap = self_ref()
+            if ap is not None:
+                vars(ap).clear()
+
+        lifetime.when_unrooted(self.page, cleanup_page)
+        lifetime.on_closed(prefs.d, cleanup_page)
 
     def _state_text(self) -> str:
         from .sidebar import Sidebar
@@ -567,7 +598,8 @@ class AccountPage:
         exp_sec = compat.button_row(_("Export secret key (backup)…"), "document-save-symbolic")
         compat.row_activated(exp_sec, self._export_secret)
         g.add(exp_sec)
-        widgets.run(self.key_row, self._load_keys(), on_error=lambda e: self.key_row.set_subtitle(str(e)),
+        widgets.run(self.key_row, self._load_keys(),
+                    on_error=lambda e: hasattr(self, "key_row") and self.key_row.set_subtitle(str(e)),
                     loads=True)
 
     async def _load_keys(self) -> None:
@@ -575,7 +607,10 @@ class AccountPage:
         if not pgp.available:
             self.key_row.set_model(Gtk.StringList.new([_("gpg is not installed")]))
             return
-        self.keys = await pgp.secret_keys()
+        keys = await pgp.secret_keys()
+        if not hasattr(self, "key_row"):
+            return
+        self.keys = keys
         current = pgp.own_key(self.acc.id)
         labels = [_("None")] + ["%s · %s" % (k.name, k.fingerprint[-16:]) for k in self.keys]
         self.key_row.set_model(Gtk.StringList.new(labels))

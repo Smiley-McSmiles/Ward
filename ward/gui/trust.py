@@ -11,7 +11,7 @@ from gi.repository import Adw, Gdk, GLib, Gtk, Pango
 from ..core import uri as urimod
 from ..core.models import AccountItem, DeviceItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .dialogs import BaseDialog, online_session
 
 log = logging.getLogger("ward.gui")
@@ -47,6 +47,7 @@ def share_dialog(parent: Gtk.Widget, title: str, link: str, description: str = "
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_start=24, margin_end=24, margin_top=12,
                   margin_bottom=24)
     tex = qr_texture(link)
+    pic = None
     if tex is not None:
         pic = Gtk.Picture.new_for_paintable(tex)
         pic.set_size_request(240, 240)
@@ -66,6 +67,14 @@ def share_dialog(parent: Gtk.Widget, title: str, link: str, description: str = "
     box.append(copy)
     tv.set_content(box)
     d.set_child(tv)
+
+    def cleanup() -> None:
+        if pic is not None:
+            pic.set_paintable(None)
+        w = d.widget
+        GLib.idle_add(lambda: lifetime.disconnect_all(w) and False)
+
+    d.on_closed(cleanup)
     d.present(parent)
 
 
@@ -153,23 +162,43 @@ class DevicesDialog(BaseDialog):
             forget.add_css_class("error")
             forget.connect("activated", lambda *_: self._forget_contact())
             tools.add(forget)
+        self._load_seq = 0
         self.refresh()
 
     # ------------------------------------------------------------------ loading
     def refresh(self) -> None:
-        widgets.run(self.toasts, self._load(), on_error=lambda e: self.omemo_group.set_description(str(e)),
-                    loads=True)
+        self._load_seq += 1
+        seq = self._load_seq
 
-    async def _load(self) -> None:
-        for r in self.omemo_rows:
-            self.omemo_group.remove(r)
-        self.omemo_rows = []
+        def on_err(e) -> None:
+            if seq == self._load_seq and not getattr(self, "_closed", True) and hasattr(self, "omemo_group"):
+                self.omemo_group.set_description(widgets.escape(str(e)))
+
+        widgets.run(self.toasts, self._load(seq), on_error=on_err, loads=True)
+
+    async def _load(self, seq: int) -> None:
+        devices = None
+        session = None
         if self.core.omemo is not None and self.core.omemo.available:
             s = self.core.sessions.get(self.acc.id)
             if s is not None and s.online and self.core.omemo.ready(s):
+                session = s
                 devices = await self.core.omemo.devices(s, self.jid)
+        if seq != self._load_seq or getattr(self, "_closed", True) or not hasattr(self, "omemo_group"):
+            return
+        keys = None
+        if self.pgp_group is not None and not self.own:
+            keys = await self.core.pgp.keys(self.acc.id, self.jid)
+            if seq != self._load_seq or getattr(self, "_closed", True) or not hasattr(self, "pgp_group"):
+                return
+        for r in self.omemo_rows:
+            lifetime.release(r)
+            self.omemo_group.remove(r)
+        self.omemo_rows = []
+        if self.core.omemo is not None and self.core.omemo.available:
+            if session is not None and devices is not None:
                 for d in sorted(devices, key=lambda d: (not d.this_device, d.inactive, d.device_id)):
-                    row = self._device_row(d, s)
+                    row = self._device_row(d, session)
                     self.omemo_group.add(row)
                     self.omemo_rows.append(row)
                 if not devices:
@@ -183,6 +212,7 @@ class DevicesDialog(BaseDialog):
                 self.omemo_rows.append(row)
         if self.pgp_group is not None:
             for r in self.pgp_rows:
+                lifetime.release(r)
                 self.pgp_group.remove(r)
             self.pgp_rows = []
             if self.own:
@@ -195,8 +225,7 @@ class DevicesDialog(BaseDialog):
                 self.pgp_group.add(row)
                 self.pgp_rows.append(row)
             else:
-                keys = await self.core.pgp.keys(self.acc.id, self.jid)
-                for k in keys:
+                for k in keys or ():
                     row = self._pgp_row(k)
                     self.pgp_group.add(row)
                     self.pgp_rows.append(row)

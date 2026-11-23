@@ -4,12 +4,13 @@ and starting a call from a chat."""
 from __future__ import annotations
 
 import logging
+import weakref
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from ..core.calls import media
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 
 log = logging.getLogger("ward.gui")
 
@@ -21,6 +22,7 @@ class CallUI:
         self.app = app
         self.core = app.core
         self.windows: dict[tuple[int, str], CallWindow] = {}
+        self._call_handlers: dict[tuple[int, str], int] = {}
         self._ring_source = 0
         calls = self.core.calls
         calls.connect("added", lambda _s, call: self._added(call))
@@ -56,10 +58,11 @@ class CallUI:
 
     # ------------------------------------------------------------------ following calls
     def _added(self, call) -> None:
+        key = (call.account_id, call.sid)
         win = CallWindow(self, call)
-        self.windows[(call.account_id, call.sid)] = win
+        self.windows[key] = win
         if call.outgoing:
-            call.connect("notify::state", lambda c, _p: self._outgoing_state(c))
+            self._call_handlers[key] = call.connect("notify::state", lambda c, _p: self._outgoing_state(c))
             self._outgoing_state(call)
             win.present()
 
@@ -83,12 +86,23 @@ class CallUI:
         self._ring(True)
 
     def _ended(self, call) -> None:
+        key = (call.account_id, call.sid)
+        hid = self._call_handlers.pop(key, 0)
+        if hid and GObject.signal_handler_is_connected(call, hid):
+            call.disconnect(hid)
         self.app.withdraw_notification("call-" + self.key(call))
         if not any(c.state in ("incoming", "proposing", "ringing") for c in self.core.calls.calls.values()):
             self._ring(False)
-        win = self.windows.pop((call.account_id, call.sid), None)
+        win = self.windows.pop(key, None)
         if win is not None:
             win.ended()
+
+    def close(self) -> None:
+        self._ring(False)
+        for win in list(self.windows.values()):
+            win._cleanup()
+            win.destroy()
+        self.windows.clear()
 
     def _ring(self, on: bool, outgoing: bool = False) -> None:
         """The ringtone while a call rings here, the calling tone while ours rings there."""
@@ -132,11 +146,14 @@ class CallWindow(Adw.Window):
     def __init__(self, ui: CallUI, call):
         super().__init__(title=_("Call"), default_width=720 if call.video else 380,
                          default_height=540 if call.video else 520, css_classes=["call-window"])
-        self.set_application(ui.app)
+        if isinstance(ui.app, Gtk.Application):
+            self.set_application(ui.app)
         self.ui = ui
         self.core = ui.core
         self.call = call
         self._timer = 0
+        self._close_timer = 0
+        self._cleaned = False
         self._ms_handlers: list[tuple[object, int]] = []
         name = self.core.names.contact_name(call.account_id, call.peer) or call.peer
         self.set_title(name)
@@ -207,6 +224,8 @@ class CallWindow(Adw.Window):
         return b
 
     def _update(self) -> None:
+        if getattr(self, "_cleaned", False) or not hasattr(self, "buttons"):
+            return
         call = self.call
         widgets.clear(self.buttons)
         state = call.state
@@ -244,18 +263,32 @@ class CallWindow(Adw.Window):
         return "%d:%02d:%02d" % (d // 3600, d // 60 % 60, d % 60) if d >= 3600 else "%d:%02d" % (d // 60, d % 60)
 
     def _tick(self) -> bool:
+        if getattr(self, "_cleaned", False) or not hasattr(self, "status"):
+            self._timer = 0
+            return False
         text = self._status_text()
         self.status.set_text(text)
         self.video_status.set_text(text)
-        return self.call.state == "active"
+        active = self.call.state == "active"
+        if not active:
+            self._timer = 0
+        return active
 
     # ------------------------------------------------------------------ video
     def _media(self) -> None:
+        if getattr(self, "_cleaned", False):
+            return
+        for ms, h in self._ms_handlers:
+            if GObject.signal_handler_is_connected(ms, h):
+                ms.disconnect(h)
+        self._ms_handlers = []
         ms = self.call.ms
         if ms is not None:
             self._ms_handlers.append((ms, ms.connect("remote-video", lambda _m, paintable: self._show_media())))
 
     def _show_media(self) -> None:
+        if getattr(self, "_cleaned", False) or not hasattr(self, "remote"):
+            return
         ms = self.call.ms
         remote = getattr(ms, "remote_paintable", None) if ms is not None else None
         local = getattr(ms, "local_paintable", None) if ms is not None else None
@@ -304,30 +337,64 @@ class CallWindow(Adw.Window):
 
     # ------------------------------------------------------------------ ending
     def _on_close(self, *_a) -> bool:
+        if getattr(self, "_cleaned", False) or not hasattr(self, "call"):
+            return False
+        key = (self.call.account_id, self.call.sid)
+        if self.ui.windows.get(key) is self:
+            self.ui.windows.pop(key, None)
         if self.call.active:
-            widgets.run(self, self.core.calls.hang_up(self.call))
+            widgets.run(self.ui.app.window, self.core.calls.hang_up(self.call))
         self._cleanup()
         return False
 
     def ended(self) -> None:
         """The call ended: say how, then go."""
+        if getattr(self, "_cleaned", False) or not hasattr(self, "status") or not hasattr(self, "call"):
+            return
+        if self._timer:
+            GLib.source_remove(self._timer)
+            self._timer = 0
         self.status.set_text(self.core.calls.summary({"call": {"end": self.call.end, "media": sorted(
             self.call.media), "duration": self.call.duration, "outgoing": self.call.outgoing}}))
         self.stack.set_visible_child_name("who")
         self.local_box.set_visible(False)
         self.video_status.set_visible(False)
         widgets.clear(self.buttons)
-        GLib.timeout_add(1500, lambda: self.close() and False)
+        if self._close_timer:
+            GLib.source_remove(self._close_timer)
+        ref = weakref.ref(self)
+
+        def close_later() -> bool:
+            w = ref()
+            if w is not None and not getattr(w, "_cleaned", False):
+                w._close_timer = 0
+                w.close()
+            return False
+
+        self._close_timer = GLib.timeout_add(1500, close_later)
 
     def _cleanup(self) -> None:
+        if getattr(self, "_cleaned", False):
+            return
+        self._cleaned = True
         if self._timer:
             GLib.source_remove(self._timer)
             self._timer = 0
+        if self._close_timer:
+            GLib.source_remove(self._close_timer)
+            self._close_timer = 0
         for h in self._handlers:
-            self.call.disconnect(h)
+            if GObject.signal_handler_is_connected(self.call, h):
+                self.call.disconnect(h)
         self._handlers = []
         for ms, h in self._ms_handlers:
-            ms.disconnect(h)
+            if GObject.signal_handler_is_connected(ms, h):
+                ms.disconnect(h)
         self._ms_handlers = []
-        self.remote.set_paintable(None)
-        self.local.set_paintable(None)
+        if hasattr(self, "remote"):
+            self.remote.set_paintable(None)
+        if hasattr(self, "local"):
+            self.local.set_paintable(None)
+        if hasattr(self, "buttons"):
+            widgets.clear(self.buttons)
+        lifetime.dismantle(self)

@@ -9,9 +9,39 @@ from __future__ import annotations
 
 import weakref
 
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, GObject, Gtk
 
 FORGET_AFTER = 30      # seconds after a dialog closes: anything it started (a save, a lookup) has finished by then
+
+_SINGLE_CHILD_CONTAINERS: tuple[type[Gtk.Widget], ...] = (
+    Gtk.Revealer,
+    Gtk.Frame,
+    Gtk.Viewport,
+    Gtk.Expander,
+    Gtk.AspectFrame,
+    Gtk.WindowHandle,
+    Adw.Clamp,
+    Adw.ClampScrollable,
+    Adw.Bin,
+    Adw.StatusPage,
+    Adw.ToastOverlay,
+    Gtk.Button,       # includes Gtk.ToggleButton and Gtk.LinkButton
+    Gtk.CheckButton,
+)
+
+_MULTI_CHILD_CONTAINERS: tuple[type[Gtk.Widget], ...] = (
+    Gtk.Box,
+    Gtk.ListBox,
+    Gtk.FlowBox,
+    Gtk.Grid,
+    Gtk.Stack,
+    Adw.ViewStack,
+    *((Adw.WrapBox,) if hasattr(Adw, "WrapBox") else ()),
+)
 
 
 def _children(widget: Gtk.Widget) -> list[Gtk.Widget]:
@@ -23,24 +53,158 @@ def _children(widget: Gtk.Widget) -> list[Gtk.Widget]:
     return out
 
 
-def release(widget: Gtk.Widget) -> None:
-    """Remove the widget's event controllers and empty the containers Ward builds (boxes, overlays), all the way down:
-    the Python handlers on them go with them.  The insides of GTK's own widgets are left alone - taking those apart
-    can crash GTK - and nothing of Ward's is connected there."""
+def _disconnect_obj(obj: GObject.Object | None) -> None:
+    """Disconnect Ward's tracked handlers on a GObject without adding __dict__ to objects that have none."""
+    if obj is None:
+        return
+    ids = getattr(obj, "_ward_handlers", None)
+    if ids:
+        for hid in ids:
+            if GObject.signal_handler_is_connected(obj, hid):
+                obj.disconnect(hid)
+        del obj._ward_handlers
+
+
+_GTK_INTERNAL_CONTROLLER_WIDGETS = (
+    Gtk.TextView,
+    Gtk.ScrolledWindow,
+    Gtk.Entry,
+    Gtk.SearchEntry,
+    Adw.PreferencesRow,
+)
+
+
+def _release_controllers(widget: Gtk.Widget, ward_only: bool = False) -> None:
     controllers = widget.observe_controllers()
     for c in [controllers.get_item(i) for i in range(controllers.get_n_items())]:
+        has_ward = getattr(c, "_ward_handlers", None) is not None
+        if ward_only and not has_ward:
+            continue
+        _disconnect_obj(c)
         widget.remove_controller(c)
-    if isinstance(widget, (Gtk.Box, Gtk.ListBox, Gtk.FlowBox)):
-        for c in _children(widget):
-            release(c)
-            widget.remove(c)
-    elif isinstance(widget, Gtk.Overlay):
+
+
+def _release_child_popovers(widget: Gtk.Widget, seen: dict[int, Gtk.Widget]) -> None:
+    for c in _children(widget):
+        if isinstance(c, Gtk.Popover):
+            release(c, seen)
+            c.unparent()
+
+
+def release(widget: Gtk.Widget | None, _seen: dict[int, Gtk.Widget] | None = None) -> None:
+    """Remove the widget's event controllers, disconnect Ward's tracked signal handlers, and empty the containers
+    Ward builds (boxes, overlays, revealers, frames, scrolled windows, viewports, clamps, stacks, center boxes, etc.),
+    all the way down: the Python handlers on them go with them.  The insides of GTK's own complex widgets are left
+    alone - taking those apart can crash GTK - and nothing of Ward's is connected there."""
+    if widget is None:
+        return
+    seen = _seen if _seen is not None else {}
+    oid = id(widget)
+    if oid in seen:
+        return
+    seen[oid] = widget
+
+    _disconnect_obj(widget)
+    _release_controllers(widget, ward_only=isinstance(widget, _GTK_INTERNAL_CONTROLLER_WIDGETS))
+
+    if isinstance(widget, Gtk.Picture):
+        widget.set_paintable(None)
+    elif isinstance(widget, Gtk.Video):
+        stream = widget.get_media_stream()
+        if stream is not None and stream.get_playing():
+            stream.pause()
+        widget.set_media_stream(None)
+        widget.set_file(None)
+    elif isinstance(widget, Gtk.TextView):
+        _disconnect_obj(widget.get_buffer())
+    elif isinstance(widget, Gtk.Scrollbar):
+        _disconnect_obj(widget.get_adjustment())
+
+    adj = getattr(widget, "adjustment", None)
+    if isinstance(adj, Gtk.Adjustment):
+        _disconnect_obj(adj)
+    layouts = getattr(widget, "_layouts", None)
+    if isinstance(layouts, dict) and type(widget).__module__.startswith("ward."):
+        layouts.clear()
+
+    if isinstance(widget, Gtk.Overlay):
         main = widget.get_child()
         for c in _children(widget):
-            release(c)
-            if c is not main:
+            release(c, seen)
+            if isinstance(c, Gtk.Popover):
+                c.unparent()
+            elif c is not main:
                 widget.remove_overlay(c)
-        widget.set_child(None)
+        if main is not None:
+            widget.set_child(None)
+    elif isinstance(widget, Gtk.CenterBox):
+        for getter, setter in (
+            (widget.get_start_widget, widget.set_start_widget),
+            (widget.get_center_widget, widget.set_center_widget),
+            (widget.get_end_widget, widget.set_end_widget),
+        ):
+            c = getter()
+            if c is not None:
+                release(c, seen)
+                setter(None)
+        _release_child_popovers(widget, seen)
+    elif isinstance(widget, Gtk.Paned):
+        for getter, setter in (
+            (widget.get_start_child, widget.set_start_child),
+            (widget.get_end_child, widget.set_end_child),
+        ):
+            c = getter()
+            if c is not None:
+                release(c, seen)
+                setter(None)
+        _release_child_popovers(widget, seen)
+    elif isinstance(widget, Gtk.MenuButton):
+        pop = widget.get_popover()
+        if pop is not None:
+            release(pop, seen)
+            widget.set_popover(None)
+        widget.set_create_popup_func(None)
+        if hasattr(widget, "_ward_emoji"):
+            del widget._ward_emoji
+        c = widget.get_child()
+        if c is not None:
+            release(c, seen)
+            widget.set_child(None)
+    elif isinstance(widget, Gtk.Popover):
+        if isinstance(widget, Gtk.PopoverMenu):
+            widget.set_menu_model(None)
+            disconnect_all(widget)
+        elif not isinstance(widget, Gtk.EmojiChooser):
+            c = widget.get_child()
+            if c is not None:
+                release(c, seen)
+                widget.set_child(None)
+    elif isinstance(widget, Gtk.ScrolledWindow):
+        _disconnect_obj(widget.get_vadjustment())
+        _disconnect_obj(widget.get_hadjustment())
+        c = widget.get_child()
+        if c is not None:
+            release(c, seen)
+            widget.set_child(None)
+        _release_child_popovers(widget, seen)
+    elif isinstance(widget, _MULTI_CHILD_CONTAINERS):
+        for c in _children(widget):
+            release(c, seen)
+            if isinstance(c, Gtk.Popover):
+                c.unparent()
+            else:
+                widget.remove(c)
+    elif isinstance(widget, _SINGLE_CHILD_CONTAINERS) or (
+        isinstance(widget, (Gtk.ListBoxRow, Gtk.FlowBoxChild)) and not isinstance(widget, Adw.PreferencesRow)
+    ):
+        c = widget.get_child()
+        if c is not None:
+            release(c, seen)
+            widget.set_child(None)
+        _release_child_popovers(widget, seen)
+    else:
+        _release_child_popovers(widget, seen)
+        disconnect_all(widget)
 
 
 def setup_row(item: Gtk.ListItem, row: Gtk.Widget) -> None:
@@ -67,6 +231,7 @@ def teardown_row(_factory, item: Gtk.ListItem) -> None:
 # ------------------------------------------------------------------ handlers Ward connects to widgets
 _connect = GObject.Object.connect
 _scopes: list[list[tuple[GObject.Object, int]]] = []
+_TRACKED_TYPES = (Gtk.Widget, Gtk.EventController, Gtk.Adjustment, Gtk.TextBuffer, Gtk.EntryBuffer)
 
 
 class scope:
@@ -90,12 +255,12 @@ def disconnect_scope(handlers: list[tuple[GObject.Object, int]]) -> None:
 
 
 def _tracked_connect(widget, signal: str, callback, *args):
-    """Gtk.Widget.connect, remembering the handler: disconnect_all() undoes exactly Ward's handlers and never
+    """GObject.Object.connect, remembering the handler: disconnect_all() undoes exactly Ward's handlers and never
     GTK's own (disconnecting those makes GTK complain when it later disconnects them itself)."""
     hid = _connect(widget, signal, callback, *args)
     if _scopes:
         _scopes[-1].append((widget, hid))
-    if not isinstance(widget, Gtk.Widget):
+    if not isinstance(widget, _TRACKED_TYPES):
         return hid
     ids = widget.__dict__.setdefault("_ward_handlers", [])
     ids.append(hid)
@@ -113,14 +278,32 @@ def disconnect_all(widget: Gtk.Widget) -> None:
     disconnecting it breaks that."""
     # getattr, not __dict__: giving one of GTK's own widgets an attribute dictionary would make PyGObject keep it
     # (and the window it is in) alive
-    ids = getattr(widget, "_ward_handlers", None)
-    if ids:
-        for hid in ids:
-            if GObject.signal_handler_is_connected(widget, hid):
-                widget.disconnect(hid)
-        del widget._ward_handlers
-    for c in _children(widget):
-        disconnect_all(c)
+    seen: dict[int, Gtk.Widget] = {}
+    stack: list[Gtk.Widget] = [widget]
+    while stack:
+        w = stack.pop()
+        if w is None or id(w) in seen:
+            continue
+        seen[id(w)] = w
+        _disconnect_obj(w)
+        controllers = w.observe_controllers()
+        for i in range(controllers.get_n_items()):
+            _disconnect_obj(controllers.get_item(i))
+        if isinstance(w, Gtk.TextView):
+            _disconnect_obj(w.get_buffer())
+        elif isinstance(w, Gtk.ScrolledWindow):
+            _disconnect_obj(w.get_vadjustment())
+            _disconnect_obj(w.get_hadjustment())
+        elif isinstance(w, Gtk.Scrollbar):
+            _disconnect_obj(w.get_adjustment())
+        adj = getattr(w, "adjustment", None)
+        if isinstance(adj, Gtk.Adjustment):
+            _disconnect_obj(adj)
+        if isinstance(w, Gtk.MenuButton):
+            pop = w.get_popover()
+            if pop is not None and id(pop) not in seen:
+                stack.append(pop)
+        stack.extend(_children(w))
 
 
 def _closed_signal(dialog: Gtk.Widget) -> str:
@@ -155,27 +338,51 @@ ACTION_GROUPS = ("msg", "chat", "member", "row")      # the action groups Ward i
 
 
 def dismantle(root: Gtk.Widget) -> None:
-    """Before a window Ward built is dropped: disconnect Ward's handlers in it, detach Ward's action groups (their
-    actions' handlers refer to the widgets that hold them) and clear Ward's own objects' references, so nothing
-    in it keeps the rest alive through GTK."""
+    """Before a window Ward built is dropped: disconnect Ward's handlers in it, remove its controllers, detach
+    Ward's action groups (their actions' handlers refer to the widgets that hold them) and clear Ward's own
+    objects' references, so nothing in it keeps the rest alive through GTK."""
     disconnect_all(root)
-    stack = [root]
+    seen: dict[int, Gtk.Widget] = {}
+    stack: list[Gtk.Widget] = [root]
     while stack:
         w = stack.pop()
+        if w is None or id(w) in seen:
+            continue
+        seen[id(w)] = w
+        _release_controllers(w, ward_only=not type(w).__module__.startswith("ward."))
+        if isinstance(w, Gtk.MenuButton):
+            w.set_create_popup_func(None)
+            if hasattr(w, "_ward_emoji"):
+                del w._ward_emoji
+            pop = w.get_popover()
+            if pop is not None and id(pop) not in seen:
+                stack.append(pop)
+        elif isinstance(w, Gtk.Picture):
+            w.set_paintable(None)
+        elif isinstance(w, Gtk.Video):
+            stream = w.get_media_stream()
+            if stream is not None and stream.get_playing():
+                stream.pause()
+            w.set_media_stream(None)
+            w.set_file(None)
+        children = _children(w)
         if type(w).__module__.startswith("ward."):
             for prefix in ACTION_GROUPS:
                 w.insert_action_group(prefix, None)
             vars(w).clear()
-        stack.extend(_children(w))
+        stack.extend(children)
 
 
-def when_unrooted(widget: Gtk.Widget, callback) -> None:
+def when_unrooted(widget: Gtk.Widget, callback) -> int:
     """callback() once the widget leaves its window (the window destroyed, or the widget removed), before GTK
     disposes it: for cleanup GTK will not do itself.  (PyGObject cannot override dispose.)"""
+    ref = weakref.ref(widget)
+
     def changed(*_a) -> None:
-        if widget.get_root() is None:
+        w = ref()
+        if w is not None and w.get_root() is None:
             callback()
-    widget.connect("notify::root", changed)
+    return widget.connect("notify::root", changed)
 
 
 def dismantle_later(root: Gtk.Widget) -> None:
@@ -184,19 +391,31 @@ def dismantle_later(root: Gtk.Widget) -> None:
 
 
 # ------------------------------------------------------------------ the main window's handlers on the core
-_watched: list[tuple[object, int]] = []
+_watched: list[tuple[weakref.ref | object, int]] = []
 
 
 def watch(obj, signal: str, callback, *args) -> int:
     """obj.connect() for the main window's widgets on long-lived objects (the core, settings, accounts): undone
     together by unwatch_all() when the window is let go, so the window can be freed."""
     hid = obj.connect(signal, callback, *args)
-    _watched.append((obj, hid))
+    try:
+        entry = (weakref.ref(obj), hid)
+    except TypeError:
+        entry = (obj, hid)
+    _watched.append(entry)
+    if len(_watched) > 256:
+        kept = []
+        for ref_or_obj, h in _watched:
+            target = ref_or_obj() if isinstance(ref_or_obj, weakref.ref) else ref_or_obj
+            if target is not None and GObject.signal_handler_is_connected(target, h):
+                kept.append((ref_or_obj, h))
+        _watched[:] = kept
     return hid
 
 
 def unwatch_all() -> None:
     while _watched:
-        obj, hid = _watched.pop()
-        if GObject.signal_handler_is_connected(obj, hid):
+        ref_or_obj, hid = _watched.pop()
+        obj = ref_or_obj() if isinstance(ref_or_obj, weakref.ref) else ref_or_obj
+        if obj is not None and GObject.signal_handler_is_connected(obj, hid):
             obj.disconnect(hid)

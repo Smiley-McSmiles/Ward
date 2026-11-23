@@ -7,7 +7,7 @@ from gi.repository import Adw, Gtk
 
 from ..core.models import AccountItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .dialogs import BaseDialog, online_session
 from .forms_view import FormView
 
@@ -29,11 +29,13 @@ class AdminDialog(BaseDialog):
         self.user_rows: list[Gtk.Widget] = []
         self.commands = self.group(_("Commands"), _("Everything the server lets administrators do"))
         self.command_rows: list[Gtk.Widget] = []
-        self.run(self._load())
+        self.run(self._load(), loads=True)
 
     async def _load(self) -> None:
         s = online_session(self.core, self.acc)
         stats = await self.core.admin.stats(s)
+        if getattr(self, "_closed", True) or not hasattr(self, "stats"):
+            return
         for key, value in stats.items():
             row = Adw.ActionRow(title=_(STAT_NAMES.get(key, key)), subtitle=widgets.escape(value))
             row.add_css_class("property")
@@ -42,14 +44,19 @@ class AdminDialog(BaseDialog):
         if not stats:
             self.stats.set_description(_("The server shares no numbers, or this account is not an admin"))
         users, kind = await self.core.admin.users(s)
+        if getattr(self, "_closed", True) or not hasattr(self, "users"):
+            return
         self.users.set_description(_("Online now") if kind == "online" else "")
         for jid in users[:200]:
-            row = Adw.ActionRow(title=jid)
+            row = Adw.ActionRow(title=widgets.escape(jid))
             self.users.add(row)
             self.user_rows.append(row)
         if not users:
             self.users.set_visible(False)
-        for jid, node, name in await self.core.admin.list_commands(s):
+        cmds = await self.core.admin.list_commands(s)
+        if getattr(self, "_closed", True) or not hasattr(self, "commands"):
+            return
+        for jid, node, name in cmds:
             row = Adw.ActionRow(title=widgets.escape(name or node), subtitle=node, activatable=True)
             row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
             row.connect("activated", lambda _r, j=jid, n=node, t=name: CommandDialog(
@@ -78,13 +85,14 @@ class CommandDialog(BaseDialog):
         self.form_view = None
         self.content_group = self.group()
         self.content_group.add(compat.spinner())
-        self.run(self._start(jid, node), self._show)
+        self.run(self._start(jid, node), self._show, loads=True)
 
     async def _start(self, jid: str, node: str):
         return await self.core.admin.execute(online_session(self.core, self.acc), jid, node)
 
     def _show(self, step) -> None:
         self.step = step
+        lifetime.release(self.content_group)
         self.page.remove(self.content_group)
         self.content_group = self.group()
         for n in step.notes:

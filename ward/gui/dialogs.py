@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import logging
 import shutil
+import weakref
 
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk
 
 from .. import util
 from ..core import muc, register, secrets
@@ -47,7 +48,12 @@ class BaseDialog:
         self.toasts.set_child(self.view)
         self.dialog.set_child(self.toasts)
         self.spinner = None
+        self._closed = False
+        self.dialog.on_closed(self._mark_closed)
         lifetime.forget_when_closed(self, self.dialog.widget)
+
+    def _mark_closed(self) -> None:
+        self._closed = True
 
     def group(self, title: str = "", description: str = "") -> Adw.PreferencesGroup:
         g = Adw.PreferencesGroup(title=title, description=description)
@@ -75,24 +81,26 @@ class BaseDialog:
             self.spinner = compat.spinner()
             self.header.pack_end(self.spinner)
         elif not on and self.spinner is not None:
+            if hasattr(self.spinner, "stop"):
+                self.spinner.stop()
             self.header.remove(self.spinner)
             self.spinner = None
 
-    def run(self, coro, done=None):
+    def run(self, coro, done=None, loads: bool = False):
         self.busy(True)
 
         def ok(res):
-            if not hasattr(self, "toasts"):
+            if getattr(self, "_closed", True) or not hasattr(self, "toasts"):
                 return
             self.busy(False)
             if done is not None:
                 done(res)
 
         def err(exc):
-            if not hasattr(self, "toasts"):
+            if getattr(self, "_closed", True) or not hasattr(self, "toasts"):
                 return
             self.error(exc)
-        return widgets.run(self.toasts, coro, done=ok, on_error=err)
+        return widgets.run(self.toasts, coro, done=ok, on_error=err, loads=loads)
 
 
 def entry_row(title: str, text: str = "", password: bool = False) -> Adw.EntryRow:
@@ -132,6 +140,7 @@ class StartChatDialog(BaseDialog):
         super().__init__(window, _("New chat"), _("Chat"))
         g = self.group(description=_("Enter an address like alex@example.org, or pick a contact"))
         self.acc = AccountChooser(self.core, g, window.sidebar._main_account())
+        self.acc.row.connect("notify::selected", lambda *_: self._suggest())
         self.address = entry_row(_("Address"), jid)
         self.address.connect("changed", lambda *_: self._suggest())
         self.address.connect("entry-activated", lambda *_: self.on_action())
@@ -142,6 +151,7 @@ class StartChatDialog(BaseDialog):
 
     def _suggest(self) -> None:
         for r in self._rows:
+            lifetime.release(r)
             self.suggestions.remove(r)
         self._rows = []
         text = self.address.get_text().strip().lower()
@@ -151,7 +161,7 @@ class StartChatDialog(BaseDialog):
             items = [c for c in items if text in c.name.lower() or text in c.jid.lower()]
         items.sort(key=lambda c: (c.show == "offline", c.name.lower()))
         for c in items[:8]:
-            row = Adw.ActionRow(title=widgets.escape(c.name), subtitle=c.jid, activatable=True)
+            row = Adw.ActionRow(title=widgets.escape(c.name), subtitle=widgets.escape(c.jid), activatable=True)
             row.add_prefix(widgets.RowAvatar(32, c.name, c.avatar, c.show))
             row.connect("activated", lambda _r, c=c: self._open(c.jid))
             self.suggestions.add(row)
@@ -241,12 +251,15 @@ class JoinGroupDialog(BaseDialog):
         self.results = self.group(_("Public channels"))
         self.results.set_visible(False)
         self._rows: list[Gtk.Widget] = []
+        self._search_seq = 0
 
     def _search(self) -> None:
         text = self.address.get_text().strip()
         if not text:
             return
         acc = self.acc.account
+        self._search_seq += 1
+        seq = self._search_seq
 
         async def go():
             s = online_session(self.core, acc)
@@ -255,7 +268,10 @@ class JoinGroupDialog(BaseDialog):
                           else self.core.muc.search_channels(s, text))
 
         def done(items):
+            if seq != self._search_seq:
+                return
             for r in self._rows:
+                lifetime.release(r)
                 self.results.remove(r)
             self._rows = []
             for it in items[:30]:
@@ -272,7 +288,7 @@ class JoinGroupDialog(BaseDialog):
                 self.results.add(row)
                 self._rows.append(row)
             self.results.set_visible(True)
-        self.run(go(), done)
+        self.run(go(), done, loads=True)
 
     def on_action(self) -> None:
         jid = self.address.get_text().strip()
@@ -476,6 +492,7 @@ class ContactPicker(BaseDialog):
 
     def _fill(self) -> None:
         for r in self._rows:
+            lifetime.release(r)
             self.list_group.remove(r)
         self._rows.clear()
         text = self.search.get_text().strip().lower()
@@ -535,6 +552,7 @@ class ChatPicker(BaseDialog):
 
     def _fill(self) -> None:
         for r in self._rows:
+            lifetime.release(r)
             self.list_group.remove(r)
         self._rows = []
         text = self.entry.get_text().strip().lower()
@@ -672,10 +690,12 @@ class MessageDetails(BaseDialog):
         add(_("Message id"), m.msg_id, True)
         self.receipts = self.group(_("Receipts"))
         self.receipts.set_visible(False)
-        widgets.run(self.toasts, self._load_receipts())
+        widgets.run(self.toasts, self._load_receipts(), loads=True)
 
     async def _load_receipts(self) -> None:
         rows = await self.core.db.fetchall("SELECT * FROM receipts WHERE message_id = ?", (self.m.id,))
+        if getattr(self, "_closed", True) or not hasattr(self, "receipts"):
+            return
         for r in rows:
             parts = []
             if r["delivered_at"]:
@@ -697,14 +717,23 @@ class PasswordDialog(BaseDialog):
         g.add(self.password)
         self.remember = Adw.SwitchRow(title=_("Remember"), active=acc.option("store_password") != "never")
         g.add(self.remember)
-        GLib.idle_add(lambda: self.password.grab_focus() and False)
+        ref = weakref.ref(self)
+
+        def focus_pw() -> bool:
+            dlg = ref()
+            if dlg is not None and not getattr(dlg, "_closed", True) and hasattr(dlg, "password"):
+                dlg.password.grab_focus()
+            return False
+
+        GLib.idle_add(focus_pw)
 
     def on_action(self) -> None:
         pw = self.password.get_text()
         if not pw:
             return
+        remember = self.remember.get_active()
         self.close()
-        widgets.run(self.window, self.core.provide_password(self.acc, pw, self.remember.get_active()),
+        widgets.run(self.window, self.core.provide_password(self.acc, pw, remember),
                     error=_("Could not connect"))
 
 
@@ -744,11 +773,17 @@ class RequestsDialog(BaseDialog):
                                           "being a contact"))
         self._rows: list[Gtk.Widget] = []
         self._h = self.core.requests.connect("changed", lambda *_: self._fill())
-        self.dialog.on_closed(lambda: self.core.requests.disconnect(self._h))
+        self.dialog.on_closed(self._disconnect_requests)
         self._fill()
+
+    def _disconnect_requests(self) -> None:
+        if self._h and GObject.signal_handler_is_connected(self.core.requests, self._h):
+            self.core.requests.disconnect(self._h)
+        self._h = 0
 
     def _fill(self) -> None:
         for r in self._rows:
+            lifetime.release(r)
             self.g.remove(r)
         self._rows = []
         for req in self.core.requests.items():
@@ -793,7 +828,7 @@ class ProfileDialog(BaseDialog):
         self.acc = acc
         top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, halign=Gtk.Align.CENTER)
         self.avatar = Adw.Avatar(size=96, text=acc.display_name, show_initials=True)
-        self.avatar.set_custom_image(widgets.texture(acc.avatar))
+        self._set_avatar_texture(acc.avatar)
         top.append(self.avatar)
         change = Gtk.Button(label=_("Change picture…"), css_classes=["pill"])
         change.connect("clicked", lambda *_: self._choose_avatar())
@@ -844,6 +879,19 @@ class ProfileDialog(BaseDialog):
                 await self.core.roster.publish_nick(s, nick)
         self.run(go(), lambda _r: self.toasts.add_toast(Adw.Toast(title=_("Name saved"))))
 
+    def _set_avatar_texture(self, path: str) -> None:
+        if not path:
+            self.avatar.set_custom_image(None)
+            return
+        ref = weakref.ref(self)
+
+        def apply(tex) -> None:
+            dlg = ref()
+            if dlg is not None and not getattr(dlg, "_closed", True) and hasattr(dlg, "avatar"):
+                dlg.avatar.set_custom_image(tex)
+
+        widgets.texture_async(path, widgets.AVATAR_PIXELS, apply)
+
     def _choose_avatar(self) -> None:
         dialog = Gtk.FileDialog(title=_("Choose a picture"))
         f = Gtk.FileFilter()
@@ -859,8 +907,7 @@ class ProfileDialog(BaseDialog):
             except GLib.Error:
                 return
             if file is not None and file.get_path():
-                self.run(self._publish_avatar(file.get_path()), lambda _r: self.avatar.set_custom_image(
-                    widgets.texture(self.acc.avatar)))
+                self.run(self._publish_avatar(file.get_path()), lambda _r: self._set_avatar_texture(self.acc.avatar))
         dialog.open(self.window, None, done)
 
     async def _publish_avatar(self, path: str) -> None:
@@ -1004,6 +1051,7 @@ def text_view_dialog(parent: Gtk.Widget, title: str, text: str) -> None:
     sc.set_child(view)
     tv.set_content(sc)
     d.set_child(tv)
+    d.on_closed(lambda w=d.widget: GLib.idle_add(lambda: lifetime.disconnect_all(w) and False))
     d.present(parent)
 
 
@@ -1040,12 +1088,18 @@ class ExtrasDialog(BaseDialog):
                 deps.install_hint("pip") or "python3 -m ensurepip --user"))
 
     def _line(self, text: str) -> None:
-        def add():
-            b = self.log_view.get_buffer()
+        ref = weakref.ref(self)
+
+        def add() -> bool:
+            dlg = ref()
+            if dlg is None or getattr(dlg, "_closed", True) or not hasattr(dlg, "log_view"):
+                return False
+            b = dlg.log_view.get_buffer()
             b.insert(b.get_end_iter(), text + "\n")
-            adj = self.scroller.get_vadjustment()
+            adj = dlg.scroller.get_vadjustment()
             adj.set_value(adj.get_upper())
             return False
+
         GLib.idle_add(add)
 
     def on_action(self) -> None:
