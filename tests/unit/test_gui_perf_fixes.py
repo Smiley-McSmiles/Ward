@@ -492,6 +492,8 @@ class GuiPerfFixesTests(unittest.TestCase):
 
         async def fake_search(_db, text, _chat_id, _limit=200):
             calls.append(text)
+            if text == "missing":
+                return []
             return [
                 {"id": 100 + i, "snippet": "hit %s %d" % (text, i), "direction": 0,
                  "sender": "sam", "timestamp": 1_700_000_000_000 + i * 1000}
@@ -502,18 +504,28 @@ class GuiPerfFixesTests(unittest.TestCase):
 
         async def scenario():
             with mock.patch("ward.gui.conversation.search_mod.search", side_effect=fake_search):
+                # Empty search result first, then non-empty search reusing row 0 preserves title_lines=3
+                view.search_entry.set_text("missing")
+                view._on_search_activate(view.search_entry)
+                await asyncio.sleep(0.05)
+                _pump_idle()
+                empty_row = view.results.get_row_at_index(0)
+                self.assertIsNotNone(empty_row)
+                self.assertEqual(empty_row.get_title_lines(), 3)
+
                 # Rapid keystroke simulation calling _on_search directly before debounce fires
                 for prefix in ("h", "he", "hel", "hell", "hello"):
                     view.search_entry.set_text(prefix)
                     view._on_search(view.search_entry)
-                self.assertEqual(calls, [], "search must not fire synchronously on every keystroke")
+                self.assertEqual(calls, ["missing"], "search must not fire synchronously on every keystroke")
 
                 await asyncio.sleep(0.22)
                 _pump_idle()
-                self.assertEqual(calls, ["hello"], "debounced search fires once for final query")
+                self.assertEqual(calls, ["missing", "hello"], "debounced search fires once for final query")
                 self.assertEqual(view.stack.get_visible_child_name(), "results")
                 first_row = view.results.get_row_at_index(0)
-                self.assertIsNotNone(first_row)
+                self.assertIs(first_row, empty_row)
+                self.assertEqual(first_row.get_title_lines(), 3)
                 # All 40 rows filled after idle chunks
                 _pump_idle()
                 self.assertIsNotNone(view.results.get_row_at_index(39))
@@ -523,8 +535,9 @@ class GuiPerfFixesTests(unittest.TestCase):
                 view._on_search_activate(view.search_entry)
                 await asyncio.sleep(0.05)
                 _pump_idle()
-                self.assertEqual(calls, ["hello", "world"])
+                self.assertEqual(calls, ["missing", "hello", "world"])
                 self.assertIs(view.results.get_row_at_index(0), first_row)
+                self.assertEqual(first_row.get_title_lines(), 3)
 
                 # Closing search clears result rows and cancels pending work
                 view.search_button.set_active(False)

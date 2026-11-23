@@ -1376,6 +1376,7 @@ class ConversationView(Gtk.Box):
                 if row0 is not None:
                     self.results.remove(row0)
                 empty_row = Adw.ActionRow(title=_("Nothing found"), sensitive=False)
+                empty_row.set_title_lines(3)
                 empty_row.msg_id = 0
                 self.results.append(empty_row)
             while (extra := self.results.get_row_at_index(1)) is not None:
@@ -1403,6 +1404,7 @@ class ConversationView(Gtk.Box):
             title, sub, mid = format_row(rows[i])
             existing = self.results.get_row_at_index(i)
             if isinstance(existing, Adw.ActionRow):
+                existing.set_title_lines(3)
                 existing.set_title(title)
                 existing.set_subtitle(sub)
                 existing.set_activatable(True)
