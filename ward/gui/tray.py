@@ -219,7 +219,14 @@ class Tray:
         self._ids = []
         if self._watch:
             Gio.bus_unwatch_name(self._watch)
-        Gio.bus_unown_name(self._owner)
+            self._watch = 0
+        if getattr(self, "_owner", 0):
+            Gio.bus_unown_name(self._owner)
+            self._owner = 0
+        self._registered = False
+        self._pixmaps.clear()
+        self._pixmap_variants.clear()
+        self.app = None
 
     def set_unread(self, n: int) -> None:
         if n == self.unread:
@@ -230,12 +237,16 @@ class Tray:
     def _status(self) -> str:
         return "NeedsAttention" if self.unread else "Active"
 
-    def _toggle(self) -> None:
-        w = self.app.window
+    def _toggle(self) -> bool:
+        app = self.app
+        if app is None:
+            return False
+        w = app.window
         if w is not None and w.get_visible() and w.is_active():
             w.close()
         else:
-            self.app.activate()
+            app.activate()
+        return False
 
     # ------------------------------------------------------------------ StatusNotifierItem
     # One property at a time: a tray host asks for all of them in a row (GetAll), and answering with one dictionary
@@ -278,16 +289,17 @@ class Tray:
 
     def _sni_call(self, _conn, _sender, _path, _iface, method, _params, invocation) -> None:
         if method in ("Activate", "SecondaryActivate"):
-            GLib.idle_add(lambda: self._toggle() and False)
+            GLib.idle_add(self._toggle)
         invocation.return_value(None)
 
     # ------------------------------------------------------------------ dbusmenu
     def _tree(self) -> list[tuple[int, dict, list]]:
         """The menu, as Gajim has it: show, status, mute sounds, preferences, quit."""
-        current = self.app.common_show()
+        app = self.app
+        current = app.common_show() if app is not None else ""
         statuses = [(10 + i, {"label": _(label), "toggle-type": "radio", "toggle-state": int(show == current)}, [])
                     for i, (show, label) in enumerate(STATUSES)]
-        muted = not self.app.core.settings["notify.sounds"] if self.app.core is not None else False
+        muted = not app.core.settings["notify.sounds"] if app is not None and app.core is not None else False
         return [(SHOW, {"label": _("Show Ward")}, []),
                 (SEPARATOR, {"type": "separator"}, []),
                 (STATUS, {"label": _("Status"), "children-display": "submenu"}, statuses),
@@ -336,12 +348,12 @@ class Tray:
         elif method == "Event":
             item_id, event = params.unpack()[0], params.unpack()[1]
             if event == "clicked":
-                GLib.idle_add(lambda: self._clicked(item_id) and False)
+                GLib.idle_add(self._clicked, item_id)
             invocation.return_value(None)
         elif method == "EventGroup":
             for item_id, event, _d, _t in params.unpack()[0]:
                 if event == "clicked":
-                    GLib.idle_add(lambda i=item_id: self._clicked(i) and False)
+                    GLib.idle_add(self._clicked, item_id)
             invocation.return_value(GLib.Variant("(ai)", ([],)))
         elif method == "AboutToShow":
             invocation.return_value(GLib.Variant("(b)", (False,)))
@@ -350,19 +362,23 @@ class Tray:
         else:
             invocation.return_value(None)
 
-    def _clicked(self, item_id: int) -> None:
+    def _clicked(self, item_id: int) -> bool:
+        app = self.app
+        if app is None:
+            return False
         if item_id == SHOW:
-            self.app.activate()
+            app.activate()
         elif item_id == PREFERENCES:
-            self.app.show_preferences()
+            app.show_preferences()
         elif item_id == QUIT:
-            self.app.quit_app(force=True)
-        elif item_id == MUTE and self.app.core is not None:
-            settings = self.app.core.settings
+            app.quit_app(force=True)
+        elif item_id == MUTE and app.core is not None:
+            settings = app.core.settings
             settings.set("notify.sounds", not settings["notify.sounds"])
             self.menu_changed()
         elif 10 <= item_id < 10 + len(STATUSES):
-            self.app.set_all_presence(STATUSES[item_id - 10][0])
+            app.set_all_presence(STATUSES[item_id - 10][0])
+        return False
 
 
 def _wrap(v) -> GLib.Variant:

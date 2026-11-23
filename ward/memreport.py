@@ -145,9 +145,13 @@ def build() -> str:
         try:
             from .gui import widgets as ward_widgets
 
-            tex = list(ward_widgets._textures.values())
-            lines.append("decoded images cached: %d, %d MB" % (
-                len(tex), sum(t.get_width() * t.get_height() * 4 for t in tex) // 2**20))
+            tex = [t for t in ward_widgets._textures.values() if t is not None]
+            cached_bytes = sum(t.get_width() * t.get_height() * 4 for t in tex)
+            max_count = getattr(ward_widgets, "MAX_TEXTURE_COUNT", 200)
+            max_mb = getattr(ward_widgets, "MAX_TEXTURE_BYTES", 0) // 2**20
+            neg = len(getattr(ward_widgets, "_negative_textures", ()))
+            lines.append("decoded images cached: %d/%d, %d/%d MB (negative %d)" % (
+                len(tex), max_count, cached_bytes // 2**20, max_mb, neg))
         except Exception:
             pass
     return "\n".join(lines) + "\n"

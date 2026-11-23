@@ -7,13 +7,14 @@ Adw.MessageDialog), preferences (Adw.PreferencesDialog 1.5 / Adw.PreferencesWind
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GObject, Gtk
 
 ADW = (Adw.get_major_version(), Adw.get_minor_version())
 GTK = (Gtk.get_major_version(), Gtk.get_minor_version())
@@ -81,11 +82,23 @@ class Dialog:
             self.widget.set_hide_on_close(False)
         self._closed: list[Callable] = []
         sig = "closed" if HAS_DIALOG else "close-request"
-        self.widget.connect(sig, self._on_closed)
+        ref = weakref.ref(self)
+
+        def closed(*_a) -> bool:
+            dlg = ref()
+            if dlg is not None:
+                return dlg._on_closed()
+            return False
+
+        self._closed_hid = self.widget.connect(sig, closed)
 
     def _on_closed(self, *_a):
-        for cb in self._closed:
+        callbacks, self._closed = self._closed, []
+        for cb in callbacks:
             cb()
+        if self._closed_hid and GObject.signal_handler_is_connected(self.widget, self._closed_hid):
+            self.widget.disconnect(self._closed_hid)
+        self._closed_hid = 0
         return False
 
     def on_closed(self, cb: Callable) -> None:

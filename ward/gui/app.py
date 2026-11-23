@@ -8,6 +8,8 @@ import logging
 import os
 import shutil
 import subprocess
+import time
+import weakref
 
 import gi
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
@@ -27,7 +29,7 @@ from ..core import uri as urimod
 from ..core.core import Core
 from ..i18n import _
 from ..settings import Settings
-from . import compat, style
+from . import compat, lifetime, style, widgets
 
 log = logging.getLogger("ward.gui")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -78,6 +80,9 @@ class WardApplication(Adw.Application):
         self._quitting = False
         self._badge_count = -1
         self.tray = None
+        self._tray_watch = 0
+        self._release_source = 0
+        self._theme_sound_cache: dict[tuple[str, tuple[str, ...]], tuple[float, bool]] = {}
 
     # ================================================================== startup
     def do_startup(self) -> None:
@@ -199,8 +204,10 @@ class WardApplication(Adw.Application):
         return 0
 
     def do_activate(self) -> None:
+        if self._release_source:
+            GLib.source_remove(self._release_source)
+            self._release_source = 0
         if self.window is None:
-            from . import lifetime
             from .window import MainWindow
 
             with lifetime.scope() as handlers:
@@ -245,8 +252,18 @@ class WardApplication(Adw.Application):
         except Exception:
             log.exception("shutdown failed")
         self._set_badge(0)
+        if getattr(self, "calls_ui", None) is not None:
+            self.calls_ui.close()
+        if self._tray_watch:
+            Gio.bus_unwatch_name(self._tray_watch)
+            self._tray_watch = 0
         if self.tray is not None:
             self.tray.close()
+            self.tray = None
+        if self._release_source:
+            GLib.source_remove(self._release_source)
+            self._release_source = 0
+        widgets.clear_texture_cache()
         self._hold(False)
         if self.window is not None:
             self.window.destroy()
@@ -256,17 +273,28 @@ class WardApplication(Adw.Application):
         """Running in the background with the window closed: let the window go after a while (reopening it soon
         just shows it again), with everything GTK and its renderer hold for it, and give the freed memory back to
         the system.  Opening Ward later builds a new window."""
-        from . import lifetime
+        if self._release_source:
+            GLib.source_remove(self._release_source)
+            self._release_source = 0
+        app_ref = weakref.ref(self)
+        win_ref = weakref.ref(window)
 
         def release() -> bool:
-            if self.window is window and not window.get_visible():
-                self.window = None
+            app = app_ref()
+            win = win_ref()
+            if app is None:
+                return False
+            app._release_source = 0
+            if win is not None and app.window is win and not win.get_visible():
+                app.window = None
                 lifetime.unwatch_all()
-                window.teardown()
-                window.destroy()
-                GLib.timeout_add_seconds(2, self._trim_memory)
+                win.teardown()
+                win.destroy()
+                widgets.clear_texture_cache()
+                GLib.timeout_add_seconds(2, app._trim_memory)
             return False
-        GLib.timeout_add_seconds(lifetime.FORGET_AFTER, release)
+
+        self._release_source = GLib.timeout_add_seconds(lifetime.FORGET_AFTER, release)
 
     @staticmethod
     def _trim_memory() -> bool:
@@ -298,10 +326,14 @@ class WardApplication(Adw.Application):
         elif key == "notify.badge":
             self._update_badge()
         elif key == "general.tray":
-            if settings[key] == "never" and self.tray is not None:
-                self.tray.close()
-                self.tray = None
-            elif settings[key] != "never" and self.tray is None:
+            if settings[key] == "never":
+                if self._tray_watch:
+                    Gio.bus_unwatch_name(self._tray_watch)
+                    self._tray_watch = 0
+                if self.tray is not None:
+                    self.tray.close()
+                    self.tray = None
+            elif self.tray is None:
                 self._setup_tray()
 
     def _set_autostart(self, on: bool) -> None:
@@ -370,7 +402,9 @@ class WardApplication(Adw.Application):
             os.chmod(path, 0o600)
 
     def _watch_accounts(self) -> None:
-        for acc in self.core.accounts.list():
+        current = self.core.accounts.list()
+        self._watched_accounts.intersection_update({a.id for a in current})
+        for acc in current:
             if acc.id not in self._watched_accounts:
                 self._watched_accounts.add(acc.id)
                 acc.connect("notify::state", lambda *_: self._update_tray_state())
@@ -443,6 +477,21 @@ class WardApplication(Adw.Application):
     def withdraw_chat_notification(self, chat) -> None:
         self.core.notifier.chat_read(chat)
 
+    def _has_theme_sound(self, name: str) -> bool:
+        cache = getattr(self, "_theme_sound_cache", None)
+        if cache is None:
+            return sound_theme_has(name)
+        key = (name, tuple(_data_dirs()))
+        now = time.monotonic()
+        cached = cache.get(key)
+        if cached is not None and now - cached[0] < 60.0:
+            return cached[1]
+        has = sound_theme_has(name)
+        if len(cache) > 64:
+            cache.clear()
+        cache[key] = (now, has)
+        return has
+
     def play_sound(self, name: str) -> None:
         """A freedesktop sound by name, from the sound theme.  Systems without the theme (Void, minimal installs)
         get the copy Ward ships in share/ward/sounds."""
@@ -453,7 +502,8 @@ class WardApplication(Adw.Application):
                 self._play_file(name)
                 return
             name = "message-new-instant"
-        if not sound_theme_has(name):
+        has = self._has_theme_sound(name) if hasattr(self, "_has_theme_sound") else sound_theme_has(name)
+        if not has:
             # Ward ships one sound: it stands in for the others (contact requests) too
             path = bundled_sound(name) or bundled_sound("message-new-instant")
             if path:
@@ -594,10 +644,13 @@ class WardApplication(Adw.Application):
         else:
             async def go():
                 chat = await self.core.open_chat(acc, u.jid)
-                w.show_chat(chat)
+                cur = self.window
+                if cur is None:
+                    return
+                cur.show_chat(chat)
                 body = u.params.get("body")
                 if body:
-                    w.conversation.composer.buffer.set_text(body)
+                    cur.conversation.composer.buffer.set_text(body)
             aio.spawn(go())
 
     def install_encryption(self, parent=None) -> None:
@@ -640,10 +693,14 @@ class WardApplication(Adw.Application):
         # The about dialogs have no API for custom rows, so insert one between "Credits" and "Legal"
         # once the list exists (it is built lazily); give up quietly if the layout differs.
         tries = {"n": 0}
+        d_ref = weakref.ref(d)
 
-        def attempt():
+        def attempt() -> bool:
+            dlg = d_ref()
+            if dlg is None or (tries["n"] > 0 and not dlg.get_visible()):
+                return False
             tries["n"] += 1
-            return not (self._add_donation_row(d) or tries["n"] >= 10)
+            return not (self._add_donation_row(dlg) or tries["n"] >= 10)
         if attempt():
             GLib.timeout_add(150, attempt)
 
@@ -736,6 +793,12 @@ class WardApplication(Adw.Application):
         ctrl = Gtk.EventControllerKey.new()
         ctrl.connect("key-pressed", lambda c, k, code, st: win.close() if k == Gdk.KEY_Escape else False)
         win.add_controller(ctrl)
+
+        def on_close(*_a) -> bool:
+            lifetime.dismantle(win)
+            return False
+
+        win.connect("close-request", on_close)
         win.present()
 
     def _copy_donation_text(self, text: str) -> None:

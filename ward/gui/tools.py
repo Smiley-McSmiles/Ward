@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import time
+import weakref
 from xml.etree import ElementTree as ET
 
-from gi.repository import Adw, GLib, Gtk, Pango
+from gi.repository import Adw, GLib, GObject, Gtk, Pango
 
 from ..core.models import AccountItem
 from ..i18n import _
@@ -26,6 +27,7 @@ class XmlConsole(Adw.Window):
         self.core = window.core
         self.session = None
         self._handler = 0
+        self._scroll_idle = 0
         self.paused = False
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -97,13 +99,17 @@ class XmlConsole(Adw.Window):
         self._rebuild()
 
     def _detach(self) -> None:
-        if self.session is not None and self._handler:
-            self.session.disconnect(self._handler)
+        if self.session is not None:
+            if self._handler and GObject.signal_handler_is_connected(self.session, self._handler):
+                self.session.disconnect(self._handler)
             self.session.console = False
         self.session = None
         self._handler = 0
 
     def _on_close(self, *_a) -> bool:
+        if self._scroll_idle:
+            GLib.source_remove(self._scroll_idle)
+            self._scroll_idle = 0
         self._detach()
         lifetime.dismantle(self)
         return False
@@ -118,14 +124,47 @@ class XmlConsole(Adw.Window):
         if self.session is not None:
             self.session.clear_xml_history()
 
+    def _insert_entry(self, incoming: bool, text: str, stamp: float | None = None) -> None:
+        when = GLib.DateTime.new_from_unix_local(int(stamp if stamp is not None else time.time()))
+        ts = when.format("%H:%M:%S") if when is not None else ""
+        end = self.buffer.get_end_iter()
+        self.buffer.insert_with_tags(end, "%s %s\n" % (ts, _("received") if incoming else _("sent")),
+                                     self.tag_head)
+        end = self.buffer.get_end_iter()
+        self.buffer.insert_with_tags(end, text + "\n\n", self.tag_in if incoming else self.tag_out)
+
+    def _trim_buffer(self) -> None:
+        lines = self.buffer.get_line_count()
+        if lines > MAX_LINES:
+            start = self.buffer.get_start_iter()
+            cut = self.buffer.get_iter_at_line(lines - MAX_LINES)
+            cut = cut[1] if isinstance(cut, tuple) else cut
+            self.buffer.delete(start, cut)
+
     def _rebuild(self) -> None:
         """Show what the session kept while the console was closed or paused."""
         self.buffer.set_text("")
         if self.session is None:
             return
-        for stamp, incoming, text in self.session.xml_history:
-            self._append(incoming, text, stamp, scroll=False)
-        self._scroll_to_end()
+        f = self.filter.get_text().strip()
+        selected: list[tuple[float, bool, str]] = []
+        total_lines = 0
+        for stamp, incoming, text in reversed(self.session.xml_history):
+            if f and f not in text:
+                continue
+            selected.append((stamp, incoming, text))
+            total_lines += 3 + text.count("\n")
+            if total_lines >= MAX_LINES:
+                break
+        selected.reverse()
+        self.buffer.begin_irreversible_action()
+        try:
+            for stamp, incoming, text in selected:
+                self._insert_entry(incoming, text, stamp)
+            self._trim_buffer()
+        finally:
+            self.buffer.end_irreversible_action()
+        self._scroll_to_end(force=True)
 
     def _on_xml(self, _s, incoming: bool, text: str) -> None:
         if self.paused:
@@ -136,24 +175,29 @@ class XmlConsole(Adw.Window):
         f = self.filter.get_text().strip()
         if f and f not in text:
             return
-        when = GLib.DateTime.new_from_unix_local(int(stamp if stamp is not None else time.time()))
-        end = self.buffer.get_end_iter()
-        self.buffer.insert_with_tags(end, "%s %s\n" % (when.format("%H:%M:%S"),
-                                                       _("received") if incoming else _("sent")), self.tag_head)
-        end = self.buffer.get_end_iter()
-        self.buffer.insert_with_tags(end, text + "\n\n", self.tag_in if incoming else self.tag_out)
-        if self.buffer.get_line_count() > MAX_LINES:
-            start = self.buffer.get_start_iter()
-            cut = self.buffer.get_iter_at_line(self.buffer.get_line_count() - MAX_LINES)
-            cut = cut[1] if isinstance(cut, tuple) else cut
-            self.buffer.delete(start, cut)
+        self._insert_entry(incoming, text, stamp)
+        self._trim_buffer()
         if scroll:
             self._scroll_to_end()
 
-    def _scroll_to_end(self) -> None:
+    def _scroll_to_end(self, force: bool = False) -> None:
+        if self._scroll_idle:
+            return
         adj = self.scroller.get_vadjustment()
-        if adj.get_value() + adj.get_page_size() >= adj.get_upper() - 60:
-            GLib.idle_add(lambda: adj.set_value(adj.get_upper()) and False)
+        if not force and adj.get_value() + adj.get_page_size() < adj.get_upper() - 60:
+            return
+        ref = weakref.ref(self)
+
+        def scroll() -> bool:
+            win = ref()
+            if win is None or not hasattr(win, "scroller"):
+                return False
+            win._scroll_idle = 0
+            a = win.scroller.get_vadjustment()
+            a.set_value(a.get_upper())
+            return False
+
+        self._scroll_idle = GLib.idle_add(scroll)
 
     def _send(self) -> None:
         b = self.input.get_buffer()
@@ -190,6 +234,7 @@ class DiscoBrowser(BaseDialog):
         back.connect("clicked", lambda *_: self._back())
         self.header.pack_start(back)
         self.result_groups: list[Adw.PreferencesGroup] = []
+        self._req_seq = 0
         self.browse()
 
     def _back(self) -> None:
@@ -204,6 +249,8 @@ class DiscoBrowser(BaseDialog):
         jid = self.jid_row.get_text().strip()
         node = self.node_row.get_text().strip()
         self.history.append((jid, node))
+        self._req_seq += 1
+        seq = self._req_seq
 
         async def go():
             s = online_session(self.core, self.acc)
@@ -213,17 +260,19 @@ class DiscoBrowser(BaseDialog):
             except Exception:
                 items = []
             return info, items
-        self.run(go(), self._show)
+        self.run(go(), lambda res: seq == self._req_seq and self._show(res), loads=True)
 
     def _show(self, res) -> None:
         info, items = res
         for g in self.result_groups:
+            lifetime.release(g)
             self.page.remove(g)
         self.result_groups = []
         ident = self.group(_("Identities"))
         self.result_groups.append(ident)
         for cat, typ, name in info.identities:
-            ident.add(Adw.ActionRow(title=widgets.escape(name or "%s/%s" % (cat, typ)), subtitle="%s/%s" % (cat, typ)))
+            ident.add(Adw.ActionRow(title=widgets.escape(name or "%s/%s" % (cat, typ)),
+                                    subtitle=widgets.escape("%s/%s" % (cat, typ))))
         if items:
             ig = self.group(_("Items"))
             self.result_groups.append(ig)

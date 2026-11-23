@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import weakref
+
 from gi.repository import Gio, GLib, Gtk, Pango
 
 from ..core import colors
@@ -21,12 +23,15 @@ class MembersPanel(Gtk.Box):
         self.core = view.core
         self.chat: ChatItem | None = None
         self._occupant: OccupantItem | None = None
+        self._popover: Gtk.PopoverMenu | None = None
+        self._dirty = False
+        self._setting_chat = False
         head = Gtk.Box(spacing=6, margin_start=12, margin_end=6, margin_top=8, margin_bottom=4)
         self.count = Gtk.Label(xalign=0, hexpand=True, css_classes=["heading"])
         head.append(self.count)
         self.append(head)
         self.filter = Gtk.SearchEntry(placeholder_text=_("Filter"), margin_start=8, margin_end=8, margin_bottom=4)
-        self.filter.connect("search-changed", lambda *_: self.refresh())
+        self.filter.connect("search-changed", lambda *_: not self._setting_chat and self.refresh())
         self.append(self.filter)
         self.list = Gtk.ListBox(css_classes=["navigation-sidebar"], selection_mode=Gtk.SelectionMode.NONE)
         self.list.connect("row-activated", self._on_activated)
@@ -35,6 +40,10 @@ class MembersPanel(Gtk.Box):
         self.append(sc)
         self._refresh_pending = 0
         lifetime.watch(self.core.muc, "occupants-changed", self._on_changed)
+        self.connect("map", self._on_map)
+        self.connect("unmap", self._on_unmap)
+        ref = weakref.ref(self)
+        lifetime.when_unrooted(self, lambda: (p := ref()) is not None and p._cancel_pending())
 
         group = Gio.SimpleActionGroup()
         for name, cb in (("message", self._private_message), ("mention", self._mention),
@@ -51,9 +60,40 @@ class MembersPanel(Gtk.Box):
             group.add_action(a)
         self.insert_action_group("member", group)
 
+    def _cancel_pending(self) -> None:
+        if getattr(self, "_refresh_pending", 0):
+            GLib.source_remove(self._refresh_pending)
+            self._refresh_pending = 0
+        self._occupant = None
+        pop = getattr(self, "_popover", None)
+        if pop is not None:
+            self._popover = None
+            pop.popdown()
+            pop.set_menu_model(None)
+            if pop.get_parent() is not None:
+                pop.unparent()
+            lifetime.disconnect_all(pop)
+
+    def _on_map(self, *_a) -> None:
+        if getattr(self, "_dirty", False):
+            self.refresh()
+
+    def _on_unmap(self, *_a) -> None:
+        self._cancel_pending()
+        if hasattr(self, "list"):
+            widgets.clear(self.list)
+            self._dirty = self.chat is not None
+
     def set_chat(self, chat: ChatItem | None) -> None:
+        self._cancel_pending()
         self.chat = chat
-        self.filter.set_text("")
+        self._dirty = False
+        if self.filter.get_text():
+            self._setting_chat = True
+            try:
+                self.filter.set_text("")
+            finally:
+                self._setting_chat = False
         self.refresh()
 
     def _on_changed(self, _muc, chat) -> None:
@@ -72,9 +112,15 @@ class MembersPanel(Gtk.Box):
         widgets.clear(self.list)
         chat = self.chat
         if chat is None:
+            self._dirty = False
+            self.count.set_text("")
             return
         occupants = self.core.muc.sorted_occupants(chat)
         self.count.set_text(_("%d here") % len(occupants))
+        if self.get_realized() and not self.get_mapped():
+            self._dirty = True
+            return
+        self._dirty = False
         text = self.filter.get_text().strip().lower()
         if text:
             occupants = [o for o in occupants if text in o.nick.lower() or text in o.real_jid.lower()]
@@ -152,9 +198,27 @@ class MembersPanel(Gtk.Box):
             if o.affiliation not in ("owner",) or mine_aff == "owner":
                 sec.append(_("Ban…"), "member.ban")
         menu.append_section(None, sec)
+        if self._popover is not None:
+            self._popover.popdown()
         pop = Gtk.PopoverMenu.new_from_model(menu)
         pop.set_parent(row)
-        pop.connect("closed", lambda p: GLib.idle_add(p.unparent))
+        self._popover = pop
+        self_ref = weakref.ref(self)
+
+        def on_closed(p: Gtk.PopoverMenu) -> None:
+            def cleanup() -> bool:
+                panel = self_ref()
+                if panel is not None and getattr(panel, "_popover", None) is p:
+                    panel._popover = None
+                p.set_menu_model(None)
+                if p.get_parent() is not None:
+                    p.unparent()
+                lifetime.disconnect_all(p)
+                return False
+
+            GLib.idle_add(cleanup)
+
+        pop.connect("closed", on_closed)
         pop.popup()
 
     # ------------------------------------------------------------------ actions

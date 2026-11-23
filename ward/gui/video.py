@@ -5,10 +5,20 @@ message's player is where it left off when fullscreen ends."""
 
 from __future__ import annotations
 
+import weakref
+
 from gi.repository import Gdk, Gtk
 
 from ..i18n import _
-from . import compat
+from . import compat, lifetime
+
+
+def _pause_on_unmap(vid: Gtk.Video) -> None:
+    if getattr(vid, "_ward_fullscreen", False):
+        return
+    stream = vid.get_media_stream()
+    if stream is not None and stream.get_playing():
+        stream.pause()
 
 
 def attachment(path: str, is_video: bool, save=None) -> Gtk.Widget:
@@ -16,6 +26,7 @@ def attachment(path: str, is_video: bool, save=None) -> Gtk.Widget:
     the video (fullscreen also on double click), or an audio bar."""
     vid = Gtk.Video.new_for_filename(path)
     vid.set_size_request(320 if is_video else 280, 220 if is_video else -1)
+    vid.connect("unmap", _pause_on_unmap)
     if not is_video:
         vid.set_halign(Gtk.Align.START)
         return vid
@@ -84,8 +95,21 @@ def fullscreen(vid: Gtk.Video) -> None:
     clicks = Gtk.GestureClick()
     clicks.connect("pressed", lambda _g, n, _x, _y: n == 2 and win.close())
     big.add_controller(clicks)
+    vid._ward_fullscreen = True
+    vid_ref = weakref.ref(vid)
+
+    def on_close(*_a) -> bool:
+        v = vid_ref()
+        if v is not None and hasattr(v, "_ward_fullscreen"):
+            v._ward_fullscreen = False
+        big.set_media_stream(None)
+        win.set_child(None)
+        lifetime.release(overlay)
+        lifetime.dismantle(win)
+        return False
+
     # the stream stays the message's: the fullscreen player lets go of it when it closes
-    win.connect("close-request", lambda *_: big.set_media_stream(None) or False)
+    win.connect("close-request", on_close)
     win.fullscreen()
     win.present()
     if not stream.get_playing() and not stream.get_ended():

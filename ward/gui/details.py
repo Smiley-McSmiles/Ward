@@ -7,7 +7,7 @@ from gi.repository import Adw, Gtk
 
 from ..core.models import ChatItem
 from ..i18n import _
-from . import compat, widgets
+from . import compat, lifetime, widgets
 from .dialogs import BaseDialog, online_session
 
 NOTIFY = (("default", "Default"), ("all", "All messages"), ("mentions", "Mentions and replies"), ("none", "None"))
@@ -132,7 +132,7 @@ class ContactDetails(BaseDialog):
             rm.add_css_class("error")
             rm.connect("activated", lambda *_: self._remove())
             danger.add(rm)
-        widgets.run(self.toasts, self._load_software(), on_error=lambda _e: None)
+        widgets.run(self.toasts, self._load_software(), on_error=lambda _e: None, loads=True)
 
     async def _load_software(self) -> None:
         s = self.core.sessions.get(self.chat.account_id)
@@ -142,6 +142,8 @@ class ContactDetails(BaseDialog):
         parts = []
         for res in list(c.resources)[:4]:
             sw = await self.core.disco.software(s, "%s/%s" % (c.jid, res))
+            if getattr(self, "_closed", True) or not hasattr(self, "software"):
+                return
             if sw:
                 name, version, os_ = sw
                 parts.append(" ".join(x for x in (name, version) if x) + (" (%s)" % os_ if os_ else ""))
@@ -348,13 +350,15 @@ class RoomConfigDialog(BaseDialog):
         self.form_view = None
         self.page_group = self.group()
         self.page_group.add(compat.spinner())
-        self.run(self._load())
+        self.run(self._load(), loads=True)
 
     async def _load(self) -> None:
         from .forms_view import FormView
 
         s = online_session(self.core, self.core.accounts.get(self.chat.account_id))
         form = await self.core.muc.get_config(s, self.chat.jid)
+        if getattr(self, "_closed", True) or not hasattr(self, "page_group"):
+            return
         self.page.remove(self.page_group)
         self.form_view = FormView(form)
         g = self.group()
@@ -389,9 +393,13 @@ class AffiliationsDialog(BaseDialog):
                            ("outcast", _("Banned"))):
             self.groups[aff] = self.group(title)
         self._rows: list[tuple[Adw.PreferencesGroup, Gtk.Widget]] = []
+        self._refresh_seq = 0
         self.refresh()
 
     def refresh(self) -> None:
+        self._refresh_seq += 1
+        seq = self._refresh_seq
+
         async def go():
             out = {}
             for aff in self.groups:
@@ -402,7 +410,10 @@ class AffiliationsDialog(BaseDialog):
             return out
 
         def done(lists):
+            if seq != self._refresh_seq:
+                return
             for g, r in self._rows:
+                lifetime.release(r)
                 g.remove(r)
             self._rows = []
             for aff, items in lists.items():
@@ -411,7 +422,7 @@ class AffiliationsDialog(BaseDialog):
                     g.set_description(_("You can't see this list"))
                     continue
                 for jid, nick in items:
-                    row = Adw.ActionRow(title=jid, subtitle=widgets.escape(nick))
+                    row = Adw.ActionRow(title=widgets.escape(jid), subtitle=widgets.escape(nick))
                     rm = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER, css_classes=["flat"],
                                     tooltip_text=_("Remove"))
                     rm.connect("clicked", lambda *_a, j=jid: self.run(self.core.muc.set_affiliation(
@@ -419,7 +430,7 @@ class AffiliationsDialog(BaseDialog):
                     row.add_suffix(rm)
                     g.add(row)
                     self._rows.append((g, row))
-        self.run(go(), done)
+        self.run(go(), done, loads=True)
 
     def _add(self) -> None:
         jid = self.jid.get_text().strip()

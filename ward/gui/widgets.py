@@ -5,10 +5,17 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
+import stat
+import time
+import weakref
 from collections import OrderedDict
 from collections.abc import Callable, Coroutine
 
-from gi.repository import Adw, Gdk, GLib, Gtk
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gdk, GLib, GObject, Gtk
 
 from .. import aio, util
 from ..core import colors
@@ -32,7 +39,7 @@ def run(widget: Gtk.Widget | None, coro: Coroutine, done: Callable | None = None
             log.info("action failed: %s", e, exc_info=log.isEnabledFor(logging.DEBUG))
             if on_error is not None:
                 on_error(e)
-            elif widget is not None:
+            elif widget is not None and widget.get_root() is not None:
                 compat.toast(widget, "%s%s" % ((error + ": ") if error else "", e))
             return None
         if done is not None:
@@ -42,14 +49,292 @@ def run(widget: Gtk.Widget | None, coro: Coroutine, done: Callable | None = None
     if loads and widget is not None:
         from . import lifetime
 
-        lifetime.when_unrooted(widget, lambda: task.done() or task.cancel())
+        task_ref = weakref.ref(task)
+        w_ref = weakref.ref(widget)
+        hid = lifetime.when_unrooted(widget, lambda: (t := task_ref()) is not None and (t.done() or t.cancel()))
+
+        def detach(_t) -> None:
+            w = w_ref()
+            if w is not None and GObject.signal_handler_is_connected(w, hid):
+                w.disconnect(hid)
+
+        task.add_done_callback(detach)
     return task
 
 
 # ------------------------------------------------------------------------------------------------ avatars
 _textures: OrderedDict[tuple[str, int], Gdk.Texture] = OrderedDict()
+_texture_bytes: int = 0
+# key -> (monotonic_ts, mtime_ns, file_size); mtime_ns is None when the file was absent
+_negative_textures: OrderedDict[tuple[str, int], tuple[float, int | None, int | None]] = OrderedDict()
+_pending_textures: dict[tuple[str, int], list[Callable[[Gdk.Texture | None], None]]] = {}
+
 AVATAR_PIXELS = 192        # the largest avatar shown is 96 px: twice that for high-resolution screens
 IMAGE_PIXELS = 640         # images in the chat are shown at most 320 px wide
+MAX_TEXTURE_COUNT = 200
+MAX_TEXTURE_BYTES = 48 * 1024 * 1024
+NEGATIVE_TTL = 2.0
+MAX_NEGATIVE_COUNT = 512
+MAX_RAW_IMAGE_BYTES = 64 * 1024 * 1024
+
+
+def _texture_size(t: Gdk.Texture) -> int:
+    return max(0, int(t.get_width()) * int(t.get_height()) * 4)
+
+
+def _pixbuf_to_texture(pb) -> Gdk.Texture:
+    fmt = Gdk.MemoryFormat.R8G8B8A8 if pb.get_has_alpha() else Gdk.MemoryFormat.R8G8B8
+    return Gdk.MemoryTexture.new(pb.get_width(), pb.get_height(), fmt, pb.read_pixel_bytes(), pb.get_rowstride())
+
+
+def _stat_regular(path: str) -> os.stat_result | None:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return st if stat.S_ISREG(st.st_mode) else None
+
+
+def _cache_get(key: tuple[str, int]) -> Gdk.Texture | None:
+    t = _textures.get(key)
+    if t is not None:
+        _textures.move_to_end(key)
+    return t
+
+
+def _cache_put(key: tuple[str, int], t: Gdk.Texture) -> None:
+    global _texture_bytes
+    _negative_textures.pop(key, None)
+    size = _texture_size(t)
+    if not _textures:
+        _texture_bytes = 0
+    old = _textures.pop(key, None)
+    if old is not None:
+        _texture_bytes = max(0, _texture_bytes - _texture_size(old))
+    if size > MAX_TEXTURE_BYTES:
+        return
+    _textures[key] = t
+    _texture_bytes += size
+    while _textures and (len(_textures) > MAX_TEXTURE_COUNT or _texture_bytes > MAX_TEXTURE_BYTES):
+        _k, evicted = _textures.popitem(last=False)
+        _texture_bytes = max(0, _texture_bytes - _texture_size(evicted))
+
+
+def _is_negative(key: tuple[str, int]) -> bool:
+    entry = _negative_textures.get(key)
+    if entry is None:
+        return False
+    ts, mtime_ns, size = entry
+    now = time.monotonic()
+    if now - ts < NEGATIVE_TTL:
+        _negative_textures.move_to_end(key)
+        return True
+    if mtime_ns is None:
+        _negative_textures.pop(key, None)
+        return False
+    st = _stat_regular(key[0])
+    if st is not None and st.st_mtime_ns == mtime_ns and st.st_size == size:
+        _negative_textures[key] = (now, mtime_ns, size)
+        _negative_textures.move_to_end(key)
+        return True
+    _negative_textures.pop(key, None)
+    return False
+
+
+def _record_negative(key: tuple[str, int], mtime_ns: int | None = None, size: int | None = None) -> None:
+    _negative_textures[key] = (time.monotonic(), mtime_ns, size)
+    _negative_textures.move_to_end(key)
+    while len(_negative_textures) > MAX_NEGATIVE_COUNT:
+        _negative_textures.popitem(last=False)
+
+
+def cached_texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
+    """Return a cached texture without touching the filesystem, or None if not cached."""
+    if not path or not max_side:
+        return None
+    return _cache_get((path, max_side))
+
+
+def invalidate_texture(path: str) -> None:
+    """Drop cached and negative-cached texture entries for a file path."""
+    global _texture_bytes
+    if not path:
+        return
+    for key in [k for k in _textures if k[0] == path]:
+        evicted = _textures.pop(key)
+        _texture_bytes = max(0, _texture_bytes - _texture_size(evicted))
+    for key in [k for k in _negative_textures if k[0] == path]:
+        _negative_textures.pop(key, None)
+
+
+def clear_texture_cache() -> None:
+    """Release all cached decoded textures and negative lookup entries."""
+    global _texture_bytes
+    _textures.clear()
+    _negative_textures.clear()
+    _texture_bytes = 0
+
+
+def _decode_pil_rgba(path: str, max_side: int) -> tuple[int, int, bytes] | None:
+    """Thread-safe image decode via Pillow (never touches GTK/GDK objects)."""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return None
+    try:
+        with Image.open(path) as im:
+            if max_side > 0:
+                try:
+                    im.draft(None, (max_side * 2, max_side * 2))
+                except Exception:
+                    pass
+            im = ImageOps.exif_transpose(im)
+            if max_side > 0 and (im.width > max_side or im.height > max_side):
+                im.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+            if im.width <= 0 or im.height <= 0:
+                return None
+            if im.mode != "RGBA":
+                im = im.convert("RGBA")
+            return im.width, im.height, im.tobytes()
+    except Exception:
+        return None
+
+
+def _decode_bytes_on_main(blob: bytes, max_side: int) -> Gdk.Texture | None:
+    """Decode raw file bytes into a Gdk.Texture on the GTK main thread."""
+    gbytes = GLib.Bytes.new(blob)
+    if not max_side:
+        try:
+            return Gdk.Texture.new_from_bytes(gbytes)
+        except GLib.Error:
+            pass
+        try:
+            from gi.repository import GdkPixbuf, Gio
+
+            stream = Gio.MemoryInputStream.new_from_bytes(gbytes)
+            pb = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
+            if pb is not None:
+                pb = pb.apply_embedded_orientation() or pb
+                return _pixbuf_to_texture(pb)
+        except (GLib.Error, ImportError, ValueError):
+            pass
+        return None
+    try:
+        from gi.repository import GdkPixbuf, Gio
+
+        stream = Gio.MemoryInputStream.new_from_bytes(gbytes)
+        pb = GdkPixbuf.Pixbuf.new_from_stream_at_scale(stream, max_side, max_side, True, None)
+        if pb is not None:
+            pb = pb.apply_embedded_orientation() or pb
+            return _pixbuf_to_texture(pb)
+    except (GLib.Error, ImportError, ValueError):
+        pass
+    try:
+        t = Gdk.Texture.new_from_bytes(gbytes)
+        if t.get_width() <= max_side and t.get_height() <= max_side:
+            return t
+    except GLib.Error:
+        pass
+    return None
+
+
+def _decode_worker(path: str, max_side: int) -> tuple[str, tuple]:
+    """Read and decode image data in a background worker thread without touching GTK/GDK."""
+    st = _stat_regular(path)
+    if st is None:
+        return ("missing", ())
+    rgba = _decode_pil_rgba(path, max_side)
+    if rgba is not None:
+        w, h, data = rgba
+        return ("rgba", (w, h, data, st.st_mtime_ns, st.st_size))
+    if st.st_size > MAX_RAW_IMAGE_BYTES:
+        return ("failed", (st.st_mtime_ns, st.st_size))
+    try:
+        with open(path, "rb") as fh:
+            blob = fh.read(MAX_RAW_IMAGE_BYTES + 1)
+        if len(blob) > MAX_RAW_IMAGE_BYTES:
+            return ("failed", (st.st_mtime_ns, st.st_size))
+        return ("bytes", (blob, st.st_mtime_ns, st.st_size))
+    except OSError:
+        return ("missing", ())
+
+
+def texture_async(path: str, max_side: int = AVATAR_PIXELS,
+                  callback: Callable[[Gdk.Texture | None], None] | None = None) -> Gdk.Texture | None:
+    """Return a cached texture immediately if available, or decode it off the main thread and call callback on the
+    GTK main thread via GLib.idle_add.  Multiple concurrent requests for the same (path, max_side) share one job."""
+    if not path:
+        if callback is not None:
+            callback(None)
+        return None
+    key = (path, max_side)
+    if max_side:
+        t = _cache_get(key)
+        if t is not None:
+            if callback is not None:
+                callback(t)
+            return t
+    if _is_negative(key):
+        if callback is not None:
+            callback(None)
+        return None
+
+    waiters = _pending_textures.get(key)
+    if waiters is not None:
+        if callback is not None:
+            waiters.append(callback)
+        return None
+    _pending_textures[key] = [callback] if callback is not None else []
+
+    def run_job() -> None:
+        try:
+            kind, payload = _decode_worker(path, max_side)
+        except Exception:
+            kind, payload = ("missing", ())
+
+        def finish() -> bool:
+            cbs = _pending_textures.pop(key, [])
+            tex: Gdk.Texture | None = None
+            if kind == "missing":
+                _record_negative(key, None, None)
+            elif kind == "failed":
+                mtime_ns, size = payload
+                _record_negative(key, mtime_ns, size)
+            elif kind == "rgba":
+                w, h, data, mtime_ns, size = payload
+                try:
+                    tex = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(data), w * 4)
+                except GLib.Error:
+                    tex = None
+                if tex is not None:
+                    if max_side:
+                        _cache_put(key, tex)
+                else:
+                    _record_negative(key, mtime_ns, size)
+            elif kind == "bytes":
+                blob, mtime_ns, size = payload
+                tex = _decode_bytes_on_main(blob, max_side)
+                if tex is not None:
+                    if max_side:
+                        _cache_put(key, tex)
+                else:
+                    _record_negative(key, mtime_ns, size)
+            for cb in cbs:
+                try:
+                    cb(tex)
+                except Exception:
+                    log.exception("texture_async callback failed")
+            return False
+
+        GLib.idle_add(finish)
+
+    try:
+        aio.workers().submit(run_job)
+    except Exception:
+        _pending_textures.pop(key, None)
+        if callback is not None:
+            callback(None)
+    return None
 
 
 def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
@@ -61,11 +346,14 @@ def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
     # (or three) before finding it in the cache.
     key = (path, max_side)
     if max_side:
-        t = _textures.get(key)
+        t = _cache_get(key)
         if t is not None:
-            _textures.move_to_end(key)
             return t
-    if not os.path.exists(path):
+    if _is_negative(key):
+        return None
+    st = _stat_regular(path)
+    if st is None:
+        _record_negative(key, None, None)
         return None
     if not max_side:
         try:
@@ -75,20 +363,19 @@ def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
         try:
             from gi.repository import GdkPixbuf
 
-            return Gdk.Texture.new_for_pixbuf(GdkPixbuf.Pixbuf.new_from_file(path))
+            pb = GdkPixbuf.Pixbuf.new_from_file(path)
+            if pb is not None:
+                pb = pb.apply_embedded_orientation() or pb
+                return _pixbuf_to_texture(pb)
         except (GLib.Error, ImportError, ValueError):
             pass
-        try:
-            # Last resort for formats GTK/GdkPixbuf does not load (for example JPEG XL when Pillow has a plugin).
-            from PIL import Image, ImageOps
-
-            with Image.open(path) as im:
-                im = ImageOps.exif_transpose(im).convert("RGBA")
-                data = im.tobytes()
-                return Gdk.MemoryTexture.new(im.width, im.height, Gdk.MemoryFormat.R8G8B8A8,
-                                             GLib.Bytes.new(data), im.width * 4)
-        except (ImportError, OSError, ValueError):
-            return None
+        rgba = _decode_pil_rgba(path, 0)
+        if rgba is not None:
+            w, h, data = rgba
+            return Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(data), w * 4)
+        _record_negative(key, st.st_mtime_ns, st.st_size)
+        return None
+    t: Gdk.Texture | None = None
     try:
         from gi.repository import GdkPixbuf
 
@@ -96,17 +383,29 @@ def texture(path: str, max_side: int = AVATAR_PIXELS) -> Gdk.Texture | None:
         w, h = (info[1], info[2]) if info and info[0] is not None else (0, 0)
         if w > max_side or h > max_side:
             pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, max_side, max_side, True)
-            t = Gdk.Texture.new_for_pixbuf(pb)
-        else:
+            if pb is not None:
+                pb = pb.apply_embedded_orientation() or pb
+                t = _pixbuf_to_texture(pb)
+        elif w > 0 and h > 0:
             t = Gdk.Texture.new_from_filename(path)
     except (GLib.Error, ImportError, ValueError):
+        t = None
+    if t is None:
         try:
-            t = Gdk.Texture.new_from_filename(path)
+            cand = Gdk.Texture.new_from_filename(path)
+            if cand.get_width() <= max_side and cand.get_height() <= max_side:
+                t = cand
         except GLib.Error:
-            return None
-    _textures[key] = t
-    if len(_textures) > 200:
-        _textures.popitem(last=False)
+            t = None
+    if t is None:
+        rgba = _decode_pil_rgba(path, max_side)
+        if rgba is not None:
+            w, h, data = rgba
+            t = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(data), w * 4)
+    if t is None:
+        _record_negative(key, st.st_mtime_ns, st.st_size)
+        return None
+    _cache_put(key, t)
     return t
 
 
@@ -122,20 +421,40 @@ def emoji_button(button: Gtk.MenuButton, settings, picked, closed=None) -> None:
 def _create_emoji_chooser(button: Gtk.MenuButton, *_a) -> None:
     if button.get_popover() is not None:
         return
-    from . import emoji_picker
+    info = getattr(button, "_ward_emoji", None)
+    if info is None:
+        return
+    from . import emoji_picker, lifetime
 
     if emoji_picker.available():
-        chooser: Gtk.Popover = emoji_picker.EmojiPicker(button._ward_emoji[2])
+        chooser: Gtk.Popover = emoji_picker.EmojiPicker(info[2])
     else:
         chooser = Gtk.EmojiChooser()
-    chooser.connect("emoji-picked", lambda _c, e: button._ward_emoji[0](e))
+
+    def on_picked(_c, e: str) -> None:
+        cur = getattr(button, "_ward_emoji", None)
+        if cur is not None and cur[0] is not None:
+            cur[0](e)
+
+    chooser.connect("emoji-picked", on_picked)
 
     def on_closed(*_a) -> None:
-        closed = button._ward_emoji[1]
-        if closed is not None:
-            closed()
-        GLib.idle_add(lambda: button.get_popover() is chooser and not button.get_active()
-                      and button.set_popover(None))
+        cur = getattr(button, "_ward_emoji", None)
+        if cur is not None and cur[1] is not None:
+            cur[1]()
+
+        def drop() -> bool:
+            if button.get_popover() is chooser and not button.get_active():
+                button.set_popover(None)
+                if isinstance(chooser, emoji_picker.EmojiPicker):
+                    lifetime.release(chooser)
+                    lifetime.dismantle(chooser)
+                else:
+                    lifetime.disconnect_all(chooser)
+            return False
+
+        GLib.idle_add(drop)
+
     chooser.connect("closed", on_closed)
     button.set_popover(chooser)
 
@@ -145,6 +464,9 @@ class Avatar(Gtk.Overlay):
 
     def __init__(self, size: int = 40, text: str = "", path: str = "", show: str | None = None):
         super().__init__()
+        self._avatar_text: str | None = None
+        self._avatar_path: str = ""
+        self._avatar_show: str | None = ...  # sentinel so first update applies show state
         self.avatar = Adw.Avatar(size=size, show_initials=True)
         self.set_child(self.avatar)
         self.dot = Gtk.Box(css_classes=["presence-dot"], halign=Gtk.Align.END, valign=Gtk.Align.END,
@@ -154,15 +476,42 @@ class Avatar(Gtk.Overlay):
         self.update(text, path, show)
 
     def update(self, text: str = "", path: str = "", show: str | None = None) -> None:
-        self.avatar.set_text(text or "?")
-        self.avatar.set_custom_image(texture(path))
-        if show is None:
-            self.dot.set_visible(False)
+        label_text = text or "?"
+        if label_text != self._avatar_text:
+            self._avatar_text = label_text
+            self.avatar.set_text(label_text)
+        path = path or ""
+        if not path:
+            if self._avatar_path or self.avatar.get_custom_image() is not None:
+                self._avatar_path = ""
+                self.avatar.set_custom_image(None)
         else:
-            for c in ("available", "chat", "away", "xa", "dnd", "offline"):
-                self.dot.remove_css_class(c)
-            self.dot.add_css_class(show)
-            self.dot.set_visible(show != "offline")
+            tex = cached_texture(path)
+            if tex is not None:
+                self._avatar_path = path
+                if self.avatar.get_custom_image() is not tex:
+                    self.avatar.set_custom_image(tex)
+            elif path != self._avatar_path or self.avatar.get_custom_image() is not None:
+                self._avatar_path = path
+                if self.avatar.get_custom_image() is not None:
+                    self.avatar.set_custom_image(None)
+                ref = weakref.ref(self)
+
+                def apply(loaded: Gdk.Texture | None) -> None:
+                    av = ref()
+                    if av is not None and getattr(av, "_avatar_path", None) == path and hasattr(av, "avatar"):
+                        av.avatar.set_custom_image(loaded)
+
+                texture_async(path, AVATAR_PIXELS, apply)
+        if show != self._avatar_show:
+            self._avatar_show = show
+            if show is None:
+                self.dot.set_visible(False)
+            else:
+                for c in ("available", "chat", "away", "xa", "dnd", "offline"):
+                    self.dot.remove_css_class(c)
+                self.dot.add_css_class(show)
+                self.dot.set_visible(show != "offline")
 
     def set_size(self, size: int) -> None:
         self.avatar.set_size(size)
@@ -331,6 +680,7 @@ def clear(box: Gtk.Widget) -> None:
     child = box.get_first_child()
     while child is not None:
         nxt = child.get_next_sibling()
+        release(child)
         box.remove(child)
         child = nxt
 
