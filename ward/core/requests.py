@@ -23,8 +23,7 @@ class RequestItem(Item):
 
     def __init__(self, **kw):
         super().__init__()
-        for k, v in kw.items():
-            setattr(self, k, v)
+        self._init_props(kw)
 
 
 class Requests(GObject.Object):
@@ -40,8 +39,9 @@ class Requests(GObject.Object):
 
     def find(self, account_id: int, jid: str) -> RequestItem | None:
         jid = util.bare(jid)
-        for r in self.items():
-            if r.account_id == account_id and r.jid == jid:
+        for i in range(self.store.get_n_items()):
+            r = self.store.get_item(i)
+            if r is not None and r.account_id == account_id and r.jid == jid:
                 return r
         return None
 
@@ -89,6 +89,12 @@ class Requests(GObject.Object):
         await self._save(account_id)
 
     async def drop_account(self, account_id: int) -> None:
-        for r in [r for r in self.items() if r.account_id == account_id]:
-            await self.remove(account_id, r.jid)
+        removed = False
+        for i in range(self.store.get_n_items() - 1, -1, -1):
+            r = self.store.get_item(i)
+            if r is not None and r.account_id == account_id:
+                self.store.remove(i)
+                removed = True
         await self.core.db.execute("DELETE FROM kv WHERE key = ?", ("requests:%d" % account_id,))
+        if removed:
+            self.emit("changed")

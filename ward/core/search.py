@@ -153,7 +153,7 @@ def build_sql(q: Query, chat_id: int | None = None, limit: int = 200) -> tuple[s
     if q.after:
         sql.append("AND m.timestamp > ?")
         params.append(_ms(q.after, end=True))
-    sql.append("ORDER BY m.timestamp DESC LIMIT ?")
+    sql.append("ORDER BY m.timestamp DESC, m.id DESC LIMIT ?")
     params.append(limit)
     return " ".join(sql), params
 
@@ -163,7 +163,11 @@ async def search(db, text: str, chat_id: int | None = None, limit: int = 200) ->
     if q.empty:
         return []
     sql, params = build_sql(q, chat_id, limit)
-    rows = await db.fetchall(sql, params)
+    fetcher = getattr(db, "fetchall_read", None)
+    if fetcher is not None:
+        rows = await fetcher(sql, params, priority=1)
+    else:
+        rows = await db.fetchall(sql, params)
     return [dict(r) for r in rows]
 
 

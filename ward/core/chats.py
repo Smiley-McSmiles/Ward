@@ -15,8 +15,7 @@ from gi.repository import Gio, GObject
 
 from .. import util
 from . import search
-from .markup import parse as parse_markup
-from .markup import preview as markup_preview
+from .markup import preview_text as markup_preview_text
 from .models import AttachmentItem, ChatItem, MessageItem, MessageList
 from .storage.db import insert, update
 
@@ -66,20 +65,34 @@ def chat_from_row(r: sqlite3.Row) -> ChatItem:
     return c
 
 
-def message_from_row(r: sqlite3.Row) -> MessageItem:
+def message_from_row(r: sqlite3.Row, strings: dict[str, str] | None = None) -> MessageItem:
+    sender = r["sender"]
+    sender_jid = r["sender_jid"]
+    if strings is not None:
+        if sender:
+            sender = strings.setdefault(sender, sender)
+        if sender_jid:
+            sender_jid = strings.setdefault(sender_jid, sender_jid)
     m = MessageItem(id=r["id"], chat_id=r["chat_id"], stanza_id=r["stanza_id"] or "", origin_id=r["origin_id"] or "",
-                    msg_id=r["msg_id"] or "", sender=r["sender"], sender_jid=r["sender_jid"],
+                    msg_id=r["msg_id"] or "", sender=sender, sender_jid=sender_jid,
                     occupant_id=r["occupant_id"], direction=r["direction"], timestamp=r["timestamp"],
                     body=r["body"], is_markdown=bool(r["is_markdown"]), kind=r["kind"], encryption=r["encryption"],
                     sender_device=r["sender_device"] or 0, trust=r["trust_at_receipt"], edited=bool(r["edited"]),
                     retracted=r["retracted"], reply_to=r["reply_to"], status=r["status"], error=r["error"])
-    try:
-        m.extra = json.loads(r["extra"] or "{}")
-    except ValueError:
-        m.extra = {}
-    m.reply_preview = m.extra.get("reply_preview", "")
-    m.reply_author = m.extra.get("reply_author", "")
-    m.mentions_me = bool(m.extra.get("mentions_me"))
+    raw_extra = r["extra"]
+    if raw_extra and raw_extra != "{}":
+        try:
+            extra = json.loads(raw_extra)
+        except ValueError:
+            extra = None
+        if isinstance(extra, dict) and extra:
+            m.extra = extra
+            if extra.get("reply_preview"):
+                m.reply_preview = extra["reply_preview"]
+            if extra.get("reply_author"):
+                m.reply_author = extra["reply_author"]
+            if extra.get("mentions_me"):
+                m.mentions_me = True
     return m
 
 
@@ -88,7 +101,12 @@ def attachment_from_row(r: sqlite3.Row) -> AttachmentItem:
                        width=r["width"] or 0, height=r["height"] or 0, duration=r["duration"] or 0,
                        local_path=r["local_path"], thumbnail=r["thumbnail"], state=r["state"],
                        encrypted=bool(r["aes_key"]))
-    a.aes_key, a.aes_iv, a.sha256 = r["aes_key"], r["aes_iv"], r["sha256"]
+    if r["aes_key"]:
+        a.aes_key = r["aes_key"]
+    if r["aes_iv"]:
+        a.aes_iv = r["aes_iv"]
+    if r["sha256"]:
+        a.sha256 = r["sha256"]
     return a
 
 
@@ -98,15 +116,30 @@ def find_message_job(conn: sqlite3.Connection, chat_id: int, ref: str, sender: s
     """A message by any of its ids (stanza-id, origin-id, id attribute), newest first."""
     if not ref:
         return None
-    sql = "SELECT * FROM messages WHERE chat_id = ? AND (stanza_id = ? OR origin_id = ? OR msg_id = ?)"
-    params: list[Any] = [chat_id, ref, ref, ref]
+    extra_sql = ""
+    extra_params: list[Any] = []
     if sender is not None:
-        sql += " AND sender = ?"
-        params.append(sender)
+        extra_sql += " AND sender = ?"
+        extra_params.append(sender)
     if direction is not None:
-        sql += " AND direction = ?"
-        params.append(direction)
-    return conn.execute(sql + " ORDER BY id DESC LIMIT 1", params).fetchone()
+        extra_sql += " AND direction = ?"
+        extra_params.append(direction)
+    sql = (
+        "SELECT * FROM messages WHERE id = ("
+        "SELECT MAX(id) FROM ("
+        "SELECT id FROM messages WHERE chat_id = ? AND stanza_id = ?%s "
+        "UNION ALL "
+        "SELECT id FROM messages WHERE chat_id = ? AND origin_id = ?%s "
+        "UNION ALL "
+        "SELECT id FROM messages WHERE chat_id = ? AND msg_id = ?%s"
+        "))" % (extra_sql, extra_sql, extra_sql)
+    )
+    params: list[Any] = []
+    for _ in range(3):
+        params.append(chat_id)
+        params.append(ref)
+        params.extend(extra_params)
+    return conn.execute(sql, params).fetchone()
 
 
 def insert_message_job(conn: sqlite3.Connection, values: dict, attachments: list[dict] | None = None) -> int:
@@ -165,6 +198,10 @@ def summarize_reactions(rows: list[tuple[str, list[str]]], me: str, names) -> li
 
 class Chats(GObject.Object):
     """Every chat of every account.  The sidebar filters and sorts this one list."""
+    MAX_CACHED_LISTS = 12
+    INACTIVE_TRIM_MESSAGES = 100
+    INACTIVE_TRIM_THRESHOLD = 150
+
     __gsignals__ = {
         "added": (GObject.SignalFlags.RUN_LAST, None, (object,)),
         "removed": (GObject.SignalFlags.RUN_LAST, None, (object,)),
@@ -182,6 +219,24 @@ class Chats(GObject.Object):
         self.lists: dict[int, MessageList] = {}
         self._draft_timers: dict[int, Any] = {}
 
+    def _run_read(self, job, priority: int = 0):
+        runner = getattr(self.db, "run_read", None)
+        if runner is not None:
+            return runner(job, priority=priority)
+        return self.db.run(job)
+
+    def _touch_list(self, chat_id: int) -> None:
+        ml = self.lists.pop(chat_id, None)
+        if ml is not None:
+            self.lists[chat_id] = ml
+
+    def _cancel_draft_timer(self, chat_id: int) -> None:
+        timers = getattr(self, "_draft_timers", None)
+        if timers:
+            h = timers.pop(chat_id, None)
+            if h is not None:
+                h.cancel()
+
     def items(self) -> list[ChatItem]:
         return [self.store.get_item(i) for i in range(self.store.get_n_items())]
 
@@ -196,9 +251,10 @@ class Chats(GObject.Object):
             self._index(c)
             items.append(c)
         self.store.splice(0, 0, items)
-        previews = await self.db.run(lambda conn: {r["chat_id"]: r for r in conn.execute(
-            "SELECT m.* FROM messages m JOIN (SELECT chat_id, MAX(id) AS mid FROM messages WHERE retracted = 0 "
-            "AND kind IN ('text','me','file') GROUP BY chat_id) x ON m.id = x.mid")})
+        previews = await self._run_read(lambda conn: {r["chat_id"]: r for r in conn.execute(
+            "SELECT m.* FROM chats c JOIN messages m ON m.id = ("
+            "SELECT id FROM messages WHERE chat_id = c.id AND retracted = 0 "
+            "AND kind IN ('text','me','file') ORDER BY id DESC LIMIT 1)")})
         for c in items:
             r = previews.get(c.id)
             if r is not None:
@@ -220,7 +276,7 @@ class Chats(GObject.Object):
         return None
 
     def for_account(self, account_id: int) -> list[ChatItem]:
-        return [c for c in self.items() if c.account_id == account_id]
+        return [c for c in self.by_id.values() if c.account_id == account_id]
 
     async def get_or_create(self, account_id: int, jid: str, type_: str = "chat", name: str = "",
                             open_: bool = True, is_request: bool = False) -> ChatItem:
@@ -283,6 +339,13 @@ class Chats(GObject.Object):
 
         paths_ = await self.db.run(job)
         self.core.files.forget(paths_)
+        timers = getattr(self, "_draft_timers", None)
+        if timers:
+            h = timers.pop(chat.id, None)
+            if h is not None:
+                h.cancel()
+        if getattr(self.core, "active_chat", None) is chat and hasattr(self.core, "set_active_chat"):
+            self.core.set_active_chat(None)
         self.by_id.pop(chat.id, None)
         self.by_key.pop((chat.account_id, chat.jid, chat.type), None)
         self.lists.pop(chat.id, None)
@@ -293,14 +356,22 @@ class Chats(GObject.Object):
         self.emit("removed", chat)
 
     async def remove_account(self, account_id: int) -> None:
-        for c in self.for_account(account_id):
+        removed = self.for_account(account_id)
+        if not removed:
+            return
+        removed_ids = {c.id for c in removed}
+        for c in removed:
+            self._cancel_draft_timer(c.id)
+            if getattr(self.core, "active_chat", None) is c and hasattr(self.core, "set_active_chat"):
+                self.core.set_active_chat(None)
             self.by_id.pop(c.id, None)
             self.by_key.pop((c.account_id, c.jid, c.type), None)
             self.lists.pop(c.id, None)
-            for i in range(self.store.get_n_items()):
-                if self.store.get_item(i) is c:
-                    self.store.remove(i)
-                    break
+        for i in range(self.store.get_n_items() - 1, -1, -1):
+            item = self.store.get_item(i)
+            if item is not None and item.id in removed_ids:
+                self.store.remove(i)
+        for c in removed:
             self.emit("removed", c)
 
     # ------------------------------------------------------------------ chat list actions
@@ -320,24 +391,35 @@ class Chats(GObject.Object):
         from .. import aio
 
         loop = aio.get_loop()
-        h = self._draft_timers.pop(chat.id, None)
-        if h is not None:
+        self._cancel_draft_timer(chat.id)
+        cid = chat.id
+
+        def _flush_draft():
+            self._draft_timers.pop(cid, None)
+            aio.spawn(self.save(chat, "draft"))
+
+        self._draft_timers[cid] = loop.call_later(0.8, _flush_draft)
+
+    def clear_timers(self) -> None:
+        for h in self._draft_timers.values():
             h.cancel()
-        self._draft_timers[chat.id] = loop.call_later(0.8, lambda: aio.spawn(self.save(chat, "draft")))
+        self._draft_timers.clear()
 
     def _set_preview(self, chat: ChatItem, m: MessageItem) -> None:
         if m.retracted:
             text = ""
-        elif m.kind == "file" or (m.attachments and not m.body):
-            a = m.attachments[0] if m.attachments else None
+        elif m.kind == "file" or (not m.body and bool(m.__dict__.get("_attachments"))):
+            atts = m.__dict__.get("_attachments") or ()
+            a = atts[0] if atts else None
             text = "📎 " + (a.name if a and a.name else "File")
         elif m.encryption and not m.body:
             text = ""
         else:
             body = m.body[4:] if m.kind == "me" else m.body
             try:
-                text = markup_preview(parse_markup(body, m.is_markdown,
-                                                   markdown_from_others=self.core.settings["chats.markdown_others"]))
+                text = markup_preview_text(
+                    body, m.is_markdown, markdown_from_others=self.core.settings["chats.markdown_others"]
+                )
             except Exception:
                 text = util.first_line(body)
             if m.kind == "me":
@@ -351,7 +433,33 @@ class Chats(GObject.Object):
         if ml is None:
             ml = MessageList(chat)
             self.lists[chat.id] = ml
+        else:
+            self._touch_list(chat.id)
+        self.trim_inactive(exclude_id=chat.id)
         return ml
+
+    def trim_inactive(self, keep: int = INACTIVE_TRIM_MESSAGES, max_lists: int | None = MAX_CACHED_LISTS,
+                      exclude_id: int | None = None) -> int:
+        """Trim non-active cached MessageLists and evict LRU inactive entries above max_lists."""
+        active = getattr(self.core, "active_chat", None)
+        active_id = active.id if active is not None else None
+        protected = {i for i in (exclude_id, active_id) if i is not None}
+        trimmed = 0
+        for cid, ml in list(self.lists.items()):
+            if cid in protected or ml.loading:
+                continue
+            if len(ml) > keep:
+                ml.trim(keep)
+                trimmed += 1
+        if max_lists is not None and len(self.lists) > max_lists:
+            for cid in list(self.lists):
+                if len(self.lists) <= max_lists:
+                    break
+                ml = self.lists.get(cid)
+                if cid in protected or (ml is not None and ml.loading):
+                    continue
+                self.lists.pop(cid, None)
+        return trimmed
 
     async def load_page(self, chat: ChatItem, before: MessageItem | None = None, limit: int = 60
                         ) -> list[MessageItem]:
@@ -361,28 +469,39 @@ class Chats(GObject.Object):
                 rows = conn.execute("SELECT * FROM messages WHERE chat_id = ? ORDER BY timestamp DESC, id DESC "
                                     "LIMIT ?", (chat.id, limit)).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM messages WHERE chat_id = ? AND (timestamp < ? OR (timestamp = ? "
-                                    "AND id < ?)) ORDER BY timestamp DESC, id DESC LIMIT ?",
-                                    (chat.id, before.timestamp, before.timestamp, before.id, limit)).fetchall()
+                rows = conn.execute("SELECT * FROM messages WHERE chat_id = ? AND (timestamp, id) < (?, ?) "
+                                    "ORDER BY timestamp DESC, id DESC LIMIT ?",
+                                    (chat.id, before.timestamp, before.id, limit)).fetchall()
             ids = [r["id"] for r in rows]
             return rows, load_reactions_job(conn, ids), load_attachments_job(conn, ids)
 
-        rows, reactions, attachments = await self.db.run(job)
+        rows, reactions, attachments = await self._run_read(job, priority=0)
+        strings: dict[str, str] = {}
         out = []
         for r in reversed(rows):
-            m = message_from_row(r)
-            self.decorate(chat, m, reactions.get(m.id, []), attachments.get(m.id, []))
+            m = message_from_row(r, strings)
+            self.decorate(chat, m, reactions.get(m.id, []), attachments.get(m.id, []), strings)
             out.append(m)
         return out
 
-    def decorate(self, chat: ChatItem, m: MessageItem, reactions=None, attachments=None) -> None:
+    def decorate(self, chat: ChatItem, m: MessageItem, reactions=None, attachments=None,
+                 strings: dict[str, str] | None = None) -> None:
         names = self.core.names
-        m.sender_name = names.sender_name(chat, m)
+        sname = names.sender_name(chat, m)
+        if strings is not None and sname:
+            sname = strings.setdefault(sname, sname)
+        m.sender_name = sname
         if reactions is not None:
-            m.reactions = summarize_reactions(reactions, self.core.my_reaction_id(chat),
-                                              lambda s: names.reactor_name(chat, s))
+            if reactions:
+                m.reactions = summarize_reactions(reactions, self.core.my_reaction_id(chat),
+                                                  lambda s: names.reactor_name(chat, s))
+            elif m.__dict__.get("_reactions"):
+                m.reactions = []
         if attachments is not None:
-            m.attachments = [attachment_from_row(a) for a in attachments]
+            if attachments:
+                m.attachments = [attachment_from_row(a) for a in attachments]
+            elif m.__dict__.get("_attachments"):
+                m.attachments = []
 
     async def open_messages(self, chat: ChatItem) -> MessageList:
         ml = self.message_list(chat)
@@ -427,12 +546,17 @@ class Chats(GObject.Object):
         cur.update(body=fresh.body, edited=fresh.edited, retracted=fresh.retracted, status=fresh.status,
                    error=fresh.error, stanza_id=fresh.stanza_id, trust=fresh.trust, kind=fresh.kind,
                    is_markdown=fresh.is_markdown)
-        cur.extra = fresh.extra
-        if cur.reactions != fresh.reactions:
-            cur.reactions = fresh.reactions
+        if fresh.__dict__.get("_extra") or cur.__dict__.get("_extra"):
+            cur.extra = fresh.__dict__.get("_extra") or {}
+        cur_rx = cur.__dict__.get("_reactions") or []
+        fresh_rx = fresh.__dict__.get("_reactions") or []
+        if cur_rx != fresh_rx:
+            cur.reactions = fresh_rx
             cur.reactions_rev += 1
-        if [a.id for a in cur.attachments] != [a.id for a in fresh.attachments]:
-            cur.attachments = fresh.attachments
+        cur_atts = cur.__dict__.get("_attachments") or []
+        fresh_atts = fresh.__dict__.get("_attachments") or []
+        if [a.id for a in cur_atts] != [a.id for a in fresh_atts]:
+            cur.attachments = fresh_atts
             cur.attachments_rev += 1
         return cur
 
@@ -441,6 +565,9 @@ class Chats(GObject.Object):
         ml = self.lists.get(chat.id)
         if ml is not None:
             ml.add(m)
+            active = getattr(self.core, "active_chat", None)
+            if (active is None or active.id != chat.id) and len(ml) > self.INACTIVE_TRIM_THRESHOLD:
+                ml.trim(self.INACTIVE_TRIM_MESSAGES)
         if m.kind in ("text", "me", "file") and not m.retracted:
             self._set_preview(chat, m)
         if m.timestamp > chat.last_activity:
@@ -521,4 +648,5 @@ class Chats(GObject.Object):
         return deleted
 
     def total_unread(self) -> int:
-        return sum(c.unread for c in self.items() if c.open and not c.muted(now_ms()))
+        now = now_ms()
+        return sum(c.unread for c in self.by_id.values() if c.open and not c.muted(now))

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import bisect
 import json
+import math
+from collections.abc import Iterator
 from typing import Any
 
 from gi.repository import Gio, GObject
@@ -13,6 +15,14 @@ from .. import util
 from . import colors
 
 INT64 = GObject.TYPE_INT64
+_PYTYPE_BY_GTYPE = {
+    "gchararray": str,
+    "gboolean": bool,
+    "gint": int,
+    "gint64": int,
+    "gdouble": float,
+    "gfloat": float,
+}
 
 
 def _prop(type_=str, default=None, **kw):
@@ -31,6 +41,44 @@ def _prop(type_=str, default=None, **kw):
 
 class Item(GObject.Object):
     """Base: set several properties at once, only notifying for real changes."""
+
+    @classmethod
+    def _prop_meta(cls) -> dict[str, tuple[str, Any, type, Any, Any]]:
+        meta = cls.__dict__.get("_PROP_META")
+        if meta is not None:
+            return meta
+        meta = {}
+        for base in cls.__mro__:
+            for name, attr in base.__dict__.items():
+                if name in meta or not isinstance(attr, GObject.Property):
+                    continue
+                if attr.fget != attr._default_getter or attr.fset != attr._default_setter:
+                    continue
+                pytype = _PYTYPE_BY_GTYPE.get(attr.type.name)
+                if pytype is None:
+                    continue
+                meta[name] = ("_property_helper_" + name, attr.default, pytype, attr.minimum, attr.maximum)
+        cls._PROP_META = meta
+        return meta
+
+    def _init_props(self, kw: dict[str, Any]) -> None:
+        if not kw:
+            return
+        d = self.__dict__
+        meta = type(self)._prop_meta()
+        for k, v in kw.items():
+            entry = meta.get(k)
+            if entry is not None:
+                hkey, default, pytype, min_v, max_v = entry
+                if type(v) is pytype:
+                    if v == default:
+                        continue
+                    if pytype is float and math.isnan(v):
+                        pass
+                    elif (min_v is None or v >= min_v) and (max_v is None or v <= max_v):
+                        d[hkey] = v
+                        continue
+            setattr(self, k, v)
 
     def update(self, **values: Any) -> list[str]:
         changed = []
@@ -70,8 +118,7 @@ class AccountItem(Item):
     def __init__(self, **kw):
         super().__init__()
         self.options: dict[str, Any] = {}
-        for k, v in kw.items():
-            setattr(self, k, v)
+        self._init_props(kw)
 
     @property
     def display_name(self) -> str:
@@ -115,8 +162,7 @@ class ContactItem(Item):
         super().__init__()
         self.groups: list[str] = []
         self.resources: dict[str, dict] = {}   # resource -> {show, status, priority, caps}
-        for k, v in kw.items():
-            setattr(self, k, v)
+        self._init_props(kw)
         self.refresh_name()
 
     def refresh_name(self) -> None:
@@ -188,8 +234,7 @@ class ChatItem(Item):
     def __init__(self, **kw):
         super().__init__()
         self.options: dict[str, Any] = {}
-        for k, v in kw.items():
-            setattr(self, k, v)
+        self._init_props(kw)
 
     @property
     def is_group(self) -> bool:
@@ -225,14 +270,16 @@ class AttachmentItem(Item):
     progress = _prop(float)
     encrypted = _prop(bool)
     error = _prop(str)
+    aes_key: str = ""
+    aes_iv: str = ""
+    sha256: str = ""
 
     def __init__(self, **kw):
         super().__init__()
-        self.aes_key = ""
-        self.aes_iv = ""
-        self.sha256 = ""
-        for k, v in kw.items():
-            setattr(self, k, v)
+        for attr in ("aes_key", "aes_iv", "sha256"):
+            if kw.get(attr) == "":
+                kw.pop(attr)
+        self._init_props(kw)
 
     @property
     def is_image(self) -> bool:
@@ -284,11 +331,52 @@ class MessageItem(Item):
 
     def __init__(self, **kw):
         super().__init__()
-        self.reactions: list[tuple[str, list[str], bool]] = []   # (emoji, sender names, includes me)
-        self.attachments: list[AttachmentItem] = []
-        self.extra: dict[str, Any] = {}
-        for k, v in kw.items():
-            setattr(self, k, v)
+        self._init_props(kw)
+
+    @property
+    def reactions(self) -> list[tuple[str, list[str], bool]]:
+        v = self.__dict__.get("_reactions")
+        if v is None:
+            v = []
+            self.__dict__["_reactions"] = v
+        return v
+
+    @reactions.setter
+    def reactions(self, value: list[tuple[str, list[str], bool]]) -> None:
+        if value:
+            self.__dict__["_reactions"] = value
+        else:
+            self.__dict__.pop("_reactions", None)
+
+    @property
+    def attachments(self) -> list[AttachmentItem]:
+        v = self.__dict__.get("_attachments")
+        if v is None:
+            v = []
+            self.__dict__["_attachments"] = v
+        return v
+
+    @attachments.setter
+    def attachments(self, value: list[AttachmentItem]) -> None:
+        if value:
+            self.__dict__["_attachments"] = value
+        else:
+            self.__dict__.pop("_attachments", None)
+
+    @property
+    def extra(self) -> dict[str, Any]:
+        v = self.__dict__.get("_extra")
+        if v is None:
+            v = {}
+            self.__dict__["_extra"] = v
+        return v
+
+    @extra.setter
+    def extra(self, value: dict[str, Any]) -> None:
+        if value:
+            self.__dict__["_extra"] = value
+        else:
+            self.__dict__.pop("_extra", None)
 
     @property
     def outgoing(self) -> bool:
@@ -324,8 +412,7 @@ class DeviceItem(Item):
 
     def __init__(self, **kw):
         super().__init__()
-        for k, v in kw.items():
-            setattr(self, k, v)
+        self._init_props(kw)
 
 
 class OccupantItem(Item):
@@ -343,8 +430,7 @@ class OccupantItem(Item):
 
     def __init__(self, **kw):
         super().__init__()
-        for k, v in kw.items():
-            setattr(self, k, v)
+        self._init_props(kw)
 
     @property
     def color(self) -> str:
@@ -389,6 +475,16 @@ class MessageList(GObject.Object):
     def __len__(self) -> int:
         return self.store.get_n_items()
 
+    def __iter__(self) -> Iterator[MessageItem]:
+        store = self.store
+        for i in range(store.get_n_items()):
+            yield store.get_item(i)
+
+    def __reversed__(self) -> Iterator[MessageItem]:
+        store = self.store
+        for i in range(store.get_n_items() - 1, -1, -1):
+            yield store.get_item(i)
+
     def items(self) -> list[MessageItem]:
         return store_items(self.store)
 
@@ -403,7 +499,14 @@ class MessageList(GObject.Object):
         return pos
 
     def add_many(self, msgs: list[MessageItem]) -> None:
-        fresh = [m for m in msgs if m.id not in self.by_id]
+        fresh: list[MessageItem] = []
+        seen = self.by_id
+        local_seen: set[int] = set()
+        for m in msgs:
+            mid = m.id
+            if mid not in seen and mid not in local_seen:
+                local_seen.add(mid)
+                fresh.append(m)
         if not fresh:
             return
         fresh.sort(key=MessageItem.sort_key)
@@ -411,6 +514,12 @@ class MessageList(GObject.Object):
             # the common case: a page of older history goes in front in one splice
             self.store.splice(0, 0, fresh)
             self._keys[0:0] = [m.sort_key() for m in fresh]
+            for m in fresh:
+                self.by_id[m.id] = m
+        elif fresh[0].sort_key() >= self._keys[-1]:
+            pos = len(self._keys)
+            self.store.splice(pos, 0, fresh)
+            self._keys.extend(m.sort_key() for m in fresh)
             for m in fresh:
                 self.by_id[m.id] = m
         else:
@@ -425,16 +534,29 @@ class MessageList(GObject.Object):
         if pos < len(self._keys) and self.store.get_item(pos) is m:
             self.store.remove(pos)
             del self._keys[pos]
+            return
+        for i in range(self.store.get_n_items()):
+            if self.store.get_item(i) is m:
+                self.store.remove(i)
+                if i < len(self._keys):
+                    del self._keys[i]
+                break
 
     def trim(self, keep: int) -> None:
         """Forget all but the newest messages (the chat is no longer shown; older ones load again when scrolled
         to), so the history someone scrolled back through does not stay in memory."""
+        if keep < 0:
+            keep = 0
         extra = len(self) - keep
         if extra <= 0:
             return
-        for m in self.items()[:extra]:
-            self.by_id.pop(m.id, None)
-        self.store.splice(0, extra, [])
+        store = self.store
+        by_id = self.by_id
+        for i in range(extra):
+            m = store.get_item(i)
+            if m is not None:
+                by_id.pop(m.id, None)
+        store.splice(0, extra, [])
         del self._keys[:extra]
         self.has_older = True
 
@@ -459,7 +581,9 @@ class MessageList(GObject.Object):
             return None
         # Compared by hand rather than through ref_ids(): this walks the whole list for every reply,
         # reaction and receipt, and a set per message was a lot of garbage for three string compares.
-        for m in reversed(self.items()):
+        store = self.store
+        for i in range(store.get_n_items() - 1, -1, -1):
+            m = store.get_item(i)
             if ref == m.stanza_id or ref == m.origin_id or ref == m.msg_id:
                 return m
         return None

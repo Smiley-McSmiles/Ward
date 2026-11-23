@@ -47,7 +47,7 @@ class Accounts(GObject.Object):
 
     def find(self, jid: str) -> AccountItem | None:
         jid = util.bare(jid)
-        for a in self.list():
+        for a in self.by_id.values():
             if a.jid == jid:
                 return a
         return None

@@ -452,6 +452,8 @@ class MediaSession(GObject.Object):
             buf.unmap(info)
 
         def show():
+            if self.state == "closed":
+                return False
             from gi.repository import Gdk
 
             tex = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, data, w * 4)
@@ -520,6 +522,8 @@ class MediaSession(GObject.Object):
             paintable = self._remote_video
 
             def shown() -> bool:
+                if self.state == "closed":
+                    return False
                 self.remote_paintable = paintable
                 if paintable is not None:
                     self.emit("remote-video", paintable)
@@ -559,7 +563,10 @@ class MediaSession(GObject.Object):
             def settle() -> None:
                 if not fut.done():
                     fut.set_result(reply)
-            loop.call_soon_threadsafe(settle)
+            try:
+                loop.call_soon_threadsafe(settle)
+            except RuntimeError:
+                pass
         self.webrtc.emit(action, *args, Gst.Promise.new_with_change_func(done, None))
         return await asyncio.wait_for(fut, 20)
 

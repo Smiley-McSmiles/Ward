@@ -107,6 +107,11 @@ class Core(GObject.Object):
             log.info("OpenPGP unavailable: %s", e)
         self.accounts.connect("removed", lambda _a, acc: aio.spawn(self._account_removed(acc)))
         self._monitor: Any = None
+        self._monitor_handler: int = 0
+        self._dbus_bus: Any = None
+        self._dbus_sub: int = 0
+        self._sleep_retry_source: int = 0
+        self._shutting_down = False
 
     @property
     def contacts(self):
@@ -166,12 +171,39 @@ class Core(GObject.Object):
         task.add_done_callback(self._tasks.discard)
 
     async def shutdown(self) -> None:
-        for s in list(self.sessions.values()):
+        self._shutting_down = True
+        if self._monitor is not None and self._monitor_handler:
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(s.stop(), 4)
+                self._monitor.disconnect(self._monitor_handler)
+            self._monitor_handler = 0
+        self._monitor = None
+        if self._dbus_bus is not None and self._dbus_sub:
+            with contextlib.suppress(Exception):
+                self._dbus_bus.signal_unsubscribe(self._dbus_sub)
+            self._dbus_sub = 0
+        self._dbus_bus = None
+        if self._sleep_retry_source:
+            with contextlib.suppress(Exception):
+                GLib.source_remove(self._sleep_retry_source)
+            self._sleep_retry_source = 0
+        self.calls.shutdown()
+        sessions = list(self.sessions.values())
+        if sessions:
+            await asyncio.gather(
+                *(asyncio.wait_for(s.stop(), 4) for s in sessions),
+                return_exceptions=True,
+            )
+        self.sessions.clear()
         # login steps still running, and the message workers: stopped before the database closes under them
         for aid in list(self.messaging.workers):
             self.messaging.detach(aid)
+        self.messaging.clear_timers()
+        self.chats.clear_timers()
+        self.muc.clear_timers()
+        if self.omemo is not None:
+            self.omemo.shutdown()
+        self.active_chat = None
+        self.own_devices.clear()
         pending = [t for t in self._tasks if not t.done()]
         for t in pending:
             t.cancel()
@@ -184,14 +216,28 @@ class Core(GObject.Object):
     def _watch_network(self) -> None:
         try:
             self._monitor = Gio.NetworkMonitor.get_default()
-            self._monitor.connect("network-changed", self._on_network_changed)
+            self._monitor_handler = self._monitor.connect("network-changed", self._on_network_changed)
         except Exception:
             self._monitor = None
+            self._monitor_handler = 0
         # logind / elogind: reconnect right after the machine wakes up
+        self._track(aio.spawn(self._watch_sleep()))
+
+    async def _watch_sleep(self) -> None:
         with contextlib.suppress(Exception):
-            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-            bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep",
-                                 "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE, self._on_sleep)
+            bus = await aio.gio_call(Gio.bus_get, Gio.bus_get_finish, Gio.BusType.SYSTEM, None)
+            if self._shutting_down:
+                return
+            self._dbus_bus = bus
+            self._dbus_sub = bus.signal_subscribe(
+                "org.freedesktop.login1",
+                "org.freedesktop.login1.Manager",
+                "PrepareForSleep",
+                "/org/freedesktop/login1",
+                None,
+                Gio.DBusSignalFlags.NONE,
+                self._on_sleep,
+            )
 
     def _on_network_changed(self, monitor, available: bool) -> None:
         if available:
@@ -201,9 +247,13 @@ class Core(GObject.Object):
     def _on_sleep(self, conn, sender, path, iface, signal, params) -> None:
         going_to_sleep = params.unpack()[0]
         if not going_to_sleep:
-            GLib.timeout_add_seconds(2, self._retry_all)
+            if self._sleep_retry_source:
+                with contextlib.suppress(Exception):
+                    GLib.source_remove(self._sleep_retry_source)
+            self._sleep_retry_source = GLib.timeout_add_seconds(2, self._retry_all)
 
     def _retry_all(self) -> bool:
+        self._sleep_retry_source = 0
         for s in self.sessions.values():
             s.retry_now()
         return False
@@ -310,8 +360,16 @@ class Core(GObject.Object):
 
     async def _account_removed(self, acc: AccountItem) -> None:
         await self.chats.remove_account(acc.id)
-        self.roster.contacts.drop(acc.id)
+        self.roster.drop_account(acc.id)
         await self.requests.drop_account(acc.id)
+        self.muc.drop_account(acc.id)
+        self.turn.clear(acc.id)
+        self.admin.commands.pop(acc.id, None)
+        self.own_devices.pop(acc.id, None)
+        if self.omemo is not None:
+            self.omemo.drop_account(acc.id)
+        if self.pgp is not None:
+            self.pgp.drop_account(acc.id)
 
     async def set_enabled(self, acc: AccountItem, enabled: bool) -> None:
         await self.accounts.set_enabled(acc, enabled)
@@ -375,6 +433,8 @@ class Core(GObject.Object):
         if was_visible != visible:
             for s in self.sessions.values():
                 s.set_inactive(not visible)
+            if not visible:
+                self.chats.trim_inactive(keep=60, max_lists=4)
         if focused and self.active_chat is not None:
             aio.spawn(self.messaging.mark_read(self.active_chat))
             self.notifier.chat_read(self.active_chat)
@@ -399,6 +459,7 @@ class Core(GObject.Object):
             chat.update(show=contact.show, avatar=contact.avatar)
             if contact.show == "offline" and chat.typing:
                 chat.typing = ""
+                self.messaging.cancel_typing(chat.id)
 
     async def open_chat(self, acc: AccountItem, jid: str) -> ChatItem:
         jid = util.bare(jid)

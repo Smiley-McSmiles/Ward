@@ -134,6 +134,8 @@ async def probe_certificate(host: str, port: int, direct_tls: bool, domain: str,
             der = writer.get_extra_info("ssl_object").getpeercert(True)
         finally:
             writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
         return der
     reader, writer = await asyncio.wait_for(asyncio.open_connection(**kw), CONNECT_TIMEOUT)
     try:
@@ -160,6 +162,8 @@ async def probe_certificate(host: str, port: int, direct_tls: bool, domain: str,
         der = writer.get_extra_info("ssl_object").getpeercert(True)
     finally:
         writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
     return der
 
 
@@ -198,6 +202,7 @@ class AccountSession(GObject.Object):
         self.idle_since: float | None = None
         self.console = False
         self.xml_history: deque[tuple[float, bool, str]] = deque()   # (time, incoming, masked stanza)
+        self._xml_history_sizes: deque[int] = deque()
         self._xml_history_bytes = 0
         self._handlers = handlers or {}          # (namespace, tag) -> callback(session, iq) for iq pushes
         self._connect_task: asyncio.Task | None = None
@@ -208,6 +213,7 @@ class AccountSession(GObject.Object):
         self._active_proxy: proxymod.Proxy | None = None
         self._pinned_fp: str | None = None       # set while connecting with a pinned certificate
         self._cert_error: CertInfo | None = None
+        self._cert_pending = False
         self._last_error = ""
         self._online_event = asyncio.Event()
 
@@ -485,23 +491,26 @@ class AccountSession(GObject.Object):
         """Verification failed: fetch the certificate; connect anyway if the user pinned it before."""
         self._cancel_negotiation_timer()
         try:
-            factory = (lambda: proxymod.open_socket(prox, cand.host, cand.port)) if isinstance(
-                prox, proxymod.Proxy) else None
-            der = await probe_certificate(cand.host, cand.port, cand.direct_tls, self.domain, factory)
-        except Exception as e:
-            self._failed(_("The server’s certificate is not trusted (%s)") % error, "certificate", retry=False)
-            log.info("%s: could not fetch certificate: %s", self.jid, e)
-            return
-        info = cert_info_from_der(der, cand.host, cand.port, self.domain, error)
-        pins = {p.get("sha256") for p in (self.account.option("pinned_certs") or []) if isinstance(p, dict)}
-        if info.sha256 in pins and self._pinned_fp is None:
-            log.info("%s: certificate is pinned, connecting with it", self.jid)
-            self._pinned_fp = info.sha256
-            self._schedule(0)
-            return
-        self._cert_error = info
-        self._failed(_("The server’s certificate is not trusted: %s") % error, "certificate", retry=False)
-        self.emit("cert-problem", info)
+            try:
+                factory = (lambda: proxymod.open_socket(prox, cand.host, cand.port)) if isinstance(
+                    prox, proxymod.Proxy) else None
+                der = await probe_certificate(cand.host, cand.port, cand.direct_tls, self.domain, factory)
+            except Exception as e:
+                self._failed(_("The server’s certificate is not trusted (%s)") % error, "certificate", retry=False)
+                log.info("%s: could not fetch certificate: %s", self.jid, e)
+                return
+            info = cert_info_from_der(der, cand.host, cand.port, self.domain, error)
+            pins = {p.get("sha256") for p in (self.account.option("pinned_certs") or []) if isinstance(p, dict)}
+            if info.sha256 in pins and self._pinned_fp is None:
+                log.info("%s: certificate is pinned, connecting with it", self.jid)
+                self._pinned_fp = info.sha256
+                self._schedule(0)
+                return
+            self._cert_error = info
+            self._failed(_("The server’s certificate is not trusted: %s") % error, "certificate", retry=False)
+            self.emit("cert-problem", info)
+        finally:
+            self._cert_pending = False
 
     def _on_ssl_cert(self, pem: str) -> None:
         if self._pinned_fp is None:
@@ -514,13 +523,17 @@ class AccountSession(GObject.Object):
 
     def _on_invalid_chain(self, exc) -> None:
         # STARTTLS verification failed; slixmpp leaves the connection to us when this event is handled
+        cand = self._candidate
+        err = _ssl_error_text(exc)
+        if cand is not None:
+            self._cert_pending = True
+            self._cert_error = CertInfo(cand.host, cand.port, self.domain, "", error=err)
+            self._set_state("error", error=_("The server’s certificate is not trusted: %s") % err, kind="certificate")
         if self.xmpp is not None:
             self.xmpp.abort()
-        cand = self._candidate
         if cand is None:
             return
-        self._cert_error = CertInfo(cand.host, cand.port, self.domain, "", error=_ssl_error_text(exc))
-        aio.spawn(self._certificate_failed(cand, self._active_proxy, _ssl_error_text(exc)))
+        aio.spawn(self._certificate_failed(cand, self._active_proxy, err))
 
     def _slixmpp_reconnect(self, wait: float = 2.0, reason: str = "Reconnecting") -> None:
         log.info("%s: reconnecting (%s)", self.jid, reason)
@@ -549,7 +562,7 @@ class AccountSession(GObject.Object):
         self._cancel_negotiation_timer()
         self._online_event.clear()
         was_online = self.account.state == "online"
-        if self.account.state in ("error",):
+        if self.account.state in ("error",) or self._cert_pending:
             pass
         elif not self.wanted:
             self._set_state("disabled" if not self.account.enabled else "offline")
@@ -620,27 +633,38 @@ class AccountSession(GObject.Object):
             log.exception("iq handler failed")
             self.reply_iq(stanza, error="internal-server-error")
 
+    def _console_enabled(self) -> bool:
+        if self.settings is not None and not self.settings.get("advanced.devtools", False):
+            if self.xml_history:
+                self.clear_xml_history()
+            return False
+        return True
+
     def _console_in(self, stanza):
+        if not self._console_enabled():
+            return stanza
         with contextlib.suppress(Exception):
             self._keep_xml(True, wardlog.mask(str(stanza)))
         return stanza
 
     def _console_out(self, stanza):
+        if not self._console_enabled():
+            return stanza
         with contextlib.suppress(Exception):
             self._keep_xml(False, wardlog.mask(str(stanza)))
         return stanza
 
     def _keep_xml(self, incoming: bool, text: str) -> None:
         """Keep the latest stanzas for the XML console, even while its window is closed."""
-        if self.settings is not None and not self.settings.get("advanced.devtools", False):
-            if self.xml_history:
-                self.clear_xml_history()
+        if not self._console_enabled():
             return
+        nbytes = len(text.encode("utf-8"))
         self.xml_history.append((time.time(), incoming, text))
-        self._xml_history_bytes += len(text.encode("utf-8"))
+        self._xml_history_sizes.append(nbytes)
+        self._xml_history_bytes += nbytes
         while self._xml_history_bytes > XML_HISTORY_BYTES and self.xml_history:
-            _stamp, _incoming, old = self.xml_history.popleft()
-            self._xml_history_bytes -= len(old.encode("utf-8"))
+            self.xml_history.popleft()
+            self._xml_history_bytes -= self._xml_history_sizes.popleft()
         if self.console:
             self.emit("xml", incoming, text)
 
@@ -650,16 +674,23 @@ class AccountSession(GObject.Object):
 
     def clear_xml_history(self) -> None:
         self.xml_history.clear()
+        self._xml_history_sizes.clear()
         self._xml_history_bytes = 0
 
     # ================================================================== stopping
     async def stop(self, unavailable: bool = True) -> None:
         self.wanted = False
+        self._cert_pending = False
         if self._retry_handle is not None:
             self._retry_handle.cancel()
             self._retry_handle = None
-        if self._connect_task is not None and not self._connect_task.done():
-            self._connect_task.cancel()
+        ct = self._connect_task
+        if ct is not None and not ct.done():
+            ct.cancel()
+            if ct is not asyncio.current_task():
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await ct
+        self._connect_task = None
         x = self.xmpp
         if x is not None and self.account.state in ("online", "connecting", "error"):
             if self.online and unavailable:

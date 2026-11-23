@@ -12,12 +12,14 @@ import logging
 import os
 import struct
 import tempfile
+from functools import cache
 
 log = logging.getLogger("ward.images")
 
 QUALITY_SIDE = {"balanced": 2560, "small": 1280}
 
 
+@cache
 def _pil():
     try:
         from PIL import Image, ImageOps
@@ -27,6 +29,7 @@ def _pil():
         return None, None
 
 
+@cache
 def _pixbuf():
     import gi
 
@@ -63,19 +66,43 @@ def probe(path: str) -> tuple[str, int, int]:
 
 def jpeg_orientation(data: bytes) -> int:
     """EXIF orientation of a JPEG (1 = upright)."""
+    n = len(data)
+    if n < 4 or data[:2] != b"\xff\xd8":
+        return 1
     i = 2
-    while i + 4 <= len(data) and data[i] == 0xFF:
-        marker, length = data[i + 1], struct.unpack(">H", data[i + 2:i + 4])[0]
-        if marker == 0xE1 and data[i + 4:i + 10] == b"Exif\x00\x00":
+    while i + 1 < n:
+        if data[i] != 0xFF:
+            break
+        while i + 1 < n and data[i + 1] == 0xFF:
+            i += 1
+        if i + 1 >= n:
+            break
+        marker = data[i + 1]
+        if marker in (0xD9, 0xDA):
+            break
+        if marker == 0x00 or marker == 0x01 or 0xD0 <= marker <= 0xD8:
+            i += 2
+            continue
+        if i + 4 > n:
+            break
+        length = struct.unpack(">H", data[i + 2:i + 4])[0]
+        if length < 2 or i + 2 + length > n:
+            break
+        if marker == 0xE1 and length >= 16 and data[i + 4:i + 10] == b"Exif\x00\x00":
             tiff = data[i + 10:i + 2 + length]
             if len(tiff) < 8:
                 return 1
-            endian = "<" if tiff[:2] == b"II" else ">"
+            if tiff[:2] == b"II":
+                endian = "<"
+            elif tiff[:2] == b"MM":
+                endian = ">"
+            else:
+                return 1
             off = struct.unpack(endian + "I", tiff[4:8])[0]
             if off + 2 > len(tiff):
                 return 1
-            n = struct.unpack(endian + "H", tiff[off:off + 2])[0]
-            for k in range(n):
+            count = struct.unpack(endian + "H", tiff[off:off + 2])[0]
+            for k in range(count):
                 e = off + 2 + 12 * k
                 if e + 12 > len(tiff):
                     break
@@ -83,8 +110,6 @@ def jpeg_orientation(data: bytes) -> int:
                 if tag == 0x0112:
                     return struct.unpack(endian + "H", tiff[e + 8:e + 10])[0]
             return 1
-        if marker == 0xDA:
-            break
         i += 2 + length
     return 1
 
@@ -92,21 +117,36 @@ def jpeg_orientation(data: bytes) -> int:
 def strip_jpeg(data: bytes) -> bytes:
     """Remove EXIF/XMP (APP1), IPTC (APP13) and comments from a JPEG without re-encoding it.  Keeps JFIF and
     the colour profile."""
-    if data[:2] != b"\xff\xd8":
+    n = len(data)
+    if n < 4 or data[:2] != b"\xff\xd8":
         return data
     out = bytearray(b"\xff\xd8")
     i = 2
-    while i + 4 <= len(data):
+    while i + 1 < n:
         if data[i] != 0xFF:
             return data  # not what we expected: leave it alone (the caller re-encodes instead)
+        while i + 1 < n and data[i + 1] == 0xFF:
+            i += 1
+        if i + 1 >= n:
+            return data
         marker = data[i + 1]
         if marker == 0xDA:   # start of scan: the rest is image data
             out += data[i:]
             return bytes(out)
+        if marker == 0xD9:
+            out += b"\xff\xd9"
+            return bytes(out)
+        if marker == 0x00 or marker == 0x01 or 0xD0 <= marker <= 0xD8:
+            out += data[i:i + 2]
+            i += 2
+            continue
+        if i + 4 > n:
+            return data
         length = struct.unpack(">H", data[i + 2:i + 4])[0]
-        seg = data[i:i + 2 + length]
+        if length < 2 or i + 2 + length > n:
+            return data
         if marker not in (0xE1, 0xED, 0xFE):
-            out += seg
+            out += data[i:i + 2 + length]
         i += 2 + length
     return data
 
@@ -198,3 +238,30 @@ def thumbnail(path: str, max_side: int = 400, fmt: str = "jpeg") -> bytes | None
     except Exception as e:
         log.debug("no thumbnail for %s: %s", path, e)
         return None
+
+
+def thumbnail_bytes(data: bytes, max_side: int = 256, fmt: str = "jpeg") -> bytes | None:
+    """A small re-encoded copy directly from raw image bytes (safe to show from strangers)."""
+    Image, ImageOps = _pil()
+    if Image is not None:
+        try:
+            with Image.open(io.BytesIO(data)) as im:
+                im = ImageOps.exif_transpose(im)
+                im.thumbnail((max_side, max_side))
+                buf = io.BytesIO()
+                if fmt == "png" or im.mode in ("RGBA", "LA", "P"):
+                    im.save(buf, "PNG", optimize=True)
+                else:
+                    im.convert("RGB").save(buf, "JPEG", quality=80)
+                return buf.getvalue()
+        except Exception as e:
+            log.debug("no thumbnail from bytes: %s", e)
+            return None
+    fd, tmp = tempfile.mkstemp()
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        return thumbnail(tmp, max_side, fmt)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)

@@ -11,13 +11,18 @@ import datetime as _dt
 import re
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 
 from gi.repository import GObject
 
 from .. import schema, util
 from ..i18n import _
-from .markup import parse as parse_markup
-from .markup import preview as markup_preview
+from .markup import preview_text as markup_preview_text
+
+
+@lru_cache(maxsize=64)
+def _mention_re(word: str) -> re.Pattern[str]:
+    return re.compile(r"(?<![\w@])@?%s(?!\w)" % re.escape(word), re.IGNORECASE)
 
 
 @dataclass
@@ -44,6 +49,7 @@ class Notifier(GObject.Object):
         self.core = core
         self._pending: dict[int, int] = {}       # chat id -> messages folded into its notification
         core.messaging.connect("received", self._on_received)
+        core.chats.connect("removed", lambda _chats, chat: self._pending.pop(chat.id, None))
 
     @property
     def settings(self):
@@ -54,13 +60,13 @@ class Notifier(GObject.Object):
         return schema.in_time_range(self.settings["notify.quiet_hours"], now.hour * 60 + now.minute)
 
     def mentions_me(self, chat, body: str, my_nick: str, pm=None) -> bool:
-        if chat.type != "groupchat":
+        if chat.type != "groupchat" or not body:
             return False
         words = list(self.settings["notify.highlight_words"])
         if my_nick:
             words.append(my_nick)
         for w in words:
-            if w and re.search(r"(?<![\w@])@?%s(?!\w)" % re.escape(w), body, re.IGNORECASE):
+            if w and _mention_re(w).search(body):
                 return True
         if pm is not None:
             acc = self.core.accounts.get(chat.account_id)
@@ -83,7 +89,7 @@ class Notifier(GObject.Object):
         if self.core.is_viewing(chat) and self.core.window_focused:
             return
         now = int(time.time() * 1000)
-        replied_to_me = bool(msg.reply_target) and msg.extra.get("reply_to_me", False)
+        replied_to_me = bool(msg.reply_target) and bool(msg.__dict__.get("_extra", {}).get("reply_to_me", False))
         important = msg.mentions_me or replied_to_me
         if chat.muted(now) and not important:
             return
@@ -113,13 +119,15 @@ class Notifier(GObject.Object):
             body = _("New message") if count == 1 else _("%d new messages") % count
         elif msg.encryption and self.settings["notify.hide_encrypted"]:
             body = _("New encrypted message") if count == 1 else _("%d new encrypted messages") % count
-        elif msg.attachments and not msg.body:
-            body = "📎 " + (msg.attachments[0].name or _("File"))
+        elif not msg.body and msg.__dict__.get("_attachments"):
+            atts = msg.__dict__.get("_attachments") or ()
+            body = "📎 " + ((atts[0].name if atts else "") or _("File"))
         else:
             text = msg.body[4:] if msg.kind == "me" else msg.body
             try:
-                body = markup_preview(parse_markup(text, msg.is_markdown,
-                                                   markdown_from_others=self.settings["chats.markdown_others"]), 200)
+                body = markup_preview_text(
+                    text, msg.is_markdown, 200, markdown_from_others=self.settings["chats.markdown_others"]
+                )
             except Exception:
                 body = util.first_line(text, 200)
             if msg.kind == "me":

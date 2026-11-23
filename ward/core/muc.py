@@ -133,7 +133,34 @@ class MucService(GObject.Object):
         self.core = core
         self.rooms: dict[tuple[int, str], Room] = {}
         self._ping_task: dict[int, asyncio.Task] = {}
+        self._rejoin_timers: dict[tuple[int, str], asyncio.TimerHandle] = {}
         core.pep.register(NS_BOOKMARKS2, self._on_bookmarks_event)
+
+    def _cancel_rejoin(self, account_id: int, jid: str) -> None:
+        h = self._rejoin_timers.pop((account_id, jid), None)
+        if h is not None:
+            h.cancel()
+
+    def clear_timers(self) -> None:
+        for t in self._ping_task.values():
+            t.cancel()
+        self._ping_task.clear()
+        for h in self._rejoin_timers.values():
+            h.cancel()
+        self._rejoin_timers.clear()
+
+    def drop_account(self, account_id: int) -> None:
+        t = self._ping_task.pop(account_id, None)
+        if t is not None:
+            t.cancel()
+        for k in [k for k in self._rejoin_timers if k[0] == account_id]:
+            self._cancel_rejoin(k[0], k[1])
+        for k in [k for k in self.rooms if k[0] == account_id]:
+            r = self.rooms.pop(k)
+            r.joined = False
+            r.occupants.remove_all()
+            r.by_nick.clear()
+            r.by_occupant_id.clear()
 
     # ================================================================== lookups
     def room(self, account_id: int, jid: str) -> Room | None:
@@ -200,6 +227,9 @@ class MucService(GObject.Object):
                                      "password": chat.options.get("password")}
         for jid, b in targets.items():
             aio.spawn(self._join_quietly(acc, jid, b.get("nick"), b.get("password")))
+        old = self._ping_task.pop(acc.id, None)
+        if old is not None:
+            old.cancel()
         self._ping_task[acc.id] = aio.spawn(self._self_ping_loop(session))
 
     async def _join_quietly(self, acc, jid, nick, password) -> None:
@@ -209,22 +239,24 @@ class MucService(GObject.Object):
             log.info("could not join %s: %s", jid, e)
 
     def on_offline(self, session) -> None:
-        for (aid, _j), r in self.rooms.items():
-            if aid == session.account.id:
+        aid = session.account.id
+        for (room_aid, jid), r in self.rooms.items():
+            if room_aid == aid:
                 r.joined = False
                 r.chat.joined = False
                 r.occupants.remove_all()
                 r.by_nick.clear()
                 r.by_occupant_id.clear()
-        t = self._ping_task.pop(session.account.id, None)
+                self._cancel_rejoin(aid, jid)
+        for k in [k for k in self._rejoin_timers if k[0] == aid]:
+            self._cancel_rejoin(k[0], k[1])
+        t = self._ping_task.pop(aid, None)
         if t is not None:
             t.cancel()
 
     # ================================================================== joining
     async def room_info(self, session, jid: str):
-        from .disco import DiscoService
-
-        return await DiscoService(self.core).info(session, jid)
+        return await self.core.disco.info(session, jid)
 
     async def join(self, acc, jid: str, nick: str | None = None, password: str | None = None,
                    bookmark: bool = True, create: str | None = None) -> ChatItem:
@@ -232,6 +264,7 @@ class MucService(GObject.Object):
         if session is None or not session.online:
             raise MucError("service-unavailable", _("You are offline"))
         jid = util.bare(jid)
+        self._cancel_rejoin(acc.id, jid)
         if "@" not in jid:
             # A MUC service domain (conference.example.org) is not a room.  Sending a join presence to the
             # service itself makes Prosody answer service-unavailable, which looks like a full room.
@@ -318,6 +351,7 @@ class MucService(GObject.Object):
         room.chat.encryptable = room.members_only and room.non_anonymous
 
     async def leave(self, chat: ChatItem, reason: str = "", forget: bool = True) -> None:
+        self._cancel_rejoin(chat.account_id, chat.jid)
         room = self.room_of(chat)
         session = self.core.sessions.get(chat.account_id)
         if room is not None and room.joined and session is not None and session.online:
@@ -369,13 +403,16 @@ class MucService(GObject.Object):
                         room.nick = mu.nick
                         room.chat.our_nick = mu.nick
                     self._status_line(room, _("%s is now known as %s") % (nick, mu.nick), "nick")
-                elif not room.initial:
-                    reason = ""
-                    if 307 in status:
-                        reason = _("%s was removed from the group") % nick
-                    elif 301 in status:
-                        reason = _("%s was banned from the group") % nick
-                    self._status_line(room, reason or _("%s left") % nick, "leave")
+                else:
+                    if o.occupant_id and room.by_occupant_id.get(o.occupant_id) is o:
+                        room.by_occupant_id.pop(o.occupant_id, None)
+                    if not room.initial:
+                        reason = ""
+                        if 307 in status:
+                            reason = _("%s was removed from the group") % nick
+                        elif 301 in status:
+                            reason = _("%s was banned from the group") % nick
+                        self._status_line(room, reason or _("%s left") % nick, "leave")
             if is_self and 303 not in status:
                 why = ""
                 if 307 in status:
@@ -395,9 +432,17 @@ class MucService(GObject.Object):
                 room.by_occupant_id.clear()
                 self.emit("left", room.chat, why)
                 if 332 in status:
-                    acc = self.core.accounts.get(room.account_id)
-                    aio.get_loop().call_later(30, lambda: aio.spawn(self._join_quietly(acc, room.jid, room.nick,
-                                                                                       room.password)))
+                    aid, rjid, rnick, rpass = room.account_id, room.jid, room.nick, room.password
+                    self._cancel_rejoin(aid, rjid)
+
+                    def _do_rejoin():
+                        self._rejoin_timers.pop((aid, rjid), None)
+                        acc = self.core.accounts.get(aid)
+                        cur = self.rooms.get((aid, rjid))
+                        if acc is not None and (cur is None or not cur.joined):
+                            aio.spawn(self._join_quietly(acc, rjid, rnick, rpass))
+
+                    self._rejoin_timers[(aid, rjid)] = aio.get_loop().call_later(30, _do_rejoin)
             self.emit("occupants-changed", room.chat)
             room.chat.member_count = room.occupants.get_n_items()
             return
@@ -425,6 +470,7 @@ class MucService(GObject.Object):
         if new and not room.initial and not is_self:
             self._status_line(room, _("%s joined") % nick, "join")
         if is_self:
+            was_joined = room.joined
             room.self_occupant_id = occ_id
             room.chat.update(our_role=o.role, our_affiliation=o.affiliation)
             if 201 in status:
@@ -438,9 +484,10 @@ class MucService(GObject.Object):
             room.initial = False
             if room.joining is not None and not room.joining.done():
                 room.joining.set_result(True)
-            session = self.core.sessions.get(room.account_id)
-            if session is not None and session.online:
-                aio.spawn(self.core.messaging.flush_outbox(session))
+            if not was_joined:
+                session = self.core.sessions.get(room.account_id)
+                if session is not None and session.online:
+                    aio.spawn(self.core.messaging.flush_outbox(session))
         room.chat.member_count = room.occupants.get_n_items()
         self.emit("occupants-changed", room.chat)
 
@@ -685,6 +732,9 @@ class MucService(GObject.Object):
             ET.SubElement(d, "{%s}reason" % NS_MUC_OWNER).text = reason
         await session.iq("set", chat.jid, q)
         await self.leave(chat)
+        rooms = getattr(self, "rooms", None)
+        if rooms is not None:
+            rooms.pop((chat.account_id, chat.jid), None)
         # The room is gone for everyone: drop the local chat too, or an empty group
         # stays in the sidebar (with its history and media) for good.
         await self.core.chats.delete(chat)

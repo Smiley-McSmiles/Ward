@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import glob
+import itertools
 import logging
 import os
 import queue
@@ -57,9 +58,13 @@ class DatabaseError(Exception):
 class Database:
     def __init__(self, path: str | None = None):
         self.path = path or paths.db_file()
-        self._jobs: queue.SimpleQueue = queue.SimpleQueue()
+        self._jobs: queue.PriorityQueue[tuple[int, int, Any, Any]] = queue.PriorityQueue()
+        self._read_jobs: queue.PriorityQueue[tuple[int, int, Any, Any]] | None = None
+        self._job_seq = itertools.count()
         self._thread: threading.Thread | None = None
+        self._read_thread: threading.Thread | None = None
         self._conn: sqlite3.Connection | None = None
+        self._read_conn: sqlite3.Connection | None = None
         self.migrated_from: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
@@ -90,9 +95,41 @@ class Database:
             self._thread = None
             raise DatabaseError("could not open %s: %s" % (self.path, err[0])) from err[0]
 
-    def _connect(self) -> sqlite3.Connection:
+        if self.path != ":memory:":
+            read_ready = threading.Event()
+            read_err: list[BaseException] = []
+            self._read_jobs = queue.PriorityQueue()
+
+            def read_boot():
+                try:
+                    self._read_conn = self._connect(readonly=True)
+                except BaseException as e:
+                    read_err.append(e)
+                finally:
+                    read_ready.set()
+                if not read_err:
+                    self._read_loop()
+
+            self._read_thread = threading.Thread(target=read_boot, name="ward-db-read", daemon=True)
+            self._read_thread.start()
+            read_ready.wait()
+            if read_err:
+                self._read_thread = None
+                self._read_jobs = None
+                self.close()
+                raise DatabaseError(
+                    "could not open read connection for %s: %s" % (self.path, read_err[0])
+                ) from read_err[0]
+
+    def _connect(self, readonly: bool = False) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        if readonly:
+            conn.execute("PRAGMA query_only = ON")
+            conn.execute("PRAGMA busy_timeout = 5000")
+            conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA cache_size = -4096")
+            return conn
         if self.path != ":memory:":
             conn.execute("PRAGMA journal_mode = WAL")
             try:
@@ -102,21 +139,31 @@ class Database:
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA temp_store = MEMORY")
+        conn.execute("PRAGMA cache_size = -8192")
         return conn
 
     def close(self) -> None:
+        if self._read_thread is not None and self._read_jobs is not None:
+            read_done = threading.Event()
+            self._read_jobs.put((999, next(self._job_seq), None, read_done))
+            read_done.wait(10)
+            self._read_thread = None
+            self._read_jobs = None
+            self._read_conn = None
         if self._thread is None:
             return
         done = threading.Event()
-        self._jobs.put((None, done))
+        self._jobs.put((999, next(self._job_seq), None, done))
         done.wait(10)
         self._thread = None
+        self._conn = None
 
     def _loop(self) -> None:
         assert self._conn is not None
         conn = self._conn
         while True:
-            job, reply = self._jobs.get()
+            _prio, _seq, job, reply = self._jobs.get()
             if job is None:
                 try:
                     conn.execute("PRAGMA optimize")
@@ -132,6 +179,30 @@ class Database:
                     conn.execute("ROLLBACK")
                     raise
                 conn.execute("COMMIT")
+            except BaseException as e:
+                reply(None, e)
+            else:
+                reply(result, None)
+
+    def _read_loop(self) -> None:
+        assert self._read_conn is not None
+        assert self._read_jobs is not None
+        conn = self._read_conn
+        while True:
+            _prio, _seq, job, reply = self._read_jobs.get()
+            if job is None:
+                try:
+                    conn.close()
+                finally:
+                    reply.set()
+                return
+            try:
+                conn.execute("BEGIN DEFERRED")
+                try:
+                    result = job(conn)
+                finally:
+                    if conn.in_transaction:
+                        conn.execute("ROLLBACK")
             except BaseException as e:
                 reply(None, e)
             else:
@@ -190,10 +261,8 @@ class Database:
         return self._thread is not None
 
     # ------------------------------------------------------------------ running jobs
-    def run(self, func: Callable[[sqlite3.Connection], T]) -> asyncio.Future[T]:
-        """Run func(conn) on the database thread inside one transaction; await the result."""
-        if self._thread is None:
-            raise DatabaseError("database is not open")
+    def _submit(self, q: queue.PriorityQueue[tuple[int, int, Any, Any]],
+                func: Callable[[sqlite3.Connection], T], priority: int = 0) -> asyncio.Future[T]:
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[T] = loop.create_future()
 
@@ -206,12 +275,29 @@ class Database:
                 else:
                     fut.set_result(result)
 
-            loop.call_soon_threadsafe(deliver)
+            try:
+                loop.call_soon_threadsafe(deliver)
+            except RuntimeError:
+                pass
 
-        self._jobs.put((func, reply))
+        q.put((priority, next(self._job_seq), func, reply))
         return fut
 
-    def run_sync(self, func: Callable[[sqlite3.Connection], T], timeout: float = 30) -> T:
+    def run(self, func: Callable[[sqlite3.Connection], T], *, priority: int = 0) -> asyncio.Future[T]:
+        """Run func(conn) on the database thread inside one transaction; await the result."""
+        if self._thread is None:
+            raise DatabaseError("database is not open")
+        return self._submit(self._jobs, func, priority=priority)
+
+    def run_read(self, func: Callable[[sqlite3.Connection], T], *, priority: int = 0) -> asyncio.Future[T]:
+        """Run read-only func(conn) on the dedicated WAL reader when available, else the DB queue."""
+        if self._thread is None:
+            raise DatabaseError("database is not open")
+        if self._read_jobs is not None and self._read_thread is not None:
+            return self._submit(self._read_jobs, func, priority=priority)
+        return self._submit(self._jobs, func, priority=priority)
+
+    def run_sync(self, func: Callable[[sqlite3.Connection], T], timeout: float = 30, *, priority: int = 0) -> T:
         """Blocking variant for startup code and tests (never from a GTK callback)."""
         if self._thread is None:
             raise DatabaseError("database is not open")
@@ -222,7 +308,7 @@ class Database:
             box["r"], box["e"] = result, exc
             done.set()
 
-        self._jobs.put((func, reply))
+        self._jobs.put((priority, next(self._job_seq), func, reply))
         if not done.wait(timeout):
             raise DatabaseError("database job timed out")
         if box["e"] is not None:
@@ -251,6 +337,19 @@ class Database:
         row = await self.fetchone(sql, params)
         return row[0] if row is not None and row[0] is not None else default
 
+    async def fetchall_read(self, sql: str, params: Sequence[Any] | Mapping[str, Any] = (), *,
+                            priority: int = 0) -> list[sqlite3.Row]:
+        return await self.run_read(lambda conn: conn.execute(sql, params).fetchall(), priority=priority)
+
+    async def fetchone_read(self, sql: str, params: Sequence[Any] | Mapping[str, Any] = (), *,
+                            priority: int = 0) -> sqlite3.Row | None:
+        return await self.run_read(lambda conn: conn.execute(sql, params).fetchone(), priority=priority)
+
+    async def scalar_read(self, sql: str, params: Sequence[Any] | Mapping[str, Any] = (), default: Any = None, *,
+                          priority: int = 0) -> Any:
+        row = await self.fetchone_read(sql, params, priority=priority)
+        return row[0] if row is not None and row[0] is not None else default
+
     async def insert(self, table: str, values: Mapping[str, Any], or_: str = "") -> int:
         return await self.run(lambda conn: insert(conn, table, values, or_))
 
@@ -274,6 +373,8 @@ class Database:
 
     async def compact(self) -> None:
         """VACUUM cannot run inside a transaction, so it bypasses run()'s BEGIN."""
+        if self._thread is None:
+            raise DatabaseError("database is not open")
         loop = asyncio.get_running_loop()
         fut = loop.create_future()
 
@@ -286,9 +387,19 @@ class Database:
                 conn.execute("BEGIN")
 
         def reply(result, exc):
-            loop.call_soon_threadsafe(lambda: fut.set_exception(exc) if exc else fut.set_result(None))
+            def deliver():
+                if not fut.done():
+                    if exc:
+                        fut.set_exception(exc)
+                    else:
+                        fut.set_result(None)
 
-        self._jobs.put((job, reply))
+            try:
+                loop.call_soon_threadsafe(deliver)
+            except RuntimeError:
+                pass
+
+        self._jobs.put((1, next(self._job_seq), job, reply))
         await fut
 
     async def backup_to(self, dest: str) -> None:

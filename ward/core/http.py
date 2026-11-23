@@ -7,6 +7,7 @@ to http); every transfer has a size limit and can be cancelled."""
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import os
 import ssl
@@ -151,19 +152,23 @@ def request(method: str, url: str, headers: dict[str, str] | None = None, body: 
             if transfer is not None and out_file is not None:
                 transfer.total = length or transfer.total
                 transfer.done = 0
-            data = b""
+            chunks: list[bytes] = []
             read = 0
             part = (out_file or "") + ".part"
             out_fh = open(part, "wb") if out_file is not None and resp.status < 300 else None  # noqa: SIM115
+            err_cap = max_bytes if (max_bytes is not None) else (1024 * 1024 if resp.status >= 300 else None)
             try:
                 while True:
                     chunk = resp.read(CHUNK)
                     if not chunk:
                         break
                     read += len(chunk)
-                    if max_bytes is not None and read > max_bytes:
+                    cap = max_bytes if out_fh is not None else err_cap
+                    if cap is not None and read > cap:
                         if out_fh is None:
-                            data += chunk[: max(0, max_bytes - (read - len(chunk)))]
+                            take = max(0, cap - (read - len(chunk)))
+                            if take:
+                                chunks.append(chunk[:take])
                             break
                         raise HttpError("the file is larger than allowed", resp.status)
                     if out_fh is not None:
@@ -171,18 +176,19 @@ def request(method: str, url: str, headers: dict[str, str] | None = None, body: 
                         if transfer is not None:
                             transfer.tick(len(chunk))
                     else:
-                        data += chunk
+                        chunks.append(chunk)
             except BaseException:
                 if out_fh is not None:
                     out_fh.close()
-                    os.unlink(part)
+                    with contextlib.suppress(OSError):
+                        os.unlink(part)
                     out_fh = None
                 raise
             finally:
                 if out_fh is not None and out_file is not None:
                     out_fh.close()
                     os.replace(part, out_file)
-            return Response(resp.status, rh, data, current)
+            return Response(resp.status, rh, b"".join(chunks), current)
         finally:
             conn.close()
     raise HttpError("too many redirects")

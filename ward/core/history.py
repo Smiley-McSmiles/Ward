@@ -196,18 +196,22 @@ class HistoryService:
             "SELECT stanza_id FROM messages WHERE chat_id = ? AND stanza_id IS NOT NULL AND stanza_id != '' "
             "ORDER BY timestamp ASC, id ASC LIMIT 1", (chat.id,))
         before = oldest["stanza_id"] if oldest is not None else ""
-        before_count = await self.core.db.scalar("SELECT COUNT(*) FROM messages WHERE chat_id = ?", (chat.id,), 0)
+        before_max = await self.core.db.scalar(
+            "SELECT COALESCE(MAX(id), 0) FROM messages WHERE chat_id = ?", (chat.id,), 0
+        )
         try:
             page = await self._page(session, archive, "scrollback", muc=group, with_="" if group else chat.jid,
                                     before=before, max_=50)
         except Exception as e:
             log.info("loading older messages failed: %s", e)
             return False
-        after_count = await self.core.db.scalar("SELECT COUNT(*) FROM messages WHERE chat_id = ?", (chat.id,), 0)
+        after_max = await self.core.db.scalar(
+            "SELECT COALESCE(MAX(id), 0) FROM messages WHERE chat_id = ?", (chat.id,), 0
+        )
         if page.complete or page.count == 0 or not page.first:
             chat.options["history_complete"] = True
             await self.core.chats.save(chat, "options")
-        return after_count > before_count
+        return after_max > before_max
 
     # ------------------------------------------------------------------ server archive preferences (XEP-0441)
     async def get_prefs(self, session) -> str:

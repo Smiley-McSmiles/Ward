@@ -112,8 +112,28 @@ def valid_bare_jid(jid: str) -> bool:
 
 
 def first_line(text: str, limit: int = 120) -> str:
-    for line in (text or "").splitlines():
-        line = line.strip()
+    s = text or ""
+    if not s:
+        return ""
+    if len(s) <= 4096:
+        for line in s.splitlines():
+            line = line.strip()
+            if line:
+                return line if len(line) <= limit else line[: limit - 1] + "…"
+        return ""
+    pos = 0
+    n = len(s)
+    while pos < n:
+        nl = s.find("\n", pos)
+        cr = s.find("\r", pos)
+        if nl == -1:
+            end = cr if cr != -1 else n
+        elif cr == -1:
+            end = nl
+        else:
+            end = nl if nl < cr else cr
+        line = s[pos:end].strip()
         if line:
             return line if len(line) <= limit else line[: limit - 1] + "…"
+        pos = end + 1
     return ""

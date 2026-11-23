@@ -66,16 +66,26 @@ class Contacts(GObject.Object):
         return [c for (a, _j), c in self.by_key.items() if a == account_id]
 
     async def load(self) -> None:
-        rows = await self.db.fetchall("SELECT * FROM contacts")
+        def scan_avatars() -> set[str]:
+            d = paths.avatars_cache()
+            if not os.path.isdir(d):
+                return set()
+            with contextlib.suppress(OSError):
+                return set(os.listdir(d))
+            return set()
+
+        avatar_files = await aio.run_in_thread(scan_avatars)
+        db_rows = await self.db.fetchall("SELECT * FROM contacts")
         self.store.remove_all()
         self.by_key.clear()
-        items = [self._from_row(r) for r in rows]
+        av_dir = paths.avatars_cache()
+        items = [self._from_row(r, avatar_files, av_dir) for r in db_rows]
         for c in items:
             self.by_key[(c.account_id, c.jid)] = c
         self.store.splice(0, 0, items)
 
     @staticmethod
-    def _from_row(r) -> ContactItem:
+    def _from_row(r, avatar_files: set[str] | None = None, av_dir: str = "") -> ContactItem:
         c = ContactItem(id=r["id"], account_id=r["account_id"], jid=r["jid"], roster_name=r["name"],
                         nickname=r["nickname"], pep_nick=r["pep_nick"], subscription=r["subscription"], ask=r["ask"],
                         in_roster=bool(r["in_roster"]), avatar_hash=r["avatar_hash"], blocked=bool(r["blocked"]),
@@ -85,9 +95,15 @@ class Contacts(GObject.Object):
         except ValueError:
             pass
         if c.avatar_hash:
-            p = avatar_path(c.avatar_hash)
-            if os.path.exists(p):
-                c.avatar = p
+            if avatar_files is None:
+                p = avatar_path(c.avatar_hash)
+                if p and os.path.exists(p):
+                    c.avatar = p
+            else:
+                clean = _valid_sha1(c.avatar_hash)
+                fname = clean + ".img" if clean else ""
+                if fname and fname in avatar_files:
+                    c.avatar = os.path.join(av_dir, fname)
         c.refresh_name()
         return c
 
@@ -123,12 +139,15 @@ class Contacts(GObject.Object):
         self.emit("changed", c)
 
     def drop(self, account_id: int) -> None:
-        for key in [k for k in self.by_key if k[0] == account_id]:
-            c = self.by_key.pop(key)
-            for i in range(self.store.get_n_items()):
-                if self.store.get_item(i) is c:
-                    self.store.remove(i)
-                    break
+        dropped = [key for key in self.by_key if key[0] == account_id]
+        if not dropped:
+            return
+        for key in dropped:
+            self.by_key.pop(key, None)
+        for i in range(self.store.get_n_items() - 1, -1, -1):
+            c = self.store.get_item(i)
+            if c is not None and c.account_id == account_id:
+                self.store.remove(i)
 
 
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -175,6 +194,7 @@ class RosterService(GObject.Object):
         self.contacts = Contacts(core.db)
         self.blocklist_supported: dict[int, bool] = {}
         self._vcard_fetching: set[tuple[int, str]] = set()
+        self._bad_vcard_hashes: dict[tuple[int, str], str] = {}
         core.pep.register(NS_AVATAR_META, self._on_avatar_meta)
         core.pep.register(NS_NICK, self._on_nick)
 
@@ -183,6 +203,14 @@ class RosterService(GObject.Object):
 
     def attach(self, session) -> None:
         session.connect("presence", lambda s, el: self._on_presence(s, el))
+
+    def drop_account(self, account_id: int) -> None:
+        self.contacts.drop(account_id)
+        self.blocklist_supported.pop(account_id, None)
+        for k in [k for k in self._vcard_fetching if k[0] == account_id]:
+            self._vcard_fetching.discard(k)
+        for k in [k for k in self._bad_vcard_hashes if k[0] == account_id]:
+            self._bad_vcard_hashes.pop(k, None)
 
     # ================================================================== roster
     async def on_online(self, session, resumed: bool) -> None:
@@ -203,14 +231,106 @@ class RosterService(GObject.Object):
         if query is None:
             return  # unchanged since our version: pushes will follow
         items = {util.bare(i.get("jid", "")): i for i in query.findall("{%s}item" % NS_ROSTER) if i.get("jid")}
-        for item in items.values():
-            await self._apply_item(acc.id, item)
-        for c in self.contacts.for_account(acc.id):
-            if c.in_roster and c.jid not in items:
+        parsed: list[tuple[str, str, str, str, list[str], bool]] = []
+        for jid, item in items.items():
+            sub = item.get("subscription", "none")
+            clean_sub = sub if sub in ("none", "to", "from", "both") else "none"
+            groups = [g.text or "" for g in item.findall("{%s}group" % NS_ROSTER) if g.text]
+            parsed.append((jid, sub, clean_sub, item.get("ask", ""), groups, item.get("name", "")))
+        stale_contacts = [c for c in self.contacts.for_account(acc.id) if c.in_roster and c.jid not in items]
+        new_ver = query.get("ver")
+
+        def job(conn):
+            inserted_rows = []
+            for jid, sub, clean_sub, ask, groups, rname in parsed:
+                in_roster = 0 if sub == "remove" else 1
+                sub_val = "none" if sub == "remove" else clean_sub
+                ask_val = "" if sub == "remove" else ask
+                gw = int("@" not in jid) if sub != "remove" else 0
+                grp_json = json.dumps(groups) if sub != "remove" else "[]"
+                existing = self.contacts.get(acc.id, jid)
+                if existing is None:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO contacts (account_id, jid, in_roster) VALUES (?, ?, ?)",
+                        (acc.id, jid, in_roster),
+                    )
+                    if sub == "remove":
+                        conn.execute(
+                            "UPDATE contacts SET in_roster = 0, subscription = 'none', ask = '' "
+                            "WHERE account_id = ? AND jid = ?",
+                            (acc.id, jid),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE contacts SET name = ?, groups = ?, subscription = ?, ask = ?, "
+                            "in_roster = 1, is_gateway = ? WHERE account_id = ? AND jid = ?",
+                            (rname, grp_json, sub_val, ask_val, gw, acc.id, jid),
+                        )
+                    row = conn.execute(
+                        "SELECT * FROM contacts WHERE account_id = ? AND jid = ?", (acc.id, jid)
+                    ).fetchone()
+                    if row is not None:
+                        inserted_rows.append((row, groups))
+                else:
+                    if sub == "remove":
+                        conn.execute(
+                            "UPDATE contacts SET in_roster = 0, subscription = 'none', ask = '' "
+                            "WHERE account_id = ? AND jid = ?",
+                            (acc.id, jid),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE contacts SET name = ?, groups = ?, subscription = ?, ask = ?, "
+                            "in_roster = 1, is_gateway = ? WHERE account_id = ? AND jid = ?",
+                            (rname, grp_json, sub_val, ask_val, gw, acc.id, jid),
+                        )
+            for c in stale_contacts:
+                conn.execute(
+                    "UPDATE contacts SET in_roster = 0, subscription = 'none', ask = '' "
+                    "WHERE account_id = ? AND jid = ?",
+                    (acc.id, c.jid),
+                )
+            if new_ver is not None:
+                conn.execute(
+                    "INSERT INTO kv (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (ver_key, new_ver),
+                )
+            return inserted_rows
+
+        inserted_rows = await self.core.db.run(job)
+        added_items: list[ContactItem] = []
+        changed_items: list[ContactItem] = []
+        for jid, sub, clean_sub, ask, groups, rname in parsed:
+            c = self.contacts.get(acc.id, jid)
+            if c is None:
+                continue
+            if sub == "remove":
                 c.update(in_roster=False, subscription="none", ask="")
-                await self.contacts.save(c)
-        if query.get("ver") is not None:
-            await self.core.db.kv_set(ver_key, query.get("ver", ""))
+            else:
+                c.update(in_roster=True, subscription=clean_sub, ask=ask, roster_name=rname)
+                c.set_groups(groups)
+                c.is_gateway = "@" not in jid
+            c.refresh_name()
+            changed_items.append(c)
+        for row, groups in inserted_rows:
+            if self.contacts.get(acc.id, row["jid"]) is not None:
+                continue
+            c = self.contacts._from_row(row)
+            c.set_groups(groups)
+            c.refresh_name()
+            self.contacts.by_key[(acc.id, c.jid)] = c
+            added_items.append(c)
+        if added_items:
+            self.contacts.store.splice(self.contacts.store.get_n_items(), 0, added_items)
+            for c in added_items:
+                self.contacts.emit("added", c)
+        for c in stale_contacts:
+            c.update(in_roster=False, subscription="none", ask="")
+            c.refresh_name()
+            changed_items.append(c)
+        for c in changed_items:
+            self.contacts.emit("changed", c)
 
     async def _apply_item(self, account_id: int, item: ET.Element) -> ContactItem | None:
         jid = util.bare(item.get("jid", ""))
@@ -362,8 +482,10 @@ class RosterService(GObject.Object):
             info["idle"] = parse_stamp(idle.get("since")) if idle is not None else None
             c.resources[res] = info
             upd = el.find("{%s}x/{%s}photo" % (NS_VCARD_UPDATE, NS_VCARD_UPDATE))
-            if upd is not None and upd.text and upd.text.strip() != c.avatar_hash:
-                aio.spawn(self.fetch_vcard_avatar(session, c, upd.text.strip()))
+            if upd is not None and upd.text:
+                h = upd.text.strip()
+                if h != c.avatar_hash and self._bad_vcard_hashes.get((session.account.id, c.jid)) != h:
+                    aio.spawn(self.fetch_vcard_avatar(session, c, h))
         show, status = c.best_presence()
         idles = [float(r["idle"]) for r in c.resources.values() if r.get("idle")]
         c.update(show=show, status=status, idle_since=int(min(idles) * 1000) if idles else 0)
@@ -511,17 +633,25 @@ class RosterService(GObject.Object):
                 await self.contacts.save(target)
             return
         p = avatar_path(sha1)
-        if not os.path.exists(p) and from_pep:
+        exists = await aio.run_in_thread(os.path.exists, p)
+        if not exists and from_pep:
             try:
                 got = await Pep.get_items(session, None if own else jid, NS_AVATAR_DATA, [sha1])
                 data_el = got[0].find("{%s}data" % NS_AVATAR_DATA) if got else None
                 if data_el is not None and data_el.text:
-                    data = base64.b64decode(data_el.text.strip())
-                    if hashlib.sha1(data).hexdigest() == sha1:
-                        save_avatar(data)
+                    raw_b64 = data_el.text.strip()
+
+                    def save_pep_avatar():
+                        data = base64.b64decode(raw_b64)
+                        if hashlib.sha1(data).hexdigest() == sha1:
+                            save_avatar(data)
+                            return True
+                        return False
+
+                    exists = await aio.run_in_thread(save_pep_avatar)
             except Exception as e:
                 log.debug("avatar of %s: %s", jid, e)
-        if os.path.exists(p):
+        if exists:
             if target is None:
                 acc.avatar = p
             else:
@@ -532,9 +662,13 @@ class RosterService(GObject.Object):
         key = (c.account_id, c.jid)
         if key in self._vcard_fetching:
             return
-        sha1 = _valid_sha1(sha1)
-        p = avatar_path(sha1) if sha1 else ""
-        if p and os.path.exists(p):
+        raw_sha1 = (sha1 or "").strip()
+        sha1 = _valid_sha1(raw_sha1)
+        if not sha1:
+            self._bad_vcard_hashes[key] = raw_sha1
+            return
+        p = avatar_path(sha1)
+        if p and await aio.run_in_thread(os.path.exists, p):
             c.update(avatar=p, avatar_hash=sha1)
             await self.contacts.save(c)
             return
@@ -543,10 +677,12 @@ class RosterService(GObject.Object):
             res = await session.iq("get", c.jid, ET.Element("{%s}vCard" % NS_VCARD))
             binval = res.findtext(".//{%s}PHOTO/{%s}BINVAL" % (NS_VCARD, NS_VCARD))
             if binval:
-                data = base64.b64decode("".join(binval.split()))
-                got, p = save_avatar(data)
-                c.update(avatar=p, avatar_hash=got)
+                got, saved = await aio.run_in_thread(lambda: save_avatar(base64.b64decode("".join(binval.split()))))
+                self._bad_vcard_hashes.pop(key, None)
+                c.update(avatar=saved, avatar_hash=got)
                 await self.contacts.save(c)
+            else:
+                self._bad_vcard_hashes[key] = raw_sha1
         except Exception as e:
             log.debug("vCard avatar of %s: %s", c.jid, e)
         finally:
@@ -567,9 +703,14 @@ class RosterService(GObject.Object):
                     session.account.nickname = nick
 
     async def publish_avatar(self, session, data: bytes, mime: str, width: int, height: int) -> None:
-        sha1, p = save_avatar(data)
+        def prep():
+            sha1, p = save_avatar(data)
+            b64 = base64.b64encode(data).decode()
+            return sha1, p, b64
+
+        sha1, p, b64 = await aio.run_in_thread(prep)
         d = ET.Element("{%s}data" % NS_AVATAR_DATA)
-        d.text = base64.b64encode(data).decode()
+        d.text = b64
         opts = {"pubsub#access_model": "open"}
         await Pep.publish(session, NS_AVATAR_DATA, d, sha1, opts)
         meta = ET.Element("{%s}metadata" % NS_AVATAR_META)

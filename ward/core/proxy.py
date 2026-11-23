@@ -124,7 +124,7 @@ async def open_socket(proxy: Proxy, host: str, port: int, timeout: float = 30) -
 
         if proxy.kind == "socks5":
             methods = b"\x00\x02" if proxy.user else b"\x00"
-            await loop.sock_sendall(sock, b"\x05" + bytes([len(methods)]) + methods)
+            await asyncio.wait_for(loop.sock_sendall(sock, b"\x05" + bytes([len(methods)]) + methods), timeout)
             ver, method = await recv_exact(2)
             if ver != 5 or method == 0xFF:
                 raise ProxyError("the SOCKS5 proxy refused our authentication methods")
@@ -132,11 +132,14 @@ async def open_socket(proxy: Proxy, host: str, port: int, timeout: float = 30) -
                 u, p = proxy.user.encode(), proxy.password.encode()
                 if len(u) > 255 or len(p) > 255:
                     raise ProxyError("SOCKS5 user name or password is too long")
-                await loop.sock_sendall(sock, b"\x01" + bytes([len(u)]) + u + bytes([len(p)]) + p)
+                await asyncio.wait_for(
+                    loop.sock_sendall(sock, b"\x01" + bytes([len(u)]) + u + bytes([len(p)]) + p),
+                    timeout,
+                )
                 _v, status = await recv_exact(2)
                 if status != 0:
                     raise ProxyError("the SOCKS5 proxy rejected the user name or password")
-            await loop.sock_sendall(sock, _socks5_request(host, port))
+            await asyncio.wait_for(loop.sock_sendall(sock, _socks5_request(host, port)), timeout)
             head = await recv_exact(4)
             if head[1] != 0:
                 raise ProxyError("SOCKS5: %s" % _SOCKS_ERRORS.get(head[1], "error %d" % head[1]))
@@ -145,11 +148,13 @@ async def open_socket(proxy: Proxy, host: str, port: int, timeout: float = 30) -
                 await recv_exact(4 + 2)
             elif atyp == 4:
                 await recv_exact(16 + 2)
-            else:
+            elif atyp == 3:
                 (n,) = await recv_exact(1)
                 await recv_exact(n + 2)
+            else:
+                raise ProxyError("SOCKS5: bad address type %d" % atyp)
         else:
-            await loop.sock_sendall(sock, _http_request(host, port, proxy))
+            await asyncio.wait_for(loop.sock_sendall(sock, _http_request(host, port, proxy)), timeout)
             buf = b""
             while b"\r\n\r\n" not in buf:
                 chunk = await asyncio.wait_for(loop.sock_recv(sock, 1024), timeout)
@@ -198,7 +203,14 @@ def open_socket_sync(proxy: Proxy, host: str, port: int, timeout: float = 30) ->
             if head[1] != 0:
                 raise ProxyError("SOCKS5: %s" % _SOCKS_ERRORS.get(head[1], "error %d" % head[1]))
             atyp = head[3]
-            recv_exact(6 if atyp == 1 else 18 if atyp == 4 else recv_exact(1)[0] + 2)
+            if atyp == 1:
+                recv_exact(6)
+            elif atyp == 4:
+                recv_exact(18)
+            elif atyp == 3:
+                recv_exact(recv_exact(1)[0] + 2)
+            else:
+                raise ProxyError("SOCKS5: bad address type %d" % atyp)
         else:
             sock.sendall(_http_request(host, port, proxy))
             buf = b""

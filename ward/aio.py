@@ -63,8 +63,13 @@ class _Source(GLib.Source):
         return False, self.loop._timeout_ms()
 
     def check(self):
+        if self.loop.is_closed():
+            self.ready = []
+            return False
         ready = []
-        for key in self.loop._selector_keys():
+        for key in self.loop._gsel._keys.values():
+            if key.tag is None:
+                continue
             cond = self.query_unix_fd(key.tag)
             events = 0
             # Mirror selectors.EpollSelector: ERR/HUP/NVAL wake readers and writers alike.
@@ -310,7 +315,11 @@ def _log_result(task: asyncio.Task) -> None:
 def spawn(coro: Coroutine[Any, Any, T], name: str | None = None) -> asyncio.Task[T]:
     """Run a coroutine in the background, keep a reference until it finishes and log its exceptions.  This is
     how the interface calls into the core: spawn(core.chats.send(...))."""
-    task = get_loop().create_task(coro, name=name)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = get_loop()
+    task = loop.create_task(coro, name=name)
     _tasks.add(task)
     task.add_done_callback(_log_result)
     return task
@@ -326,7 +335,7 @@ def gio_call(start: Callable[..., Any], finish: Callable[[Any], T], *args: Any) 
     fut: asyncio.Future[T] = asyncio.get_running_loop().create_future()
 
     def done(_obj, result, *_):
-        if fut.cancelled():
+        if fut.done():
             return
         try:
             fut.set_result(finish(result))
