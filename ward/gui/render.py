@@ -35,19 +35,29 @@ from ..core.markup.tree import (
 )
 from ..i18n import _
 
-_cache: OrderedDict[tuple, Document] = OrderedDict()
+_cache: OrderedDict[tuple, tuple[Document, int]] = OrderedDict()
+_cache_chars = 0
+_MAX_CACHE_ENTRIES = 2000
+_MAX_CACHE_CHARS = 2_000_000
+_MAX_HIGHLIGHT_CHARS = 50_000
 HEADING_SIZES = {1: "x-large", 2: "large", 3: "large"}
 
 
 def parsed(key, text: str, is_markdown: bool, nicknames=None, others_markdown: bool = False) -> Document:
-    k = (key, hash(text), is_markdown, others_markdown, frozenset(nicknames or ()))
-    doc = _cache.get(k)
-    if doc is None:
+    global _cache_chars
+    nicks_key = frozenset(nicknames) if (nicknames and "@" in text) else None
+    k = (key, len(text), hash(text), is_markdown, others_markdown, nicks_key)
+    entry = _cache.get(k)
+    if entry is None:
         doc = parse_markup(text, is_markdown, nicknames, others_markdown)
-        _cache[k] = doc
-        if len(_cache) > 2000:
-            _cache.popitem(last=False)
+        cost = len(text)
+        _cache[k] = (doc, cost)
+        _cache_chars += cost
+        while len(_cache) > _MAX_CACHE_ENTRIES or (_cache_chars > _MAX_CACHE_CHARS and len(_cache) > 1):
+            _old_k, (_old_doc, old_cost) = _cache.popitem(last=False)
+            _cache_chars -= old_cost
     else:
+        doc = entry[0]
         _cache.move_to_end(k)
     return doc
 
@@ -115,10 +125,9 @@ class Renderer:
         if isinstance(b, Paragraph):
             return self.text(b.inlines)
         if isinstance(b, Heading):
-            lbl = self.text(b.inlines)
             size = HEADING_SIZES.get(b.level, "medium")
-            lbl.set_markup("<span size='%s' weight='bold'>%s</span>" % (size, markup(b.inlines, dark=self.dark)))
-            return lbl
+            return self.text(b.inlines, "<span size='%s' weight='bold'>%s</span>" % (
+                size, markup(b.inlines, dark=self.dark)))
         if isinstance(b, CodeBlock):
             return self.code(b.text, b.language)
         if isinstance(b, Quote):
@@ -155,17 +164,34 @@ class Renderer:
             return Gtk.Separator(margin_top=4, margin_bottom=4)
         return None
 
-    def text(self, runs: Inlines) -> Gtk.Label:
+    def text(self, runs: Inlines, markup_override: str | None = None) -> Gtk.Label:
         lbl = Gtk.Label(xalign=0, wrap=True, selectable=True, css_classes=["message-text"], hexpand=True,
                         max_width_chars=90)
         lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         # focusable, or a selection could not be copied with Ctrl+C
         if self.action:
             lbl.add_css_class("action")
+        if markup_override is None and not runs:
+            return lbl
+        if markup_override is None and len(runs) == 1 and not runs[0].styles and not runs[0].href:
+            lbl.set_text(runs[0].text)
+            return lbl
+        has_link = False
+        has_code = False
+        has_spoiler = False
+        for r in runs:
+            st = r.styles
+            if LINK in st and r.href:
+                has_link = True
+            if CODE in st:
+                has_code = True
+            if SPOILER in st:
+                has_spoiler = True
         revealed: set[int] = set()
-        lbl.set_markup(markup(runs, revealed, self.dark))
-        lbl.connect("activate-link", self._link, runs)
-        if self.on_code_copy is not None and any(CODE in r.styles for r in runs):
+        lbl.set_markup(markup_override if markup_override is not None else markup(runs, revealed, self.dark))
+        if has_link:
+            lbl.connect("activate-link", self._link, runs)
+        if self.on_code_copy is not None and has_code:
             ranges = inline_code_ranges(runs)
             state = {"code": None}
             click = Gtk.GestureClick(button=1)
@@ -173,7 +199,7 @@ class Renderer:
             click.connect("pressed", self._code_pressed, lbl, ranges, state)
             click.connect("released", self._code_clicked, lbl, ranges, state)
             lbl.add_controller(click)
-        if any(SPOILER in r.styles for r in runs):
+        if has_spoiler:
             click = Gtk.GestureClick()
 
             def reveal(*_a):
@@ -236,9 +262,11 @@ class Renderer:
         head.append(copy)
         frame.append(head)
         view = None
-        if deps.have("source"):
+        if language and deps.have("source"):
             try:
-                view = _source_view(text, language, self.dark)
+                lang = _resolve_language(language)
+                if lang is not None:
+                    view = _source_view(text, language, self.dark, lang=lang)
             except Exception:
                 view = None
         if view is None:
@@ -251,18 +279,44 @@ class Renderer:
     def table(self, t: Table) -> Gtk.Widget:
         grid = Gtk.Grid(css_classes=["message-table"], column_homogeneous=False)
         aligns = {"left": 0.0, "center": 0.5, "right": 1.0}
+        dark = self.dark
+        total_cells = len(t.header) + sum(len(row) for row in t.rows)
+        eager_selectable = total_cells <= 60
         for c, cell in enumerate(t.header):
-            lbl = Gtk.Label(xalign=aligns.get(t.align[c] if c < len(t.align) else "", 0.0), css_classes=["header"])
-            lbl.set_markup(markup(cell, dark=self.dark))
+            align = aligns.get(t.align[c] if c < len(t.align) else "", 0.0)
+            if len(cell) == 1 and not cell[0].styles and not cell[0].href:
+                lbl = Gtk.Label(label=cell[0].text, xalign=align, css_classes=["header"])
+            else:
+                lbl = Gtk.Label(xalign=align, css_classes=["header"])
+                lbl.set_markup(markup(cell, dark=dark))
             grid.attach(lbl, c, 0, 1, 1)
         for r, row in enumerate(t.rows, start=1):
             for c, cell in enumerate(row):
-                lbl = Gtk.Label(xalign=aligns.get(t.align[c] if c < len(t.align) else "", 0.0), selectable=True,
-                                ellipsize=Pango.EllipsizeMode.END, max_width_chars=60)
-                # no wrapping: the table scrolls sideways, and wrapped cells made it measure as if squeezed
-                lbl.set_markup(markup(cell, dark=self.dark))
-                lbl.set_tooltip_text(lbl.get_text() if len(lbl.get_text()) > 60 else None)
+                align = aligns.get(t.align[c] if c < len(t.align) else "", 0.0)
+                if len(cell) == 1 and not cell[0].styles and not cell[0].href:
+                    plain = cell[0].text
+                    lbl = Gtk.Label(label=plain, xalign=align, selectable=eager_selectable,
+                                    ellipsize=Pango.EllipsizeMode.END, max_width_chars=60)
+                    if len(plain) > 60:
+                        lbl.set_tooltip_text(plain)
+                else:
+                    lbl = Gtk.Label(xalign=align, selectable=eager_selectable,
+                                    ellipsize=Pango.EllipsizeMode.END, max_width_chars=60)
+                    # no wrapping: the table scrolls sideways, and wrapped cells made it measure as if squeezed
+                    lbl.set_markup(markup(cell, dark=dark))
+                    if sum(len(run.text) for run in cell) > 60:
+                        lbl.set_tooltip_text("".join(run.text for run in cell))
                 grid.attach(lbl, c, r, 1, 1)
+        if not eager_selectable:
+            motion = Gtk.EventControllerMotion()
+
+            def on_motion(_c, x, y) -> None:
+                target = grid.pick(x, y, Gtk.PickFlags.DEFAULT)
+                if isinstance(target, Gtk.Label) and not target.get_selectable() and not target.has_css_class("header"):
+                    target.set_selectable(True)
+
+            motion.connect("motion", on_motion)
+            grid.add_controller(motion)
         sc = Gtk.ScrolledWindow(vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
                                 propagate_natural_width=True)
         sc.set_child(grid)
@@ -315,20 +369,47 @@ def _forward_wheel_to_parent(widget: Gtk.Widget) -> None:
     widget.add_controller(controller)
 
 
+_MONO_FONT: Pango.FontDescription | None = None
+
+
+def _longest_line_sample(text: str, limit: int = 160) -> str:
+    if not text:
+        return ""
+    best = ""
+    best_len = 0
+    pos = 0
+    n = len(text)
+    while pos < n:
+        nl = text.find("\n", pos)
+        end = n if nl < 0 else nl
+        line_len = end - pos
+        if line_len > best_len:
+            best_len = line_len
+            best = text[pos:min(end, pos + limit)]
+            if best_len >= limit:
+                return best
+        if nl < 0:
+            break
+        pos = nl + 1
+    return best
+
+
 class _CodeScroller(Gtk.ScrolledWindow):
     """Scrolls a code block sideways, but asks for the width of its longest line: a text view only knows its own
     natural width after a first layout, so bubbles would otherwise cut code off."""
     __gtype_name__ = "WardCodeScroller"
 
     def __init__(self, view: Gtk.Widget, text: str):
+        global _MONO_FONT
         super().__init__(vscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
                          propagate_natural_width=True)
         self.set_child(view)
         _forward_wheel_to_parent(self)
-        longest = max(text.splitlines() or [""], key=len)
+        longest = _longest_line_sample(text)
         layout = view.create_pango_layout(longest)
-        font = Pango.FontDescription.from_string("monospace")
-        layout.set_font_description(font)
+        if _MONO_FONT is None:
+            _MONO_FONT = Pango.FontDescription.from_string("monospace")
+        layout.set_font_description(_MONO_FONT)
         self.want = min(layout.get_pixel_size()[0] + 28, 900)
         # never squeezed down to a few characters, while still fitting a phone-sized window
         self.set_min_content_width(min(self.want, 240))
@@ -341,28 +422,78 @@ class _CodeScroller(Gtk.ScrolledWindow):
 
 
 _lang_manager = None
+_scheme_manager = None
+_lang_cache: dict[str, object] = {}
+_scheme_cache: dict[str, object] = {}
 
 
-def _source_view(text: str, language: str, dark: bool):
-    global _lang_manager
+def _gtksource():
     import gi
 
     gi.require_version("GtkSource", "5")
     from gi.repository import GtkSource
 
+    return GtkSource
+
+
+def _resolve_language(language: str):
+    global _lang_manager
+    key = (language or "").strip().lower()
+    if not key:
+        return None
+    if key in _lang_cache:
+        return _lang_cache[key]
     if _lang_manager is None:
-        _lang_manager = GtkSource.LanguageManager.get_default()
-    buf = GtkSource.Buffer()
-    lang = None
-    if language:
-        lang = _lang_manager.get_language(language.lower()) or _lang_manager.guess_language("x." + language, None)
-    if lang is not None:
+        _lang_manager = _gtksource().LanguageManager.get_default()
+    lang = _lang_manager.get_language(key) or _lang_manager.guess_language("x." + key, None)
+    _lang_cache[key] = lang
+    return lang
+
+
+def _get_style_scheme(dark: bool):
+    global _scheme_manager
+    name = "Adwaita-dark" if dark else "Adwaita"
+    if name in _scheme_cache:
+        return _scheme_cache[name]
+    if _scheme_manager is None:
+        _scheme_manager = _gtksource().StyleSchemeManager.get_default()
+    scheme = _scheme_manager.get_scheme(name)
+    _scheme_cache[name] = scheme
+    return scheme
+
+
+def _schedule_source_highlight(view, lang) -> None:
+    def apply() -> bool:
+        if view.get_parent() is None or view.get_root() is None:
+            return False
+        buf = view.get_buffer()
+        if buf is None:
+            return False
         buf.set_language(lang)
         buf.set_highlight_syntax(True)
-    scheme = GtkSource.StyleSchemeManager.get_default().get_scheme("Adwaita-dark" if dark else "Adwaita")
+        return False
+
+    GLib.idle_add(apply, priority=GLib.PRIORITY_LOW)
+
+
+def _source_view(text: str, language: str, dark: bool, lang=None, defer_highlight: bool = True):
+    GtkSource = _gtksource()
+    buf = GtkSource.Buffer()
+    if hasattr(buf, "set_enable_undo"):
+        buf.set_enable_undo(False)
+    if lang is None and language:
+        lang = _resolve_language(language)
+    scheme = _get_style_scheme(dark)
     if scheme is not None:
         buf.set_style_scheme(scheme)
+    buf.set_highlight_syntax(False)
     buf.set_text(text)
     view = GtkSource.View(buffer=buf, editable=False, cursor_visible=False, monospace=True,
                           wrap_mode=Gtk.WrapMode.NONE, css_classes=["message-code"])
+    if lang is not None and len(text) <= _MAX_HIGHLIGHT_CHARS:
+        if defer_highlight:
+            _schedule_source_highlight(view, lang)
+        else:
+            buf.set_language(lang)
+            buf.set_highlight_syntax(True)
     return view

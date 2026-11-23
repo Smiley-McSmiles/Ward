@@ -11,9 +11,10 @@ import shutil
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
 
 from ..core import search as search_mod
+from ..core.markup.emoji import emoji_only
 from ..core.models import AttachmentItem, ChatItem, MessageItem
 from ..i18n import _, ngettext
-from . import compat, lifetime, widgets
+from . import compat, lifetime, render, widgets
 from .composer import Composer
 from .members import MembersPanel
 from .message_row import MessageRow
@@ -70,10 +71,21 @@ class ConversationView(Gtk.Box):
         self._last_value = 0.0          # the adjustment, to tell the user scrolling from the list relaying out
         self._unstick_source = 0        # the one pending "did the user scroll away?" check
         self._scroll_idle = 0
+        self._settle_idle = 0
         self._settle_sources: list[int] = []
         self._jump_visible = False
         self._auto_until = 0            # a programmatic scroll: its layout settling is not the user scrolling
         self._layout_until = 0          # rows being rebuilt: their measurement moves the view too
+        self._open_seq = 0
+        self._reveal_idle = 0
+        self._load_older_timer = 0
+        self._highlight_timer = 0
+        self._search_timer = 0
+        self._search_fill_idle = 0
+        self._search_seq = 0
+        self._last_search_key: tuple[int, str] | None = None
+        self._last_result_keys: list[tuple[int, str]] | None = None
+        self._mark_read_key: tuple[int, int] | None = None
 
         self.toolbar = Adw.ToolbarView()
         self.append(self.toolbar)
@@ -164,7 +176,7 @@ class ConversationView(Gtk.Box):
 
         async def check():
             media = await self.core.calls.can_call(chat.account_id, chat.jid)
-            if chat is not self.chat:
+            if not hasattr(self, "call_button") or chat is not self.chat:
                 return
             contact = self.core.contacts.get(chat.account_id, chat.jid)
             offline = contact is None or contact.show == "offline"
@@ -217,7 +229,10 @@ class ConversationView(Gtk.Box):
         self.search_bar.connect_entry(self.search_entry)
         self.search_button.bind_property("active", self.search_bar, "search-mode-enabled",
                                          GObject.BindingFlags.BIDIRECTIONAL)
+        if hasattr(self.search_entry, "set_search_delay"):
+            self.search_entry.set_search_delay(80)
         self.search_entry.connect("search-changed", self._on_search)
+        self.search_entry.connect("activate", self._on_search_activate)
         self.search_entry.connect("stop-search", lambda *_: self.search_button.set_active(False))
         self.search_bar.connect("notify::search-mode-enabled", self._on_search_mode)
         self.toolbar.add_top_bar(self.search_bar)
@@ -326,21 +341,30 @@ class ConversationView(Gtk.Box):
     def show_chat(self, chat: ChatItem | None) -> None:
         if chat is self.chat:
             return
+        self._open_seq += 1
+        seq = self._open_seq
         self._detach()
-        if self.ml is not None:
-            # once the list view has let go of it: keep only the newest messages of the chat we leave
-            GLib.idle_add(lambda ml=self.ml: ml is not self.ml and ml.trim(KEEP_MESSAGES) and False)
-        self.chat = chat
+        old_ml = self.ml
+        self.ml = None
+        self.list.set_model(None)
         self.rows.clear()
+        if old_ml is not None:
+            # once the list view has let go of it: keep only the newest messages of the chat we leave
+            GLib.idle_add(self._trim_old_ml, old_ml)
+        self.chat = chat
         self._animate_ids.clear()
+        self.first_unread_id = 0
         self.highlight_id = 0
         self._last_value = 0.0
         self._auto_until = 0
         self._layout_until = 0
+        self._mark_read_key = None
+        self._last_search_key = None
+        self._last_result_keys = None
         if chat is None:
-            self.list.set_model(None)
-            self.ml = None
             self.composer.set_chat(None)
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+            self.reveal.set_reveal_child(True)
             return
         for prop in ("name", "show", "typing", "subject", "member-count", "encryption-state", "encryption-reason",
                      "avatar", "joined", "join-error", "is-request", "new-devices", "muted-until", "pinned",
@@ -360,46 +384,112 @@ class ConversationView(Gtk.Box):
         self.members.set_chat(chat if is_group else None)
         self.composer.set_chat(chat)
         self.search_button.set_active(False)
-        self.stack.set_visible_child_name("messages")
-        self._animate_in()
-        widgets.run(self, self._open(chat), error=_("Could not load messages"))
+        self._set_stack_immediate("messages")
+        self._prepare_animate_in()
+        widgets.run(self, self._open(chat, seq), error=_("Could not load messages"))
 
-    async def _open(self, chat: ChatItem) -> None:
-        ml = await self.core.chats.open_messages(chat)
-        if chat is not self.chat:
+    def _trim_old_ml(self, ml) -> bool:
+        if hasattr(self, "ml") and ml is not self.ml:
+            ml.trim(KEEP_MESSAGES)
+        return False
+
+    def _prewarm_render(self, store, lo: int, hi: int) -> None:
+        if lo >= hi:
             return
-        self.ml = ml
-        self.first_unread_id = 0
-        if chat.unread:
-            for m in ml.items():
-                if m.id > chat.last_read_id and not m.outgoing and m.kind != "status":
-                    self.first_unread_id = m.id
-                    break
-        # connect before set_model: the list view's own items-changed handler binds the row, and it must find
-        # the new id in _animate_ids already
-        self._chat_handlers.append((ml.store, ml.store.connect("items-changed", self._on_items_changed)))
-        model = Gtk.NoSelection.new(ml.store)
-        self._chat_handlers.append((ml, ml.connect("notify::loading", lambda *_: self.loading_spinner.set_visible(
-            ml.loading))))
-        self.list.set_model(model)
-        self._update_empty()
-        self._stick = True
-        if self.first_unread_id:
-            idx = ml.index(ml.get(self.first_unread_id))
-            GLib.idle_add(self._scroll_to_index, idx, False)
-        else:
-            self._queue_scroll_to_bottom()
-        self.core.set_active_chat(chat)
-        if len(ml) < 30 and ml.has_older:
-            await self._load_older()
+        large_emoji = bool(self.settings["appearance.large_emoji"])
+        others_md = bool(self.settings["chats.markdown_others"])
+        nicks = None
+        for i in range(lo, hi):
+            m = store.get_item(i)
+            if m is None or m.retracted or m.kind in ("status", "call") or m.extra.get("decrypt_error"):
+                continue
+            body = m.body
+            if not body or len(body) > 4000 or not body.strip():
+                continue
+            if large_emoji and emoji_only(body):
+                continue
+            if m.kind == "me":
+                body = "%s %s" % (self.display_name(m), body[4:])
+            if "@" in body and nicks is None:
+                nicks = self.mention_names()
+            render.parsed(m.id, body, m.is_markdown, nicks if "@" in body else (), others_md)
+
+    async def _open(self, chat: ChatItem, seq: int) -> None:
+        try:
+            ml = await self.core.chats.open_messages(chat)
+            if not hasattr(self, "list") or chat is not self.chat or seq != self._open_seq:
+                return
+            self.ml = ml
+            store = ml.store
+            n_items = store.get_n_items()
+            self.first_unread_id = 0
+            unread_idx = -1
+            if chat.unread and n_items:
+                last_read = chat.last_read_id
+                for i in range(n_items):
+                    m = store.get_item(i)
+                    if m.id > last_read and not m.outgoing and m.kind != "status":
+                        self.first_unread_id = m.id
+                        unread_idx = i
+                        break
+            if n_items:
+                if unread_idx >= 0:
+                    self._prewarm_render(store, max(0, unread_idx - 10), min(n_items, unread_idx + 15))
+                else:
+                    self._prewarm_render(store, max(0, n_items - 20), n_items)
+            # connect before set_model: the list view's own items-changed handler binds the row, and it must find
+            # the new id in _animate_ids already
+            self._chat_handlers.append((store, store.connect("items-changed", self._on_items_changed)))
+            model = Gtk.NoSelection.new(store)
+            self._chat_handlers.append((ml, ml.connect("notify::loading", lambda *_: self.loading_spinner.set_visible(
+                ml.loading))))
+            self._update_empty(immediate=True)
+            self.list.set_model(model)
+            if unread_idx >= 0:
+                self._stick = False
+                self.list.scroll_to(unread_idx, Gtk.ListScrollFlags.NONE, None)
+            else:
+                self._stick = True
+                self.scroll_to_bottom(force=True)
+            self.core.set_active_chat(chat)
+            self._animate_in(seq)
+            if n_items < 30 and ml.has_older:
+                if n_items == 0 or not self._chat_animations_enabled():
+                    await self._load_older()
+                else:
+                    self._load_older_timer = GLib.timeout_add(260, self._deferred_load_older, chat, seq)
+        except Exception:
+            if hasattr(self, "reveal") and chat is self.chat and seq == self._open_seq:
+                self.reveal.set_reveal_child(True)
+            raise
+
+    def _deferred_load_older(self, chat: ChatItem, seq: int) -> bool:
+        self._load_older_timer = 0
+        if hasattr(self, "ml") and chat is self.chat and seq == self._open_seq and self.ml is not None and \
+                len(self.ml) < 30 and self.ml.has_older and not self._loading_older:
+            widgets.run(self, self._load_older())
+        return False
 
     def _detach(self) -> None:
         self._cancel_scroll_timers()
+        if getattr(self, "_reveal_idle", 0):
+            GLib.source_remove(self._reveal_idle)
+            self._reveal_idle = 0
+        if getattr(self, "_load_older_timer", 0):
+            GLib.source_remove(self._load_older_timer)
+            self._load_older_timer = 0
+        if getattr(self, "_highlight_timer", 0):
+            GLib.source_remove(self._highlight_timer)
+            self._highlight_timer = 0
+        if getattr(self, "_search_timer", 0):
+            GLib.source_remove(self._search_timer)
+            self._search_timer = 0
+        if getattr(self, "_search_fill_idle", 0):
+            GLib.source_remove(self._search_fill_idle)
+            self._search_fill_idle = 0
         for obj, h in self._chat_handlers:
-            try:
+            if GObject.signal_handler_is_connected(obj, h):
                 obj.disconnect(h)
-            except TypeError:
-                pass
         self._chat_handlers = []
         if self.chat is not None:
             self.composer.save_draft()
@@ -415,7 +505,12 @@ class ConversationView(Gtk.Box):
     def _bind_row(self, _f, item: Gtk.ListItem) -> None:
         row: MessageRow = item.get_child()
         msg: MessageItem = item.get_item()
-        row.bind(msg, self.previous(msg))
+        pos = item.get_position()
+        if self.ml is not None and pos != Gtk.INVALID_LIST_POSITION:
+            prev = self.ml.store.get_item(pos - 1) if pos > 0 else None
+        else:
+            prev = self.previous(msg)
+        row.bind(msg, prev)
         self.rows[msg.id] = row
         if msg.id in self._animate_ids:
             self._animate_ids.discard(msg.id)
@@ -428,6 +523,8 @@ class ConversationView(Gtk.Box):
         row.unbind()
 
     def _on_items_changed(self, store, pos: int, removed: int, added: int) -> None:
+        if not hasattr(self, "rows"):
+            return
         # the message after an insertion may now continue a group, or need its date separator
         nxt = store.get_item(pos + added) if pos + added < store.get_n_items() else None
         if nxt is not None and nxt.id in self.rows:
@@ -439,7 +536,7 @@ class ConversationView(Gtk.Box):
                 self._stick = True
             if self._stick:
                 # a message sent or received while the list follows the bottom slides up into place
-                if newest is not None and self.settings["appearance.message_animations"]:
+                if added <= 3 and newest is not None and self.settings["appearance.message_animations"]:
                     row = self.rows.get(newest.id)
                     if row is not None:          # the list view already bound it
                         row.animate_in()
@@ -447,13 +544,26 @@ class ConversationView(Gtk.Box):
                         self._animate_ids.add(newest.id)
                 self._queue_scroll_to_bottom()
             else:
+                self._animate_ids.clear()
                 self._set_jump(True)
 
-    def _update_empty(self) -> None:
+    def _set_stack_immediate(self, name: str) -> None:
+        if self.stack.get_visible_child_name() == name:
+            return
+        old_type = self.stack.get_transition_type()
+        self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self.stack.set_visible_child_name(name)
+        self.stack.set_transition_type(old_type)
+
+    def _update_empty(self, immediate: bool = False) -> None:
         if self.stack.get_visible_child_name() == "results":
             return
         empty = self.ml is not None and len(self.ml) == 0 and not self.ml.has_older
-        self.stack.set_visible_child_name("empty" if empty else "messages")
+        name = "empty" if empty else "messages"
+        if immediate:
+            self._set_stack_immediate(name)
+        else:
+            self.stack.set_visible_child_name(name)
 
     # ------------------------------------------------------------------ scrolling
     def _at_bottom(self) -> bool:
@@ -469,6 +579,8 @@ class ConversationView(Gtk.Box):
         # measures a message (its estimated height first, then the real one), or a row is rebuilt (a receipt, a
         # reaction): that must not unstick it.  So a move up is only believed after it has settled, and the list
         # is put back at the bottom if the move came from a re-measure.
+        if not hasattr(self, "vadj"):
+            return
         value = adj.get_value()
         previous = self._last_value
         self._last_value = value
@@ -483,10 +595,13 @@ class ConversationView(Gtk.Box):
             # timer per event, all of them asking the same question.
             self._unstick_source = GLib.timeout_add(120, self._maybe_unstick)
         if self._stick and (now <= self._layout_until or now <= self._auto_until) and not self._at_bottom():
-            self._settle_bottom()
+            self._queue_settle_bottom()
         self._set_jump(not self._stick)
         if self._stick and self.chat is not None and self.chat.unread and self.core.window_focused:
-            self.core.set_active_chat(self.chat)
+            key = (self.chat.id, self.chat.unread)
+            if self._mark_read_key != key:
+                self._mark_read_key = key
+                self.core.set_active_chat(self.chat)
         if adj.get_value() < adj.get_page_size() * 0.6 and self.ml is not None and self.ml.has_older and \
                 not self._loading_older:
             widgets.run(self, self._load_older())
@@ -499,17 +614,22 @@ class ConversationView(Gtk.Box):
     def _maybe_unstick(self) -> bool:
         """The view stayed above the bottom: the user scrolled there.  Not while a row is being measured, though."""
         self._unstick_source = 0
-        if self.get_root() is None:         # the window was let go while the check was pending
+        if not hasattr(self, "vadj") or self.get_root() is None:  # the window was let go while pending
             return False
         now = GLib.get_monotonic_time()
         if not self._at_bottom() and now > self._auto_until and now > self._layout_until:
             self._stick = False
+            self._animate_ids.clear()
             self._set_jump(True)
         return False
 
     def _on_upper(self, *_a) -> None:
+        if not hasattr(self, "vadj"):
+            return
         if self._stick:
-            self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
+            target = max(0.0, self.vadj.get_upper() - self.vadj.get_page_size())
+            if abs(self.vadj.get_value() - target) > 0.5:
+                self.vadj.set_value(target)
         else:
             self._set_jump(not self._at_bottom())
 
@@ -517,6 +637,9 @@ class ConversationView(Gtk.Box):
         if getattr(self, "_scroll_idle", 0):
             GLib.source_remove(self._scroll_idle)
             self._scroll_idle = 0
+        if getattr(self, "_settle_idle", 0):
+            GLib.source_remove(self._settle_idle)
+            self._settle_idle = 0
         if getattr(self, "_unstick_source", 0):
             GLib.source_remove(self._unstick_source)
             self._unstick_source = 0
@@ -528,7 +651,15 @@ class ConversationView(Gtk.Box):
         if not self._scroll_idle:
             self._scroll_idle = GLib.idle_add(self.scroll_to_bottom)
 
-    def scroll_to_bottom(self) -> bool:
+    def _queue_settle_bottom(self) -> None:
+        if not getattr(self, "_settle_idle", 0):
+            self._settle_idle = GLib.idle_add(self._run_settle_idle)
+
+    def _run_settle_idle(self) -> bool:
+        self._settle_idle = 0
+        return self._settle_bottom()
+
+    def scroll_to_bottom(self, force: bool = False) -> bool:
         self._scroll_idle = 0
         if not hasattr(self, "vadj"):
             return False
@@ -536,9 +667,11 @@ class ConversationView(Gtk.Box):
         self._stick = True
         self._auto_until = GLib.get_monotonic_time() + 400_000     # the list settles within this
         n = self.ml.store.get_n_items() if self.ml is not None else 0
-        if n and not self._at_bottom():
+        if n and (force or not self._at_bottom() or self.vadj.get_upper() <= self.vadj.get_page_size()):
             self.list.scroll_to(n - 1, Gtk.ListScrollFlags.NONE, None)
-        self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
+        target = max(0.0, self.vadj.get_upper() - self.vadj.get_page_size())
+        if abs(self.vadj.get_value() - target) > 0.5:
+            self.vadj.set_value(target)
         self._set_jump(False)
         # once more after the new rows have their real heights
         for delay in (50, 250):
@@ -552,12 +685,14 @@ class ConversationView(Gtk.Box):
             if sid in getattr(self, "_settle_sources", ()):
                 self._settle_sources.remove(sid)
         if getattr(self, "_stick", False) and hasattr(self, "vadj"):
-            self.vadj.set_value(self.vadj.get_upper() - self.vadj.get_page_size())
+            target = max(0.0, self.vadj.get_upper() - self.vadj.get_page_size())
+            if abs(self.vadj.get_value() - target) > 0.5:
+                self.vadj.set_value(target)
             self._set_jump(False)
         return False
 
     def _scroll_to_index(self, idx: int, focus: bool = True) -> bool:
-        if idx >= 0:
+        if idx >= 0 and hasattr(self, "list"):
             self._stick = False
             self.list.scroll_to(idx, Gtk.ListScrollFlags.FOCUS if focus else Gtk.ListScrollFlags.NONE, None)
         return False
@@ -569,9 +704,11 @@ class ConversationView(Gtk.Box):
         try:
             chat = self.chat
             await self.core.chats.load_older(chat)
-            self._update_empty()
+            if hasattr(self, "stack") and chat is self.chat:
+                self._update_empty()
         finally:
-            self._loading_older = False
+            if hasattr(self, "_loading_older"):
+                self._loading_older = False
 
     # ================================================================== header, banner, menu
     HEADER_PROPS = {"name", "show", "typing", "subject", "member-count", "avatar", "encryption-state",
@@ -605,7 +742,7 @@ class ConversationView(Gtk.Box):
             if not chat.joined:
                 sub = chat.join_error or _("Not joined")
             elif chat.subject:
-                sub = chat.subject.splitlines()[0]
+                sub = chat.subject.partition("\n")[0].rstrip("\r")
             else:
                 sub = ngettext("%d member", "%d members", chat.member_count) % chat.member_count
         else:
@@ -616,8 +753,10 @@ class ConversationView(Gtk.Box):
                 sub = widgets.presence_text(contact.show, contact.status)
             else:
                 sub = chat.jid
-        if len(self.core.accounts.list()) > 1:
-            acc = self.core.accounts.get(chat.account_id)
+        accounts = self.core.accounts
+        n_accounts = accounts.store.get_n_items() if hasattr(accounts, "store") else len(accounts.list())
+        if n_accounts > 1:
+            acc = accounts.get(chat.account_id)
             if acc is not None:
                 sub = "%s · %s" % (sub, acc.display_name)
         self.subtitle_label.set_text(sub)
@@ -809,6 +948,8 @@ class ConversationView(Gtk.Box):
             self._code_toast.dismiss()
         toast = Adw.Toast(title=_("Code Copied!"), timeout=2)
         self._code_toast = toast
+        toast.connect("dismissed", lambda t: setattr(self, "_code_toast", None) if getattr(
+            self, "_code_toast", None) is t else None)
         self.window.toasts.add_toast(toast)
 
     def on_link(self, uri: str, text: str) -> bool:
@@ -829,6 +970,8 @@ class ConversationView(Gtk.Box):
         async def go():
             rows = await self.core.db.fetchall("SELECT body, timestamp FROM message_edits WHERE message_id = ? "
                                                "ORDER BY timestamp, id", (m.id,))
+            if not hasattr(self, "settings") or self.get_root() is None:
+                return
             d = compat.Dialog(_("Edit history"), 460, 420)
             view = Adw.ToolbarView()
             view.add_top_bar(Adw.HeaderBar())
@@ -852,7 +995,8 @@ class ConversationView(Gtk.Box):
     def jump_to(self, msg_id: int, ref: str = "") -> None:
         async def go():
             ml = self.ml
-            if ml is None:
+            chat = self.chat
+            if ml is None or chat is None:
                 return
             target = ml.get(msg_id) if msg_id else None
             if target is None and ref:
@@ -860,9 +1004,13 @@ class ConversationView(Gtk.Box):
             tries = 0
             while target is None and ml.has_older and tries < 50:
                 tries += 1
-                if not await self.core.chats.load_older(self.chat, 200):
+                if not await self.core.chats.load_older(chat, 200):
                     break
+                if not hasattr(self, "ml") or self.ml is not ml or self.chat is not chat:
+                    return
                 target = ml.get(msg_id) if msg_id else ml.find_ref(ref)
+            if not hasattr(self, "ml") or self.ml is not ml or self.chat is not chat:
+                return
             if target is None:
                 compat.toast(self, _("The original message is not available"))
                 return
@@ -870,20 +1018,24 @@ class ConversationView(Gtk.Box):
         widgets.run(self, go())
 
     def highlight(self, target: MessageItem) -> None:
+        if self._highlight_timer:
+            GLib.source_remove(self._highlight_timer)
+            self._highlight_timer = 0
         old = self.highlight_id
         self.highlight_id = target.id
         for mid in (old, target.id):
             if mid in self.rows:
-                self.rows[mid]._changed()
+                self.rows[mid].update_highlight()
         self._scroll_to_index(self.ml.index(target))
 
         def clear():
-            if getattr(self, "highlight_id", 0) == target.id:
+            self._highlight_timer = 0
+            if hasattr(self, "rows") and getattr(self, "highlight_id", 0) == target.id:
                 self.highlight_id = 0
                 if target.id in self.rows:
-                    self.rows[target.id]._changed()
+                    self.rows[target.id].update_highlight()
             return False
-        GLib.timeout_add(2500, clear)
+        self._highlight_timer = GLib.timeout_add(2500, clear)
 
     def open_attachment(self, m: MessageItem, att: AttachmentItem) -> None:
         path = att.local_path if att.local_path and os.path.exists(att.local_path) else ""
@@ -1051,8 +1203,10 @@ class ConversationView(Gtk.Box):
     def _mute(self, seconds: int) -> None:
         chat = self.chat
         until = -1 if seconds < 0 else (GLib.get_real_time() // 1000 + seconds * 1000 if seconds else 0)
+        changed = chat.muted_until != until
         widgets.run(self, self.core.chats.set_flags(chat, muted_until=until))
-        self._update_menu()
+        if not changed:
+            self._update_menu()
 
     def _clear_history(self) -> None:
         chat = self.chat
@@ -1140,39 +1294,153 @@ class ConversationView(Gtk.Box):
         self.search_button.set_visible(not narrow)      # still in the chat menu and on Ctrl+F
         self.invite_button.set_visible(group and not narrow)    # likewise
 
+    def _cancel_search(self) -> None:
+        self._search_seq += 1
+        if self._search_timer:
+            GLib.source_remove(self._search_timer)
+            self._search_timer = 0
+        if self._search_fill_idle:
+            GLib.source_remove(self._search_fill_idle)
+            self._search_fill_idle = 0
+
     def _on_search_mode(self, *_a) -> None:
         if not self.search_bar.get_search_mode():
-            self.search_entry.set_text("")
+            self._cancel_search()
+            if self.search_entry.get_text():
+                self.search_entry.set_text("")
+            widgets.clear(self.results)
+            self._last_search_key = None
+            self._last_result_keys = None
             self.stack.set_visible_child_name("messages")
             self._update_empty()
 
     def _on_search(self, entry) -> None:
         text = entry.get_text().strip()
+        if self._search_timer:
+            GLib.source_remove(self._search_timer)
+            self._search_timer = 0
         if not text or self.chat is None:
+            self._cancel_search()
+            self._last_search_key = None
+            self._last_result_keys = None
             self.stack.set_visible_child_name("messages")
             self._update_empty()
             return
+        self._search_timer = GLib.timeout_add(120, self._run_search_debounced)
+
+    def _on_search_activate(self, _entry) -> None:
+        if self._search_timer:
+            GLib.source_remove(self._search_timer)
+            self._search_timer = 0
+        self._run_search_debounced()
+
+    def _run_search_debounced(self) -> bool:
+        self._search_timer = 0
+        if not hasattr(self, "search_entry") or self.chat is None:
+            return False
+        text = self.search_entry.get_text().strip()
+        if not text:
+            return False
         chat = self.chat
+        key = (chat.id, text)
+        if key == self._last_search_key and self.stack.get_visible_child_name() == "results":
+            return False
+        if self._search_fill_idle:
+            GLib.source_remove(self._search_fill_idle)
+            self._search_fill_idle = 0
+        self._search_seq += 1
+        seq = self._search_seq
 
         async def go():
             rows = await search_mod.search(self.core.db, text, chat.id)
-            if entry.get_text().strip() != text:
+            if not hasattr(self, "results") or chat is not self.chat or seq != self._search_seq:
                 return
-            widgets.clear(self.results)
-            if not rows:
-                self.results.append(Adw.ActionRow(title=_("Nothing found"), sensitive=False))
-            for r in rows:
-                snippet = (r["snippet"] or "").replace("\x02", "\x00").replace("\x03", "\x01")
-                snippet = widgets.escape(snippet).replace("\x00", "<b>").replace("\x01", "</b>")
-                who = _("You") if r["direction"] == 1 else r["sender"]
-                row = Adw.ActionRow(title=snippet, activatable=True,
-                                    subtitle="%s · %s %s" % (widgets.escape(who), widgets.day_label(r["timestamp"]),
-                                                             widgets.clock(r["timestamp"], self.settings)))
-                row.set_title_lines(3)
-                row.msg_id = r["id"]
-                self.results.append(row)
-            self.stack.set_visible_child_name("results")
+            if not self.search_bar.get_search_mode() or self.search_entry.get_text().strip() != text:
+                return
+            self._last_search_key = key
+            self._apply_search_results(rows, seq)
         widgets.run(self, go())
+        return False
+
+    def _apply_search_results(self, rows: list[dict], seq: int) -> None:
+        if not rows:
+            self._last_result_keys = []
+            row0 = self.results.get_row_at_index(0)
+            if isinstance(row0, Adw.ActionRow):
+                row0.set_title(_("Nothing found"))
+                row0.set_subtitle("")
+                row0.set_activatable(False)
+                row0.set_sensitive(False)
+                row0.msg_id = 0
+            else:
+                if row0 is not None:
+                    self.results.remove(row0)
+                empty_row = Adw.ActionRow(title=_("Nothing found"), sensitive=False)
+                empty_row.msg_id = 0
+                self.results.append(empty_row)
+            while (extra := self.results.get_row_at_index(1)) is not None:
+                self.results.remove(extra)
+            self.stack.set_visible_child_name("results")
+            return
+
+        result_keys = [(r["id"], r["snippet"] or "") for r in rows]
+        if result_keys == self._last_result_keys:
+            self.stack.set_visible_child_name("results")
+            return
+        self._last_result_keys = result_keys
+
+        def format_row(r: dict) -> tuple[str, str, int]:
+            snippet = (r["snippet"] or "").replace("\x02", "\x00").replace("\x03", "\x01")
+            snippet = widgets.escape(snippet).replace("\x00", "<b>").replace("\x01", "</b>")
+            who = _("You") if r["direction"] == 1 else r["sender"]
+            sub = "%s · %s %s" % (widgets.escape(who), widgets.day_label(r["timestamp"]),
+                                  widgets.clock(r["timestamp"], self.settings))
+            return snippet, sub, r["id"]
+
+        batch = 25
+        first_n = min(len(rows), batch)
+        for i in range(first_n):
+            title, sub, mid = format_row(rows[i])
+            existing = self.results.get_row_at_index(i)
+            if isinstance(existing, Adw.ActionRow):
+                existing.set_title(title)
+                existing.set_subtitle(sub)
+                existing.set_activatable(True)
+                existing.set_sensitive(True)
+                existing.msg_id = mid
+            else:
+                if existing is not None:
+                    self.results.remove(existing)
+                row = Adw.ActionRow(title=title, activatable=True, subtitle=sub)
+                row.set_title_lines(3)
+                row.msg_id = mid
+                self.results.append(row)
+        while (extra := self.results.get_row_at_index(first_n)) is not None:
+            self.results.remove(extra)
+        self.stack.set_visible_child_name("results")
+
+        if len(rows) > batch:
+            idx = [batch]
+
+            def fill_chunk() -> bool:
+                if not hasattr(self, "results") or seq != self._search_seq:
+                    if hasattr(self, "_search_fill_idle"):
+                        self._search_fill_idle = 0
+                    return False
+                end = min(len(rows), idx[0] + batch)
+                for i in range(idx[0], end):
+                    title, sub, mid = format_row(rows[i])
+                    row = Adw.ActionRow(title=title, activatable=True, subtitle=sub)
+                    row.set_title_lines(3)
+                    row.msg_id = mid
+                    self.results.append(row)
+                idx[0] = end
+                if end >= len(rows):
+                    self._search_fill_idle = 0
+                    return False
+                return True
+
+            self._search_fill_idle = GLib.idle_add(fill_chunk)
 
     def _on_result(self, _lb, row) -> None:
         mid = getattr(row, "msg_id", 0)
@@ -1195,26 +1463,45 @@ class ConversationView(Gtk.Box):
             self.list.remove_css_class(c)
         self.list.add_css_class(self.settings["appearance.layout"])
 
-    def _animate_in(self) -> None:
-        """Slide the chat up into the message area, unless the user turned animations off (here or in GTK)."""
-        enabled = bool(self.settings["appearance.chat_animations"])
+    def _chat_animations_enabled(self) -> bool:
+        if not bool(self.settings["appearance.chat_animations"]):
+            return False
         gtk_settings = Gtk.Settings.get_default()
-        if gtk_settings is not None and not gtk_settings.get_property("gtk-enable-animations"):
-            enabled = False
-        if not enabled:
+        return gtk_settings is None or bool(gtk_settings.get_property("gtk-enable-animations"))
+
+    def _prepare_animate_in(self) -> None:
+        """Prepare the revealer state synchronously on chat switch without starting the slide yet."""
+        if not self._chat_animations_enabled():
             self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
             self.reveal.set_reveal_child(True)
             return
-        # collapse without animating that, then reveal in the next frame, so the slide starts at the bottom even
-        # when another chat was already on screen
         self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
         self.reveal.set_reveal_child(False)
         self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
-        GLib.idle_add(self._reveal_chat)
 
-    def _reveal_chat(self) -> bool:
-        if hasattr(self, "reveal"):
+    def _animate_in(self, seq: int | None = None) -> None:
+        """Slide the chat up into the message area, unless the user turned animations off (here or in GTK)."""
+        if self._reveal_idle:
+            GLib.source_remove(self._reveal_idle)
+            self._reveal_idle = 0
+        if not self._chat_animations_enabled():
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
             self.reveal.set_reveal_child(True)
+            return
+        if self.reveal.get_reveal_child() or self.reveal.get_transition_type() != Gtk.RevealerTransitionType.SLIDE_UP:
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
+            self.reveal.set_reveal_child(False)
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        target_seq = self._open_seq if seq is None else seq
+        self._reveal_idle = GLib.idle_add(self._reveal_chat, target_seq)
+
+    def _reveal_chat(self, seq: int | None = None) -> bool:
+        self._reveal_idle = 0
+        if not hasattr(self, "reveal"):
+            return False
+        if seq is not None and seq != self._open_seq:
+            return False
+        self.reveal.set_reveal_child(True)
         return False
 
     def _on_setting(self, _s, key: str) -> None:
@@ -1231,7 +1518,9 @@ class ConversationView(Gtk.Box):
         """Ctrl+R: reply to the newest message from someone else."""
         if self.ml is None:
             return
-        for m in reversed(self.ml.items()):
+        store = self.ml.store
+        for i in range(store.get_n_items() - 1, -1, -1):
+            m = store.get_item(i)
             if not m.outgoing and not m.retracted and m.kind in ("text", "me", "file"):
                 self.start_reply(m)
                 return

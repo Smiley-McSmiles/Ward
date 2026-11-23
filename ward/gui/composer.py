@@ -91,6 +91,13 @@ class Composer(Gtk.Box):
         self.editing: MessageItem | None = None
         self._loading = False
         self._pause_timer = 0
+        self._last_typed_us = 0
+        self._fit_idle = 0
+        self._focus_idle = 0
+        self._spell_idle = 0
+        self._last_fit: tuple[int, bool] | None = None
+        self._last_empty: bool | None = None
+        self._last_placeholder = ""
         self._completions: list[tuple[str, str]] = []
         self._completion_word = ""
 
@@ -176,7 +183,7 @@ class Composer(Gtk.Box):
         self.text.add_controller(keys)
         self.text.connect("paste-clipboard", self._on_paste)
         focus = Gtk.EventControllerFocus()
-        focus.connect("leave", lambda *_: self._set_state("paused") if self._text() else None)
+        focus.connect("leave", lambda *_: self._set_state("paused") if self.buffer.get_char_count() > 0 else None)
         self.text.add_controller(focus)
 
         self.popover = Gtk.Popover(autohide=False, has_arrow=False, position=Gtk.PositionType.TOP)
@@ -187,7 +194,8 @@ class Composer(Gtk.Box):
         # GtkTextView cannot remove a popover attached with set_parent and loops forever trying: detach it when
         # the composer goes, before the text view is disposed
         popover = self.popover
-        lifetime.when_unrooted(self, lambda: popover.get_parent() is not None and popover.unparent())
+        lifetime.when_unrooted(self, lambda: (self._cancel_timers(),
+                                              popover.get_parent() is not None and popover.unparent()))
 
         # the spell checker loads its dictionaries: only once someone starts writing
         self._spell = None
@@ -197,47 +205,72 @@ class Composer(Gtk.Box):
             if spell_focus.get_widget() is None:
                 return
             # not while GTK is still delivering this event to it
-            GLib.idle_add(lambda: spell_focus.get_widget() is not None and self.text.remove_controller(spell_focus))
+            if not self._spell_idle:
+                self._spell_idle = GLib.idle_add(self._remove_spell_focus, spell_focus)
             if self.settings["chats.spellcheck"] and deps.have("spelling") and self._spell is None:
                 self._spell = _spelling(self.text, self.settings["chats.spell_languages"])
         spell_focus.connect("enter", first_focus)
         self.text.add_controller(spell_focus)
         lifetime.watch(self.settings, "changed::chats.toolbar", lambda *_: self.toolbar.set_visible(
             self.settings["chats.toolbar"]))
-        self._update_placeholder()
-        self.scroller.connect("notify::width", lambda *_: GLib.idle_add(self._fit))
-        self.text.connect("map", lambda *_: GLib.idle_add(self._fit))
+        self._update_placeholder(force=True)
+        hadj = self.scroller.get_hadjustment()
+        if hadj is not None:
+            hadj.connect("notify::page-size", lambda *_: self._queue_fit())
+        self.text.connect("map", lambda *_: self._queue_fit())
+
+    def _cancel_timers(self) -> None:
+        for attr in ("_pause_timer", "_fit_idle", "_focus_idle", "_spell_idle"):
+            sid = getattr(self, attr, 0)
+            if sid:
+                GLib.source_remove(sid)
+                setattr(self, attr, 0)
+
+    def _remove_spell_focus(self, ctrl) -> bool:
+        self._spell_idle = 0
+        if hasattr(self, "text") and ctrl.get_widget() is not None:
+            self.text.remove_controller(ctrl)
+        return False
 
     # ================================================================== chat switching
     def set_chat(self, chat: ChatItem | None) -> None:
+        if self._pause_timer:
+            GLib.source_remove(self._pause_timer)
+            self._pause_timer = 0
+        if self._focus_idle:
+            GLib.source_remove(self._focus_idle)
+            self._focus_idle = 0
         self.cancel(clear=False)
         self.chat = chat
         self._loading = True
         self.buffer.set_text(chat.draft if chat is not None else "")
         self._loading = False
-        self._update_placeholder()
+        self._update_placeholder(force=True)
         self.set_sensitive(chat is not None)
         if chat is not None:
-            GLib.idle_add(self.grab_focus_text)
+            self._focus_idle = GLib.idle_add(self.grab_focus_text)
 
     def save_draft(self) -> None:
         if self.chat is not None and self.editing is None:
             self.core.chats.set_draft(self.chat, self._text())
 
     def grab_focus_text(self) -> bool:
-        if hasattr(self, "text"):
+        self._focus_idle = 0
+        if hasattr(self, "text") and self.chat is not None and self.get_root() is not None:
             self.text.grab_focus()
         return False
 
     def _text(self) -> str:
         return self.buffer.get_text(self.buffer.get_start_iter(), self.buffer.get_end_iter(), False)
 
-    def _update_placeholder(self) -> None:
+    def _update_placeholder(self, force: bool = False) -> None:
         chat = self.chat
-        empty = not self._text()
-        self.placeholder.set_visible(empty)
-        self.send_button.set_sensitive(not empty)
-        if chat is None:
+        empty = self.buffer.get_char_count() == 0
+        if force or empty != self._last_empty:
+            self._last_empty = empty
+            self.placeholder.set_visible(empty)
+            self.send_button.set_sensitive(not empty)
+        if chat is None or not (force or empty):
             return
         state = chat.encryption_state
         if self.editing is not None:
@@ -248,20 +281,32 @@ class Composer(Gtk.Box):
             text = _("Message %s") % (chat.name or chat.jid)
         else:
             text = _("Message")
-        self.placeholder.set_text(text)
+        if text != self._last_placeholder:
+            self._last_placeholder = text
+            self.placeholder.set_text(text)
 
     # ================================================================== typing
+    def _queue_fit(self) -> None:
+        if hasattr(self, "_fit_idle") and not self._fit_idle:
+            self._fit_idle = GLib.idle_add(self._fit)
+
     def _fit(self) -> bool:
         if not hasattr(self, "scroller"):
             return False
+        self._fit_idle = 0
         width = self.scroller.get_width()
         if width <= 0:
             return False
         natural = self.text.measure(Gtk.Orientation.VERTICAL, width)[1]
         height = max(1, min(natural, MAX_HEIGHT))
+        overflow = natural > MAX_HEIGHT
+        fit_key = (height, overflow)
+        if fit_key == self._last_fit:
+            return False
+        self._last_fit = fit_key
         self.scroller.set_min_content_height(height)
         self.scroller.set_max_content_height(MAX_HEIGHT)
-        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC if natural > MAX_HEIGHT
+        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC if overflow
                                  else Gtk.PolicyType.EXTERNAL)
         return False
 
@@ -292,25 +337,32 @@ class Composer(Gtk.Box):
             self._spell.update_corrections()
 
     def _on_changed(self, _buf) -> None:
-        GLib.idle_add(self._fit)
+        self._queue_fit()
         self._update_placeholder()
         if self._loading or self.chat is None:
             return
-        text = self._text()
+        text = "" if self.buffer.get_char_count() == 0 else self._text()
         if self.editing is None:
             self.core.chats.set_draft(self.chat, text)
         self._set_state("composing" if text else "active")
-        if self._pause_timer:
+        if text:
+            self._last_typed_us = GLib.get_monotonic_time()
+            if not self._pause_timer:
+                self._pause_timer = GLib.timeout_add(TYPING_PAUSE_MS, self._paused)
+        elif self._pause_timer:
             GLib.source_remove(self._pause_timer)
             self._pause_timer = 0
-        if text:
-            self._pause_timer = GLib.timeout_add(TYPING_PAUSE_MS, self._paused)
         self._update_completion()
 
     def _paused(self) -> bool:
-        if not hasattr(self, "chat"):
-            return False
         self._pause_timer = 0
+        if not hasattr(self, "chat") or self.chat is None or self.buffer.get_char_count() == 0:
+            return False
+        elapsed_ms = (GLib.get_monotonic_time() - self._last_typed_us) // 1000
+        remaining_ms = TYPING_PAUSE_MS - elapsed_ms
+        if remaining_ms > 50:
+            self._pause_timer = GLib.timeout_add(int(remaining_ms), self._paused)
+            return False
         self._set_state("paused")
         return False
 
@@ -353,7 +405,7 @@ class Composer(Gtk.Box):
         if keyval in (Gdk.KEY_Page_Up, Gdk.KEY_Page_Down) and not ctrl:
             self._scroll_messages(-1 if keyval == Gdk.KEY_Page_Up else 1)
             return True
-        if keyval == Gdk.KEY_Up and not self._text() and not ctrl:
+        if keyval == Gdk.KEY_Up and self.buffer.get_char_count() == 0 and not ctrl:
             last = self._last_own_message()
             if last is not None:
                 self.start_edit(last)
@@ -382,7 +434,9 @@ class Composer(Gtk.Box):
         ml = self.view.ml
         if ml is None:
             return None
-        for m in reversed(ml.items()):
+        store = ml.store
+        for i in range(store.get_n_items() - 1, -1, -1):
+            m = store.get_item(i)
             if m.outgoing and not m.retracted and m.kind in ("text", "me") and m.body:
                 return m
         return None
@@ -410,36 +464,63 @@ class Composer(Gtk.Box):
     # ================================================================== completion
     def _word_before_cursor(self) -> str:
         it = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+        offset = it.get_line_offset()
+        if offset == 0:
+            return ""
         start = it.copy()
-        start.set_line_offset(0)
+        if offset > 45:
+            start.backward_chars(45)
+        else:
+            start.set_line_offset(0)
         m = WORD_RE.search(self.buffer.get_text(start, it, False))
-        return m.group(1) if m else ""
+        if not m:
+            return ""
+        if start.get_line_offset() > 0 and m.start() == 0 and m.start(1) == 0:
+            return ""
+        return m.group(1)
 
     def _update_completion(self) -> None:
         word = self._word_before_cursor()
+        if not word:
+            self._completions = []
+            self._completion_word = ""
+            if self.popover.get_visible():
+                self.popover.popdown()
+            return
         items: list[tuple[str, str]] = []
         if word.startswith(":") and len(word) >= 3 and self.settings["chats.shortcodes"]:
             items = [(e + "  :" + name + ":", e) for name, e in emoji.complete(word)]
         elif word.startswith("@") and self.chat is not None and self.chat.type == "groupchat":
             prefix = word[1:].lower()
-            items = [(n, n) for n in sorted(self.view.mention_names(), key=str.lower)
-                     if n.lower().startswith(prefix) and n != self.chat.our_nick][:8]
-        self._completions = items
-        self._completion_word = word
+            our_nick = self.chat.our_nick
+            matches = [n for n in self.view.mention_names()
+                       if n != our_nick and n.lower().startswith(prefix)]
+            items = [(n, n) for n in sorted(matches, key=str.lower)[:8]]
         if not items:
-            self.popover.popdown()
+            self._completions = []
+            self._completion_word = word
+            if self.popover.get_visible():
+                self.popover.popdown()
             return
-        widgets.clear(self.popover_list)
-        for label, _v in items:
-            self.popover_list.append(Gtk.Label(label=label, xalign=0, margin_start=6, margin_end=6))
-        self.popover_list.select_row(self.popover_list.get_row_at_index(0))
-        it = self.buffer.get_iter_at_mark(self.buffer.get_insert())
-        rect = self.text.get_iter_location(it)
-        x, y = self.text.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, rect.x, rect.y)
-        r = Gdk.Rectangle()
-        r.x, r.y, r.width, r.height = x, y, 1, rect.height
-        self.popover.set_pointing_to(r)
-        self.popover.popup()
+        if items != self._completions:
+            self._completions = items
+            widgets.clear(self.popover_list)
+            for label, _v in items:
+                self.popover_list.append(Gtk.Label(label=label, xalign=0, margin_start=6, margin_end=6))
+            self.popover_list.select_row(self.popover_list.get_row_at_index(0))
+        if not self.text.get_realized() or self.get_root() is None:
+            self._completion_word = word
+            return
+        if word != self._completion_word or not self.popover.get_visible():
+            self._completion_word = word
+            it = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+            rect = self.text.get_iter_location(it)
+            x, y = self.text.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, rect.x, rect.y)
+            r = Gdk.Rectangle()
+            r.x, r.y, r.width, r.height = x, y, 1, rect.height
+            self.popover.set_pointing_to(r)
+        if not self.popover.get_visible():
+            self.popover.popup()
 
     def _move_completion(self, delta: int) -> None:
         row = self.popover_list.get_selected_row()
@@ -477,7 +558,7 @@ class Composer(Gtk.Box):
         names = [n for n in self.view.mention_names() if n.lower().startswith(prefix)]
         if not names:
             return False
-        name = sorted(names, key=str.lower)[0]
+        name = min(names, key=str.lower)
         s = it.copy()
         s.backward_chars(len(m.group(1)))
         self.buffer.delete(s, it)
@@ -490,10 +571,11 @@ class Composer(Gtk.Box):
         self.reply_to = m
         self.banner_icon.set_from_icon_name("ward-reply-symbolic")
         self.banner_title.set_text(_("Reply to %s") % self.view.display_name(m))
-        self.banner_text.set_text((m.body or (m.attachments[0].name if m.attachments else "")).splitlines()[0]
-                                  if (m.body or m.attachments) else "")
+        preview_src = m.body or (m.attachments[0].name if m.attachments else "")
+        self.banner_text.set_text(preview_src.partition("\n")[0].rstrip("\r") if preview_src else "")
         self.banner.get_child().remove_css_class("editing")
         self.banner.set_reveal_child(True)
+        self._update_placeholder(force=True)
         self.text.grab_focus()
 
     def start_edit(self, m: MessageItem) -> None:
@@ -502,13 +584,13 @@ class Composer(Gtk.Box):
         self.editing = m
         self.banner_icon.set_from_icon_name("document-edit-symbolic")
         self.banner_title.set_text(_("Edit message"))
-        self.banner_text.set_text(m.body.splitlines()[0] if m.body else "")
+        self.banner_text.set_text(m.body.partition("\n")[0].rstrip("\r") if m.body else "")
         self.banner.get_child().add_css_class("editing")
         self.banner.set_reveal_child(True)
         self._loading = True
         self.buffer.set_text(m.body)
         self._loading = False
-        self._update_placeholder()
+        self._update_placeholder(force=True)
         self.text.grab_focus()
 
     def quote(self, m: MessageItem) -> None:
@@ -525,7 +607,7 @@ class Composer(Gtk.Box):
             self._loading = True
             self.buffer.set_text(self.chat.draft if self.chat is not None else "")
             self._loading = False
-        self._update_placeholder()
+        self._update_placeholder(force=True)
 
     # ================================================================== sending
     def send(self) -> None:
@@ -558,8 +640,11 @@ class Composer(Gtk.Box):
         self._loading = True
         self.buffer.set_text("")
         self._loading = False
-        self._update_placeholder()
-        self.popover.popdown()
+        self._update_placeholder(force=True)
+        self._completions = []
+        self._completion_word = ""
+        if self.popover.get_visible():
+            self.popover.popdown()
         if self._pause_timer:
             GLib.source_remove(self._pause_timer)
             self._pause_timer = 0

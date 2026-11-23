@@ -13,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 _base: Gtk.CssProvider | None = None
 _dynamic: Gtk.CssProvider | None = None
 _custom: Gtk.CssProvider | None = None
+_last_dynamic_css: str | None = None
 _state = {"accent": "system", "scale": 100, "font": "", "code_font": "", "spacing": "normal", "shape": "circle"}
 
 
@@ -24,7 +25,7 @@ def _load(provider: Gtk.CssProvider, css: str) -> None:
 
 
 def install() -> None:
-    global _base, _dynamic, _custom
+    global _base, _dynamic, _custom, _last_dynamic_css
     display = Gdk.Display.get_default()
     if display is None:
         return
@@ -33,11 +34,13 @@ def install() -> None:
         _base.load_from_path(os.path.join(HERE, "style.css"))
         Gtk.StyleContext.add_provider_for_display(display, _base, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         _dynamic = Gtk.CssProvider()
+        _last_dynamic_css = None
         Gtk.StyleContext.add_provider_for_display(display, _dynamic, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
     _apply()
 
 
 def _apply() -> None:
+    global _last_dynamic_css
     if _dynamic is None:
         return
     css = []
@@ -56,15 +59,14 @@ def _apply() -> None:
     css.append(".message-text { line-height: %.2f; }" % lh)
     if _state["shape"] == "rounded":
         css.append("avatar { border-radius: 22%; }")
-    _load(_dynamic, "\n".join(css))
+    new_css = "\n".join(css)
+    if new_css != _last_dynamic_css:
+        _last_dynamic_css = new_css
+        _load(_dynamic, new_css)
 
 
 def set_accent(name: str) -> None:
     _state["accent"] = name
-    sm = Adw.StyleManager.get_default()
-    if hasattr(sm, "set_accent_color") and hasattr(Adw, "AccentColor") and name != "system":
-        # libadwaita 1.6+ has no app-level accent setter; the CSS above does it on every version
-        pass
     _apply()
 
 
@@ -74,8 +76,10 @@ def set_appearance(settings) -> None:
                   spacing=settings["appearance.line_spacing"], shape=settings["appearance.avatar_shape"])
     _apply()
     sm = Adw.StyleManager.get_default()
-    sm.set_color_scheme({"light": Adw.ColorScheme.FORCE_LIGHT, "dark": Adw.ColorScheme.FORCE_DARK}.get(
-        settings["appearance.style"], Adw.ColorScheme.DEFAULT))
+    scheme = {"light": Adw.ColorScheme.FORCE_LIGHT, "dark": Adw.ColorScheme.FORCE_DARK}.get(
+        settings["appearance.style"], Adw.ColorScheme.DEFAULT)
+    if sm.get_color_scheme() != scheme:
+        sm.set_color_scheme(scheme)
 
 
 def load_custom(enabled: bool) -> str:
@@ -91,9 +95,12 @@ def load_custom(enabled: bool) -> str:
     if not enabled or not os.path.isfile(path):
         return ""
     _custom = Gtk.CssProvider()
-    errors = []
-    _custom.connect("parsing-error", lambda _p, _s, err: errors.append(err.message))
-    _custom.load_from_path(path)
+    errors: list[str] = []
+    hid = _custom.connect("parsing-error", lambda _p, _s, err: errors.append(err.message))
+    try:
+        _custom.load_from_path(path)
+    finally:
+        _custom.disconnect(hid)
     Gtk.StyleContext.add_provider_for_display(display, _custom, Gtk.STYLE_PROVIDER_PRIORITY_USER)
     return errors[0] if errors else ""
 

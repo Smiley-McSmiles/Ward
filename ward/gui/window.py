@@ -197,15 +197,22 @@ class MainWindow(Adw.ApplicationWindow):
             self.content_stack.set_visible_child_name("empty")
             self.core.set_active_chat(None)
             self.split.set_show_sidebar(True)
+            if self.sidebar.chat_filter == "unread":
+                self.sidebar._refilter()
             return
         # the conversation sets up its members panel before it becomes visible (libadwaita 1.5 mis-sizes a split
         # view that starts showing its sidebar while it is being mapped)
         self.conversation.show_chat(chat)
-        self.content_stack.set_visible_child_name("chat")
+        if self.content_stack.get_visible_child_name() != "chat":
+            old_type = self.content_stack.get_transition_type()
+            self.content_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+            self.content_stack.set_visible_child_name("chat")
+            self.content_stack.set_transition_type(old_type)
         if self.narrow:
             self.split.set_show_sidebar(False)
         self.settings["ui.last_chat"] = str(chat.id)
-        self.sidebar._refilter()
+        if self.sidebar.chat_filter == "unread":
+            self.sidebar._refilter()
 
     def _on_show_sidebar(self, *_a) -> None:
         if self.narrow and self.split.get_show_sidebar():
@@ -374,6 +381,7 @@ class MainWindow(Adw.ApplicationWindow):
     def teardown(self) -> None:
         """The window is being let go (Ward runs on in the background): break every link that would keep it."""
         self.conversation.show_chat(None)       # unsubscribes from the open chat (a core object that outlives us)
+        self.conversation.composer._cancel_timers()
         popover = self.conversation.composer.popover       # see Composer: GtkTextView cannot remove it itself
         if popover.get_parent() is not None:
             popover.unparent()
@@ -408,9 +416,14 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_account_state(self, acc: AccountItem, _p) -> None:
         if acc.state == "error" and acc.error_kind == "password-needed" and acc.id not in self._asked_password:
             self._asked_password.add(acc.id)
-            GLib.idle_add(lambda: self.ask_password(acc) and False)
+            GLib.idle_add(self._ask_password_idle, acc)
         elif acc.state == "error" and acc.error_kind == "auth":
             compat.toast(self, _("%s: the password was not accepted") % acc.jid)
+
+    def _ask_password_idle(self, acc: AccountItem) -> bool:
+        if hasattr(self, "core") and self.get_application() is not None:
+            self.ask_password(acc)
+        return False
 
     def ask_password(self, acc: AccountItem) -> None:
         from .dialogs import PasswordDialog

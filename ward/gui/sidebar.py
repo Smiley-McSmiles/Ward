@@ -35,6 +35,16 @@ class Sidebar(Gtk.Box):
         self.show_archived = False
         self._selecting = False
         self._stripe_css = _STRIPE_CSS
+        self._chat_rows: set[ChatRow] = set()
+        self._contact_rows: set[ContactRow] = set()
+        self._search_text = ""
+        self._contact_search_text = ""
+        self._resort_idle = 0
+        self._refilter_idle = 0
+        self._reselect_idle = 0
+        self._contact_resort_idle = 0
+        self._tick_id = 0
+        self._last_account_avatar: tuple | None = None
 
         view = Adw.ToolbarView()
         view.set_vexpand(True)
@@ -99,24 +109,23 @@ class Sidebar(Gtk.Box):
         view.add_bottom_bar(bar)
 
         lifetime.watch(self.core.accounts.store, "items-changed", lambda *_: self._accounts_changed())
-        lifetime.watch(self.core.chats, "activity", lambda *_: self._resort())
-        lifetime.watch(self.core.chats, "unread-changed", lambda *_: self._refilter())
-        lifetime.watch(self.core.chats, "added", lambda *_: self._refilter())
+        lifetime.watch(self.core.chats, "activity", lambda *_: self._queue_resort())
+        lifetime.watch(self.core.chats, "unread-changed", lambda *_: self._on_unread_changed())
+        lifetime.watch(self.core.chats, "added", lambda *_: self._queue_refilter())
         lifetime.watch(self.core.requests, "changed", lambda *_: self._update_requests())
-        lifetime.watch(self.core.contacts, "changed",
-                       lambda *_: self.contact_sorter.changed(Gtk.SorterChange.DIFFERENT))
+        lifetime.watch(self.core.contacts, "changed", lambda *_: self._queue_contact_resort())
         lifetime.watch(self.settings, "changed", self._on_setting)
         self._account_handlers: dict[int, list[int]] = {}
         self._accounts_changed()
         self._update_requests()
-        GLib.timeout_add_seconds(60, self._tick)
+        self._tick_id = GLib.timeout_add_seconds(60, self._tick)
 
     # ================================================================== chats page
     def _build_chats(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.search = Gtk.SearchEntry(placeholder_text=_("Search chats"), margin_start=8, margin_end=8,
                                       margin_top=6, margin_bottom=4)
-        self.search.connect("search-changed", lambda *_: self._refilter())
+        self.search.connect("search-changed", self._on_chat_search_changed)
         self.search.connect("activate", lambda *_: self._activate_first())
         box.append(self.search)
         chips = Gtk.Box(spacing=4, css_classes=["filter-chips"], margin_start=8, margin_end=8, margin_bottom=4)
@@ -177,6 +186,10 @@ class Sidebar(Gtk.Box):
         self._update_density()
         return box
 
+    def _on_chat_search_changed(self, *_a) -> None:
+        self._search_text = self.search.get_text().strip().lower()
+        self._refilter()
+
     def _filter_chat(self, chat: ChatItem) -> bool:
         if not chat.open or chat.is_request:
             return False
@@ -191,7 +204,7 @@ class Sidebar(Gtk.Box):
             return False
         if f == "groups" and chat.type != "groupchat":
             return False
-        text = self.search.get_text().strip().lower() if hasattr(self, "search") else ""
+        text = self._search_text
         return not text or text in (chat.name or "").lower() or text in chat.jid.lower()
 
     @staticmethod
@@ -202,11 +215,58 @@ class Sidebar(Gtk.Box):
             return -1 if a.last_activity > b.last_activity else 1
         return (a.id > b.id) - (a.id < b.id)
 
+    def _on_unread_changed(self) -> None:
+        if self.chat_filter == "unread":
+            self._queue_refilter()
+
+    def _queue_refilter(self) -> None:
+        if not getattr(self, "_refilter_idle", 0):
+            self._refilter_idle = GLib.idle_add(self._run_refilter)
+
+    def _run_refilter(self) -> bool:
+        self._refilter_idle = 0
+        if hasattr(self, "filter"):
+            self._refilter()
+        return False
+
+    def _queue_resort(self) -> None:
+        if not getattr(self, "_resort_idle", 0):
+            self._resort_idle = GLib.idle_add(self._run_resort)
+
+    def _run_resort(self) -> bool:
+        self._resort_idle = 0
+        if hasattr(self, "sorter"):
+            self._resort()
+        return False
+
+    def _queue_contact_resort(self) -> None:
+        if not getattr(self, "_contact_resort_idle", 0):
+            self._contact_resort_idle = GLib.idle_add(self._run_contact_resort)
+
+    def _run_contact_resort(self) -> bool:
+        self._contact_resort_idle = 0
+        if hasattr(self, "contact_sorter"):
+            self.contact_sorter.changed(Gtk.SorterChange.DIFFERENT)
+        return False
+
     def _refilter(self) -> None:
+        if self._refilter_idle:
+            GLib.source_remove(self._refilter_idle)
+            self._refilter_idle = 0
+        if hasattr(self, "search"):
+            self._search_text = self.search.get_text().strip().lower()
         self.filter.changed(Gtk.FilterChange.DIFFERENT)
         self._reselect()
 
     def _resort(self) -> None:
+        if self._resort_idle:
+            GLib.source_remove(self._resort_idle)
+            self._resort_idle = 0
+        if self._refilter_idle:
+            GLib.source_remove(self._refilter_idle)
+            self._refilter_idle = 0
+        if hasattr(self, "search"):
+            self._search_text = self.search.get_text().strip().lower()
         self.sorter.changed(Gtk.SorterChange.DIFFERENT)
         self.filter.changed(Gtk.FilterChange.DIFFERENT)
         self._reselect()
@@ -242,6 +302,10 @@ class Sidebar(Gtk.Box):
 
     def select(self, chat: ChatItem | None) -> None:
         """Reflect the open chat in the list without re-opening it."""
+        if chat is not None and self.selection.get_selected_item() is chat:
+            return
+        if chat is None and self.selection.get_selected() == Gtk.INVALID_LIST_POSITION:
+            return
         self._selecting = True
         try:
             if chat is None:
@@ -256,7 +320,14 @@ class Sidebar(Gtk.Box):
             self._selecting = False
 
     def _reselect(self) -> None:
-        GLib.idle_add(lambda: hasattr(self, "window") and self.select(self.window.current_chat) and False)
+        if not getattr(self, "_reselect_idle", 0):
+            self._reselect_idle = GLib.idle_add(self._run_reselect)
+
+    def _run_reselect(self) -> bool:
+        self._reselect_idle = 0
+        if hasattr(self, "window"):
+            self.select(self.window.current_chat)
+        return False
 
     def _on_right_click(self, gesture, _n, x, y) -> None:
         row = self.list.pick(x, y, Gtk.PickFlags.DEFAULT)
@@ -314,6 +385,8 @@ class Sidebar(Gtk.Box):
             Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), p,
                                                       Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
             self._stripe_css[cls] = p
+        if widget.has_css_class(cls):
+            return
         for c in widget.get_css_classes():
             if c.startswith("stripe-"):
                 widget.remove_css_class(c)
@@ -326,12 +399,15 @@ class Sidebar(Gtk.Box):
             self.list.remove_css_class("compact")
 
     # ================================================================== contacts page
+    def _on_contact_search_changed(self, *_a) -> None:
+        self._contact_search_text = self.contact_search.get_text().strip().lower()
+        self.contact_filter.changed(Gtk.FilterChange.DIFFERENT)
+
     def _build_contacts(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         top = Gtk.Box(spacing=6, margin_start=8, margin_end=8, margin_top=6, margin_bottom=4)
         self.contact_search = Gtk.SearchEntry(placeholder_text=_("Search contacts"), hexpand=True)
-        self.contact_search.connect("search-changed", lambda *_: self.contact_filter.changed(
-            Gtk.FilterChange.DIFFERENT))
+        self.contact_search.connect("search-changed", self._on_contact_search_changed)
         top.append(self.contact_search)
         add = Gtk.Button(icon_name="contact-new-symbolic", tooltip_text=_("Add contact"), action_name="win.add-contact")
         top.append(add)
@@ -372,7 +448,7 @@ class Sidebar(Gtk.Box):
             return False
         if self.account_filter and str(c.account_id) != self.account_filter:
             return False
-        text = self.contact_search.get_text().strip().lower() if hasattr(self, "contact_search") else ""
+        text = self._contact_search_text
         return not text or text in c.name.lower() or text in c.jid.lower()
 
     @staticmethod
@@ -390,6 +466,8 @@ class Sidebar(Gtk.Box):
 
         async def go():
             chat = await self.core.open_chat(acc, c.jid)
+            if not hasattr(self, "stack") or self.get_root() is None:
+                return
             self.stack.set_visible_child_name("chats")
             self.window.show_chat(chat)
         widgets.run(self, go())
@@ -399,11 +477,17 @@ class Sidebar(Gtk.Box):
 
         async def go():
             chat = await self.core.open_chat(acc, acc.jid)
+            if not hasattr(self, "stack") or self.get_root() is None:
+                return
             self.stack.set_visible_child_name("chats")
             self.window.show_chat(chat)
         widgets.run(self, go())
 
     # ================================================================== accounts
+    def _accounts_count(self) -> int:
+        accounts = self.core.accounts
+        return accounts.store.get_n_items() if hasattr(accounts, "store") else len(accounts.list())
+
     def _accounts_changed(self) -> None:
         for acc in self.core.accounts.list():
             if acc.id not in self._account_handlers:
@@ -415,29 +499,37 @@ class Sidebar(Gtk.Box):
         self._refilter()
 
     def _main_account(self) -> AccountItem | None:
-        accounts = self.core.accounts.list()
         if self.account_filter:
             return self.core.accounts.get(int(self.account_filter))
-        return accounts[0] if accounts else None
+        accounts = self.core.accounts
+        if hasattr(accounts, "store"):
+            return accounts.store.get_item(0) if accounts.store.get_n_items() else None
+        lst = accounts.list()
+        return lst[0] if lst else None
 
     def _subtitle(self) -> str:
-        accounts = self.core.accounts.list()
+        n = self._accounts_count()
         acc = self._main_account()
         if acc is None:
             return ""
-        if self.account_filter or len(accounts) == 1:
+        if self.account_filter or n == 1:
             return acc.display_name
-        return ngettext("%d account", "%d accounts", len(accounts)) % len(accounts)
+        return ngettext("%d account", "%d accounts", n) % n
 
     def _update_account(self) -> None:
         acc = self._main_account()
         if acc is None:
-            self.account_avatar.update("?")
+            if self._last_account_avatar != ("?", "", None):
+                self._last_account_avatar = ("?", "", None)
+                self.account_avatar.update("?")
             self.title.set_subtitle("")
             self.status.set_reveal_child(False)
             return
         show = acc.show if acc.state == "online" else "offline"
-        self.account_avatar.update(acc.display_name, acc.avatar, show)
+        av_key = (acc.display_name, acc.avatar, show)
+        if av_key != self._last_account_avatar:
+            self._last_account_avatar = av_key
+            self.account_avatar.update(*av_key)
         if not self.show_archived:
             self.title.set_subtitle(self._subtitle())
         # the most urgent problem of any account goes into the status strip
@@ -453,7 +545,7 @@ class Sidebar(Gtk.Box):
         if a is None:
             self.status.set_reveal_child(False)
             return
-        prefix = (a.display_name + ": ") if len(self.core.accounts.list()) > 1 else ""
+        prefix = (a.display_name + ": ") if self._accounts_count() > 1 else ""
         if a.state == "locked":
             self.status_label.set_text(prefix + _("Password needed"))
             self.status_button.set_label(_("Enter"))
@@ -567,7 +659,11 @@ class Sidebar(Gtk.Box):
         self.settings["ui.account_filter"] = value
         self._update_account()
         self._refilter()
+        if hasattr(self, "contact_search"):
+            self._contact_search_text = self.contact_search.get_text().strip().lower()
         self.contact_filter.changed(Gtk.FilterChange.DIFFERENT)
+        for row in list(self._chat_rows):
+            row._update(force=True)
 
     def _set_presence(self, acc: AccountItem, show: str, status: str | None = None) -> None:
         self.account_popover.popdown()
@@ -583,10 +679,20 @@ class Sidebar(Gtk.Box):
         if key == "appearance.list_density":
             self._update_density()
         elif key.startswith("appearance.") or key == "chats.show_typing":
-            self.sorter.changed(Gtk.SorterChange.DIFFERENT)
+            for row in list(self._chat_rows):
+                row._update(force=True)
 
     def drop_callbacks(self) -> None:
         """The window is being let go: the filters and sorters call back into this sidebar from inside GTK."""
+        for attr in ("_tick_id", "_resort_idle", "_refilter_idle", "_reselect_idle", "_contact_resort_idle"):
+            sid = getattr(self, attr, 0)
+            if sid:
+                GLib.source_remove(sid)
+                setattr(self, attr, 0)
+        if hasattr(self, "_chat_rows"):
+            self._chat_rows.clear()
+        if hasattr(self, "_contact_rows"):
+            self._contact_rows.clear()
         for f in (self.filter, self.contact_filter):
             f.set_filter_func(None)
         for s in (self.sorter, self.contact_sorter):
@@ -594,9 +700,13 @@ class Sidebar(Gtk.Box):
 
     def _tick(self) -> bool:
         # relative times ("Mon", "12:30") and mute expiry move on their own
-        if self.get_root() is None:
+        if not hasattr(self, "sorted") or self.get_root() is None:
+            self._tick_id = 0
             return False        # the window was let go
-        self.sorter.changed(Gtk.SorterChange.DIFFERENT)
+        for row in list(self._chat_rows):
+            row.refresh_time()
+        for row in list(self._contact_rows):
+            row.refresh_time()
         return True
 
     def focus_search(self) -> None:

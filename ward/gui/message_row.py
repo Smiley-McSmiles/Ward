@@ -27,6 +27,18 @@ STATUS_ICON = {STATUS_PENDING: ("ward-clock-symbolic", "Sending"), STATUS_SENT: 
                STATUS_DELIVERED: ("ward-check-double-symbolic", "Delivered"),
                STATUS_READ: ("ward-check-double-symbolic", "Read"), STATUS_FAILED: ("ward-error-symbolic", "Failed")}
 ENC_NAMES = {"omemo2": "OMEMO 2", "omemo": "OMEMO", "pgp": "OpenPGP"}
+_MIME_ICONS: dict[str, Gio.Icon | None] = {}
+
+
+def _mime_gicon(mime: str) -> Gio.Icon | None:
+    if mime in _MIME_ICONS:
+        return _MIME_ICONS[mime]
+    ctype = Gio.content_type_from_mime_type(mime or "") or ""
+    icon = Gio.content_type_get_symbolic_icon(ctype) if ctype else None
+    if len(_MIME_ICONS) > 256:
+        _MIME_ICONS.clear()
+    _MIME_ICONS[mime] = icon
+    return icon
 
 
 def continues(prev: MessageItem | None, m: MessageItem) -> bool:
@@ -47,7 +59,25 @@ class MessageRow(Gtk.Box):
         self._handlers: list[int] = []
         self._att_handlers: list[tuple[AttachmentItem, int]] = []
         self._rebuild_queued = False
+        self._rebuild_idle = 0
         self._reveal_idle = 0
+        self._dirty_full = False
+        self._dirty_meta = False
+        self._dirty_reactions = False
+        self._dirty_reply = False
+        self._layout = ""
+        self._col: Gtk.Box | None = None
+        self._meta_container: Gtk.Box | None = None
+        self._meta_anchor: Gtk.Widget | None = None
+        self._bubbles_meta: Gtk.Box | None = None
+        self._reactions_widget: Gtk.Widget | None = None
+        self._failed_widget: Gtk.Widget | None = None
+        self._reply_author_lbl: Gtk.Label | None = None
+        self._reply_text_lbl: Gtk.Label | None = None
+        self._showing_failed = False
+        self._showing_edited = False
+        self._hover_quick: tuple[str, ...] | None = None
+        self._react_btn: Gtk.MenuButton | None = None
         # the content is wrapped so a newly sent or received message can slide up into its place
         self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE, transition_duration=200,
                                    overflow=Gtk.Overflow.HIDDEN)
@@ -95,35 +125,170 @@ class MessageRow(Gtk.Box):
             self._handlers.append(msg.connect("notify::" + prop, self._changed))
         self._build(prev)
 
+    def _reset_dirty(self) -> None:
+        self._dirty_full = False
+        self._dirty_meta = False
+        self._dirty_reactions = False
+        self._dirty_reply = False
+
+    def _clear_build_refs(self) -> None:
+        self.hover = None
+        self.react_button = None
+        self.time_hover = None
+        self._col = None
+        self._meta_container = None
+        self._meta_anchor = None
+        self._bubbles_meta = None
+        self._reactions_widget = None
+        self._failed_widget = None
+        self._reply_author_lbl = None
+        self._reply_text_lbl = None
+        self._showing_failed = False
+        self._showing_edited = False
+
     def unbind(self) -> None:
         if self.msg is not None:
             for h in self._handlers:
-                self.msg.disconnect(h)
+                if GObject.signal_handler_is_connected(self.msg, h):
+                    self.msg.disconnect(h)
         for att, h in self._att_handlers:
-            att.disconnect(h)
+            if GObject.signal_handler_is_connected(att, h):
+                att.disconnect(h)
         self._handlers = []
         self._att_handlers = []
         self._expanded = False
         self._rebuild_queued = False
+        self._reset_dirty()
+        self._clear_build_refs()
+        if self._rebuild_idle:
+            GLib.source_remove(self._rebuild_idle)
+            self._rebuild_idle = 0
         if self._reveal_idle:
             GLib.source_remove(self._reveal_idle)
             self._reveal_idle = 0
         self.msg = None
 
-    def _changed(self, *_a) -> None:
-        # One rebuild per frame: sending a message changes status, trust and error in turn, and each of those
-        # used to rebuild the whole row on its own.
-        if self.msg is None or self._rebuild_queued:
+    def update_selection(self) -> None:
+        m = self.msg
+        if m is None or not hasattr(self, "row") or m.kind in ("status", "call"):
             return
+        if m.selected:
+            if not self.row.has_css_class("selected"):
+                self.row.add_css_class("selected")
+        elif self.row.has_css_class("selected"):
+            self.row.remove_css_class("selected")
+
+    def update_highlight(self) -> None:
+        m = self.msg
+        if m is None or not hasattr(self, "row") or m.kind in ("status", "call"):
+            return
+        if self.view.highlight_id == m.id:
+            if not self.row.has_css_class("highlight"):
+                self.row.add_css_class("highlight")
+        elif self.row.has_css_class("highlight"):
+            self.row.remove_css_class("highlight")
+
+    def _can_update_meta_in_place(self) -> bool:
+        m = self.msg
+        if m is None or m.kind in ("status", "call") or m.retracted or self._layout == "compact":
+            return False
+        failed_now = bool(m.status == STATUS_FAILED and m.outgoing)
+        return not failed_now and not self._showing_failed
+
+    def _can_update_reactions_in_place(self) -> bool:
+        m = self.msg
+        return (m is not None and self._col is not None and m.kind not in ("status", "call") and
+                not m.retracted and self._layout != "compact")
+
+    def _can_update_reply_in_place(self) -> bool:
+        m = self.msg
+        return (m is not None and m.kind not in ("status", "call") and m.retracted == 0 and
+                self._layout != "compact" and bool(m.reply_to) and
+                self._reply_author_lbl is not None and self._reply_text_lbl is not None)
+
+    def _update_meta_in_place(self) -> None:
+        m = self.msg
+        if m is None or self._meta_container is None:
+            return
+        now_edited = bool(m.edited)
+        if now_edited != self._showing_edited:
+            self.view._layout_changing()
+            self._showing_edited = now_edited
+        anchor = self._meta_anchor
+        child = anchor.get_next_sibling() if anchor is not None else self._meta_container.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            self._meta_container.remove(child)
+            child = nxt
+        self._meta_icons(self._meta_container, m)
+
+    def _update_reactions_in_place(self) -> None:
+        m = self.msg
+        if m is None or self._col is None:
+            return
+        self.view._layout_changing()
+        if self._reactions_widget is not None:
+            self._col.remove(self._reactions_widget)
+            self._reactions_widget = None
+        if m.reactions:
+            w = self._reactions(m)
+            self._reactions_widget = w
+            tail = self._failed_widget or self._bubbles_meta
+            if tail is not None:
+                self._col.insert_child_after(w, tail.get_prev_sibling())
+            else:
+                self._col.append(w)
+
+    def _update_reply_in_place(self) -> None:
+        m = self.msg
+        if m is None or self._reply_author_lbl is None or self._reply_text_lbl is None:
+            return
+        self._reply_author_lbl.set_text(m.reply_author or _("Reply"))
+        self._reply_text_lbl.set_text(m.reply_preview or "…")
+
+    def _changed(self, *args) -> None:
+        # Coalesce bursts per frame and update minor property changes in place without rebuilding the row.
+        if self.msg is None:
+            return
+        prop = args[1].name if len(args) >= 2 and args[1] is not None else ""
+        if prop == "selected":
+            self.update_selection()
+            return
+        if prop in ("status", "trust", "edited", "error") and self._can_update_meta_in_place():
+            self._dirty_meta = True
+        elif prop == "reactions-rev" and self._can_update_reactions_in_place():
+            self._dirty_reactions = True
+        elif prop == "reply-preview" and self._can_update_reply_in_place():
+            self._dirty_reply = True
+        else:
+            self._dirty_full = True
         self._rebuild_queued = True
-        GLib.idle_add(self._rebuild)
+        if not self._rebuild_idle:
+            self._rebuild_idle = GLib.idle_add(self._rebuild)
 
     def _rebuild(self) -> bool:
         if not hasattr(self, "msg"):
             return False
+        self._rebuild_idle = 0
         self._rebuild_queued = False
-        if self.msg is not None:
-            self._build(self.view.previous(self.msg))
+        m = self.msg
+        if m is None:
+            self._reset_dirty()
+            return False
+        if self._dirty_full:
+            self._reset_dirty()
+            self.view._layout_changing()
+            self._build(self.view.previous(m))
+            return False
+        if self._dirty_meta:
+            self._dirty_meta = False
+            self._update_meta_in_place()
+        if self._dirty_reactions:
+            self._dirty_reactions = False
+            self._update_reactions_in_place()
+        if self._dirty_reply:
+            self._dirty_reply = False
+            self._update_reply_in_place()
         return False
 
     def animate_in(self) -> None:
@@ -163,17 +328,17 @@ class MessageRow(Gtk.Box):
         # up on the attachment (each one pointing at a widget that no longer exists), so one more rebuild ran
         # for every past rebuild.
         for att, handler in self._att_handlers:
-            att.disconnect(handler)
+            if GObject.signal_handler_is_connected(att, handler):
+                att.disconnect(handler)
         self._att_handlers = []
-        self.view._layout_changing()
         widgets.clear(self.separator)
         widgets.clear(self.row)
-        widgets.clear(self.actions)
+        self._clear_build_refs()
         self.actions.set_opacity(0)
         self.actions.set_sensitive(False)
-        self.hover = None
         settings = self.view.settings
         layout = settings["appearance.layout"]
+        self._layout = layout
         for c in ("first", "outgoing", "selected", "highlight", "mention"):
             self.row.remove_css_class(c)
         # date separator and "new messages" line
@@ -202,8 +367,9 @@ class MessageRow(Gtk.Box):
             self.row.add_css_class("mention")
         if self.view.highlight_id == m.id:
             self.row.add_css_class("highlight")
+        dark = style.is_dark()
         if layout == "compact":
-            self._build_compact(m)
+            self._build_compact(m, dark)
             return
         chat_type = self.view.chat.type if self.view.chat is not None else "chat"
         show_avatar = settings["appearance.avatars"] == "always" or (
@@ -224,6 +390,7 @@ class MessageRow(Gtk.Box):
                 self.row.append(spacer)
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True,
                       css_classes=["message-content"] if layout == "bubbles" else [])
+        self._col = col
         if layout == "bubbles":
             col.set_hexpand(False)
             col.set_halign(Gtk.Align.END if m.outgoing else Gtk.Align.START)
@@ -237,22 +404,31 @@ class MessageRow(Gtk.Box):
             self.row.append(col)
         bubbles = layout == "bubbles"
         if not cont and (not bubbles or (chat_type == "groupchat" and not m.outgoing)):
-            col.append(self._header(m, with_meta=not bubbles))
+            col.append(self._header(m, with_meta=not bubbles, dark=dark))
         if m.reply_to and m.retracted == 0:
             col.append(self._reply_preview(m))
-        col.append(self._content(m))
+        col.append(self._content(m, dark=dark))
         # A deleted message keeps no media: the attachments (and the image bubble they
         # draw) belong to the message that was there, not to its tombstone.
         if not m.retracted:
             for att in m.attachments:
                 col.append(self._attachment(m, att))
         if m.reactions:
-            col.append(self._reactions(m))
+            rw = self._reactions(m)
+            self._reactions_widget = rw
+            col.append(rw)
         if m.status == STATUS_FAILED and m.outgoing:
-            col.append(self._failed(m))
+            fw = self._failed(m)
+            self._failed_widget = fw
+            self._showing_failed = True
+            col.append(fw)
         if layout == "bubbles":
             meta = Gtk.Box(spacing=4, halign=Gtk.Align.END)
-            meta.append(Gtk.Label(label=widgets.clock(m.timestamp, settings), css_classes=["message-time"]))
+            clock_lbl = Gtk.Label(label=widgets.clock(m.timestamp, settings), css_classes=["message-time"])
+            meta.append(clock_lbl)
+            self._meta_container = meta
+            self._meta_anchor = clock_lbl
+            self._bubbles_meta = meta
             self._meta_icons(meta, m)
             col.append(meta)
         self._add_hover_bar(m)
@@ -278,45 +454,52 @@ class MessageRow(Gtk.Box):
             box.append(back)
         return box
 
-    def _build_compact(self, m: MessageItem) -> None:
+    def _build_compact(self, m: MessageItem, dark: bool | None = None) -> None:
         line = Gtk.Box(spacing=6, hexpand=True)
         if self.view.settings["appearance.timestamps"] != "off":
             line.append(Gtk.Label(label=widgets.clock(m.timestamp, self.view.settings), css_classes=["message-time"],
                                   valign=Gtk.Align.START))
         name = Gtk.Label(css_classes=["message-sender"], valign=Gtk.Align.START)
-        name.set_markup(self._name_markup(m) + ("" if m.kind == "me" else ":"))
+        name.set_markup(self._name_markup(m, dark) + ("" if m.kind == "me" else ":"))
         line.append(name)
-        line.append(self._content(m))
+        line.append(self._content(m, dark=dark))
         self.row.append(line)
         if not m.retracted:
             for att in m.attachments:
                 self.row.append(self._attachment(m, att))
         self._add_hover_bar(m)
 
-    def _name_markup(self, m: MessageItem) -> str:
+    def _name_markup(self, m: MessageItem, dark: bool | None = None) -> str:
         name = self.view.display_name(m)
         if self.view.settings["appearance.nick_colors"]:
             chat_type = self.view.chat.type if self.view.chat is not None else "chat"
             key = m.sender_jid or m.sender if chat_type != "groupchat" else m.sender
-            col = colors.hex_color(key or name, style.is_dark())
+            col = colors.hex_color(key or name, style.is_dark() if dark is None else dark)
             return "<span foreground='%s'>%s</span>" % (col, widgets.escape(name))
         return widgets.escape(name)
 
-    def _header(self, m: MessageItem, with_meta: bool = True) -> Gtk.Widget:
+    def _header(self, m: MessageItem, with_meta: bool = True, dark: bool | None = None) -> Gtk.Widget:
         head = Gtk.Box(spacing=6)
         name = Gtk.Label(css_classes=["message-sender"], xalign=0, ellipsize=Pango.EllipsizeMode.END)
-        name.set_markup(self._name_markup(m))
+        name.set_markup(self._name_markup(m, dark))
         head.append(name)
         if not with_meta:
             return head
+        anchor: Gtk.Widget = name
         if self.view.settings["appearance.timestamps"] != "off":
             t = Gtk.Label(label=widgets.clock(m.timestamp, self.view.settings), css_classes=["message-time"])
-            t.set_tooltip_text(GLib.DateTime.new_from_unix_local(m.timestamp // 1000).format("%c") or "")
+            dt = GLib.DateTime.new_from_unix_local(m.timestamp // 1000)
+            if dt is not None:
+                t.set_tooltip_text(dt.format("%c") or "")
             head.append(t)
+            anchor = t
+        self._meta_container = head
+        self._meta_anchor = anchor
         self._meta_icons(head, m)
         return head
 
     def _meta_icons(self, box: Gtk.Box, m: MessageItem) -> None:
+        self._showing_edited = bool(m.edited)
         if m.encryption:
             icon = Gtk.Image.new_from_icon_name("ward-lock-symbolic")
             icon.add_css_class("message-meta")
@@ -352,15 +535,19 @@ class MessageRow(Gtk.Box):
     def _reply_preview(self, m: MessageItem) -> Gtk.Widget:
         btn = Gtk.Button(css_classes=["flat", "reply-preview"], halign=Gtk.Align.START)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        box.append(Gtk.Label(label=m.reply_author or _("Reply"), css_classes=["author"], xalign=0))
-        box.append(Gtk.Label(label=m.reply_preview or "…", css_classes=["text"], xalign=0,
-                             ellipsize=Pango.EllipsizeMode.END, max_width_chars=60))
+        author_lbl = Gtk.Label(label=m.reply_author or _("Reply"), css_classes=["author"], xalign=0)
+        text_lbl = Gtk.Label(label=m.reply_preview or "…", css_classes=["text"], xalign=0,
+                             ellipsize=Pango.EllipsizeMode.END, max_width_chars=60)
+        self._reply_author_lbl = author_lbl
+        self._reply_text_lbl = text_lbl
+        box.append(author_lbl)
+        box.append(text_lbl)
         btn.set_child(box)
         btn.set_tooltip_text(_("Go to the original message"))
         btn.connect("clicked", lambda *_: self.view.jump_to(m.reply_target or 0, m.reply_to))
         return btn
 
-    def _content(self, m: MessageItem) -> Gtk.Widget:
+    def _content(self, m: MessageItem, dark: bool | None = None) -> Gtk.Widget:
         if m.retracted:
             text = {1: _("This message was deleted"), 2: _("You deleted this message"),
                     3: _("Removed by a moderator")}.get(m.retracted, _("Deleted"))
@@ -382,10 +569,10 @@ class MessageRow(Gtk.Box):
         if emoji_only(m.body) and settings["appearance.large_emoji"]:
             lbl = Gtk.Label(label=body, xalign=0, css_classes=["message-text", "emoji-only"], selectable=True)
             return lbl
-        nicks = self.view.mention_names()
+        nicks = self.view.mention_names() if "@" in body else ()
         doc = render.parsed(m.id, body, m.is_markdown, nicks, settings["chats.markdown_others"])
-        r = render.Renderer(on_link=self.view.on_link, dark=style.is_dark(), action=action,
-                            on_code_copy=self.view.on_code_copy)
+        r = render.Renderer(on_link=self.view.on_link, dark=style.is_dark() if dark is None else dark,
+                            action=action, on_code_copy=self.view.on_code_copy)
         w = r.build(doc)
         if m.extra.get("unencrypted"):
             w.add_css_class("message-unencrypted")
@@ -429,8 +616,11 @@ class MessageRow(Gtk.Box):
 
     def _attachment(self, m: MessageItem, att: AttachmentItem) -> Gtk.Widget:
         self._att_handlers.append((att, att.connect("notify::state", lambda *_: self._changed())))
-        path = att.local_path if att.local_path and os.path.exists(att.local_path) else ""
         thumb = att.thumbnail if att.thumbnail and os.path.exists(att.thumbnail) else ""
+        if att.is_image:
+            path = "" if thumb else (att.local_path if att.local_path and os.path.exists(att.local_path) else "")
+        else:
+            path = att.local_path if att.local_path and os.path.exists(att.local_path) else ""
         if att.is_image and (path or thumb):
             pic = Gtk.Picture.new_for_paintable(widgets.texture(thumb or path, widgets.IMAGE_PIXELS))
             pic.set_can_shrink(True)
@@ -449,7 +639,7 @@ class MessageRow(Gtk.Box):
         if path and (att.is_audio or att.is_video) and not external_audio:
             return video.attachment(path, att.is_video, lambda: self.view.save_attachment(m, att))
         card = Gtk.Box(spacing=10, css_classes=["attachment-card"], halign=Gtk.Align.START)
-        gicon = Gio.content_type_get_symbolic_icon(Gio.content_type_from_mime_type(att.mime or "") or "")
+        gicon = _mime_gicon(att.mime or "")
         card.append(Gtk.Image.new_from_gicon(gicon) if gicon else Gtk.Image.new_from_icon_name("text-x-generic"))
         info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         info.append(Gtk.Label(label=att.name or _("File"), xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE,
@@ -518,19 +708,26 @@ class MessageRow(Gtk.Box):
     def _add_hover_bar(self, m: MessageItem) -> None:
         if m.retracted or m.kind == "status":
             return
+        quick = tuple(self.view.settings["chats.quick_reactions"][:3])
         bar = self.actions
-        for e in self.view.settings["chats.quick_reactions"][:3]:
-            b = Gtk.Button(label=e, css_classes=["flat"], tooltip_text=_("React with %s") % e)
-            b.connect("clicked", lambda _b, e=e: self.view.react(m, e))
-            bar.append(b)
-        more = Gtk.MenuButton(icon_name="ward-react-symbolic", css_classes=["flat"], tooltip_text=_("Add reaction"))
-        # keep the bar (and so the picker) while the picker is open: the pointer leaves the row to use it
-        widgets.emoji_button(more, self.view.settings, lambda e: self.view.react(m, e), lambda: self._hover(False))
-        self.react_button = more
-        bar.append(more)
-        reply = Gtk.Button(icon_name="ward-reply-symbolic", css_classes=["flat"], tooltip_text=_("Reply"))
-        reply.connect("clicked", lambda *_: self.view.start_reply(m))
-        bar.append(reply)
+        if self._hover_quick != quick:
+            widgets.clear(bar)
+            for e in quick:
+                b = Gtk.Button(label=e, css_classes=["flat"], tooltip_text=_("React with %s") % e)
+                b.connect("clicked", lambda _b, e=e: self.msg is not None and self.view.react(self.msg, e))
+                bar.append(b)
+            more = Gtk.MenuButton(icon_name="ward-react-symbolic", css_classes=["flat"], tooltip_text=_("Add reaction"))
+            # keep the bar (and so the picker) while the picker is open: the pointer leaves the row to use it
+            widgets.emoji_button(more, self.view.settings,
+                                 lambda e: self.msg is not None and self.view.react(self.msg, e),
+                                 lambda: self._hover(False))
+            self._react_btn = more
+            bar.append(more)
+            reply = Gtk.Button(icon_name="ward-reply-symbolic", css_classes=["flat"], tooltip_text=_("Reply"))
+            reply.connect("clicked", lambda *_: self.msg is not None and self.view.start_reply(self.msg))
+            bar.append(reply)
+            self._hover_quick = quick
+        self.react_button = self._react_btn
         self.hover = bar
 
     def _hover(self, inside: bool) -> None:
