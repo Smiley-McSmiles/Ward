@@ -132,6 +132,15 @@ class CallService(GObject.Object):
     def detach(self, account_id: int) -> None:
         self.account_offline(account_id)
 
+    def shutdown(self) -> None:
+        for call in list(self.calls.values()):
+            self._cancel_timer(call)
+            if call.ms is not None:
+                call.ms.close()
+                call.ms = None
+            call.state = ENDED
+        self.calls.clear()
+
     async def can_call(self, account_id: int, jid: str) -> set[str]:
         """What the contact's devices online can take: {'audio', 'video'}, empty when none can."""
         session = self.core.sessions.get(account_id)

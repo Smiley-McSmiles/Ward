@@ -38,6 +38,10 @@ URL_RE = re.compile(
     re.IGNORECASE)
 _TRAILING = ".,;:!?)]}'\""
 TASK_RE = re.compile(r"^\[([ xX])\]\s+")
+_EMPTY: frozenset[str] = frozenset()
+_MD_SYNTAX_RE = re.compile(r"[*_~`\[\]<>!&\\\x85\u2028\u2029]")
+_MAX_MARKDOWN_LEN = 32_768
+_MAX_DELIM_COUNT = 2_000
 
 
 @cache
@@ -59,10 +63,54 @@ def safe_href(href: str) -> str:
     return h if low.startswith(SAFE_SCHEMES) else ""
 
 
+def _plain_fallback(s: str, nicks: frozenset[str], markdown: bool, max_blocks: int = 512) -> Document:
+    """Bounded plain-paragraph fallback for huge or delimiter-heavy inputs so the parser cannot stall."""
+    text = s.replace("\r\n", "\n").replace("\r", "\n")
+    parts = [p for p in text.split("\n\n") if p.strip()]
+    if not parts:
+        return Document([], markdown=markdown)
+    if len(parts) > max_blocks:
+        parts = [*parts[: max_blocks - 1], "\n\n".join(parts[max_blocks - 1:])]
+    allow_spoilers = "||" in text and text.count("||") <= 200
+    counter = [0]
+    blocks: list[Block] = []
+    for p in parts:
+        runs: Inlines = [Run(p)]
+        if allow_spoilers:
+            runs = _spoilers(runs, counter)
+        if len(p) <= _MAX_MARKDOWN_LEN * 2:
+            runs = _autolinks(runs)
+            if nicks:
+                runs = _mentions(runs, nicks)
+        blocks.append(Paragraph(merge_runs(runs)))
+    return Document(blocks, markdown=markdown)
+
+
+def _is_plain_md_line(s: str) -> bool:
+    if "\n" in s or "\r" in s or "\t" in s or "\x00" in s or "\x0b" in s or "\x0c" in s:
+        return False
+    if s[0].isspace() or s[-1].isspace():
+        return False
+    if s[0] in "#>+-*_=~`|" or s[0].isdigit():
+        return False
+    return _MD_SYNTAX_RE.search(s) is None
+
+
 def parse_markdown(text: str, nicknames: frozenset[str] | set[str] | None = None) -> Document:
-    tokens = _md().parse(text or "")
+    s = text or ""
+    if not s or not s.strip():
+        return Document([], markdown=True)
+    nicks = frozenset(n.lower() for n in (nicknames or ()) if n) if (nicknames and "@" in s) else _EMPTY
+    if _is_plain_md_line(s) and len(s) <= _MAX_MARKDOWN_LEN:
+        counter = [0]
+        return Document([Paragraph(postprocess_inlines([Run(s)], nicks, counter))], markdown=True)
+    if len(s) > _MAX_MARKDOWN_LEN or (
+        len(s) > _MAX_DELIM_COUNT
+        and (s.count("[") + s.count("]") + s.count("*") + s.count("_") + s.count("~")) > _MAX_DELIM_COUNT
+    ):
+        return _plain_fallback(s, nicks, markdown=True)
+    tokens = _md().parse(s)
     blocks = _convert(tokens)
-    nicks = frozenset(n.lower() for n in (nicknames or ()) if n)
     counter = [0]
     _postprocess(blocks, nicks, counter)
     return Document(blocks, markdown=True)
@@ -174,12 +222,15 @@ def _inlines(children) -> Inlines:
     runs: Inlines = []
     styles: list[str] = []
     hrefs: list[str] = []
+    cur_styles: frozenset[str] = _EMPTY
 
-    def add(text, extra=()):
-        st = frozenset(styles) | frozenset(extra)
+    def add(text, extra=None):
         href = hrefs[-1] if hrefs else ""
+        st = cur_styles
+        if extra is not None:
+            st = st | extra
         if href:
-            st |= {LINK}
+            st = st | {LINK}
         runs.append(Run(text, st, href))
 
     for c in children:
@@ -189,15 +240,17 @@ def _inlines(children) -> Inlines:
         elif typ in ("softbreak", "hardbreak"):
             add("\n")
         elif typ == "code_inline":
-            add(c.content, (CODE,))
+            add(c.content, frozenset((CODE,)))
         elif typ in ("strong_open", "em_open", "s_open"):
             styles.append({"strong_open": BOLD, "em_open": ITALIC, "s_open": STRIKE}[typ])
+            cur_styles = frozenset(styles)
         elif typ in ("strong_close", "em_close", "s_close"):
             want = {"strong_close": BOLD, "em_close": ITALIC, "s_close": STRIKE}[typ]
             for k in range(len(styles) - 1, -1, -1):
                 if styles[k] == want:
                     del styles[k]
                     break
+            cur_styles = frozenset(styles) if styles else _EMPTY
         elif typ == "link_open":
             hrefs.append(safe_href(c.attrGet("href") or ""))
         elif typ == "link_close":
@@ -237,7 +290,10 @@ def postprocess_inlines(runs: Inlines, nicks: frozenset[str], counter: list[int]
 
 
 def _spoilers(runs: Inlines, counter: list[int]) -> Inlines:
-    total = sum(r.text.count("||") for r in runs if CODE not in r.styles)
+    total = 0
+    for r in runs:
+        if CODE not in r.styles and "||" in r.text:
+            total += r.text.count("||")
     usable = total - (total % 2)
     if usable == 0:
         return runs
@@ -246,8 +302,7 @@ def _spoilers(runs: Inlines, counter: list[int]) -> Inlines:
     active = 0
     for r in runs:
         if CODE in r.styles or "||" not in r.text:
-            out.append(Run(r.text, r.styles | ({SPOILER} if active else set()), r.href, active)
-                       if active else r)
+            out.append(Run(r.text, r.styles | {SPOILER}, r.href, active) if active else r)
             continue
         parts = r.text.split("||")
         for k, part in enumerate(parts):
@@ -262,14 +317,14 @@ def _spoilers(runs: Inlines, counter: list[int]) -> Inlines:
                 else:
                     out.append(Run("||", r.styles, r.href))
             if part:
-                out.append(Run(part, r.styles | ({SPOILER} if active else set()), r.href, active))
+                out.append(Run(part, r.styles | ({SPOILER} if active else _EMPTY), r.href, active))
     return out
 
 
 def _autolinks(runs: Inlines) -> Inlines:
     out: Inlines = []
     for r in runs:
-        if r.href or CODE in r.styles:
+        if r.href or CODE in r.styles or (":" not in r.text and "." not in r.text):
             out.append(r)
             continue
         pos = 0
@@ -287,7 +342,9 @@ def _autolinks(runs: Inlines) -> Inlines:
                 out.append(Run(r.text[pos:start], r.styles, "", r.spoiler_id))
             out.append(Run(url, r.styles | {LINK}, href, r.spoiler_id))
             pos = end
-        if pos < len(r.text):
+        if pos == 0:
+            out.append(r)
+        elif pos < len(r.text):
             out.append(Run(r.text[pos:], r.styles, "", r.spoiler_id))
     return out
 
@@ -311,6 +368,8 @@ def _mentions(runs: Inlines, nicks: frozenset[str]) -> Inlines:
                 out.append(Run(r.text[pos:start], r.styles, "", r.spoiler_id))
             out.append(Run(r.text[start:end], r.styles | {MENTION}, "", r.spoiler_id))
             pos = end
-        if pos < len(r.text):
+        if pos == 0:
+            out.append(r)
+        elif pos < len(r.text):
             out.append(Run(r.text[pos:], r.styles, "", r.spoiler_id))
     return out

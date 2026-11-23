@@ -13,7 +13,7 @@ BOLD, ITALIC, STRIKE, CODE, SPOILER, LINK, MENTION, DIRECTIVE = (
     "bold", "italic", "strike", "code", "spoiler", "link", "mention", "directive")
 
 
-@dataclass
+@dataclass(slots=True)
 class Run:
     text: str
     styles: frozenset[str] = frozenset()
@@ -21,65 +21,67 @@ class Run:
     spoiler_id: int = 0          # runs of one spoiler share an id, so they are revealed together
 
     def with_style(self, *styles: str) -> Run:
+        if not styles:
+            return self
         return Run(self.text, self.styles | frozenset(styles), self.href, self.spoiler_id)
 
 
 Inlines = list[Run]
 
 
-@dataclass
+@dataclass(slots=True)
 class Block:
     pass
 
 
-@dataclass
+@dataclass(slots=True)
 class Paragraph(Block):
     inlines: Inlines = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class Heading(Block):
     level: int = 1
     inlines: Inlines = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class CodeBlock(Block):
     text: str = ""
     language: str = ""
 
 
-@dataclass
+@dataclass(slots=True)
 class Quote(Block):
     children: list[Block] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class ListItem:
     children: list[Block] = field(default_factory=list)
     checked: bool | None = None  # None: not a task list item
 
 
-@dataclass
+@dataclass(slots=True)
 class ListBlock(Block):
     ordered: bool = False
     start: int = 1
     items: list[ListItem] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class Table(Block):
     header: list[Inlines] = field(default_factory=list)
     rows: list[list[Inlines]] = field(default_factory=list)
     align: list[str] = field(default_factory=list)    # "" | left | center | right
 
 
-@dataclass
+@dataclass(slots=True)
 class Rule(Block):
     pass
 
 
-@dataclass
+@dataclass(slots=True)
 class Document:
     blocks: list[Block] = field(default_factory=list)
     markdown: bool = True        # False: parsed as XEP-0393 Message Styling
@@ -108,10 +110,12 @@ def inline_text(runs: Inlines) -> str:
 def links(doc: Document) -> list[str]:
     """Every link target in the document, in order, without duplicates (for link previews)."""
     seen: list[str] = []
+    seen_set: set[str] = set()
 
     def walk_inlines(runs):
         for r in runs:
-            if r.href and r.href not in seen:
+            if r.href and r.href not in seen_set:
+                seen_set.add(r.href)
                 seen.append(r.href)
 
     def walk(blocks):

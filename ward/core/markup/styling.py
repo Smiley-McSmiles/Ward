@@ -4,7 +4,9 @@ visible (dimmed), as the specification recommends."""
 
 from __future__ import annotations
 
-from .parse import postprocess_inlines
+import re
+
+from .parse import _plain_fallback, postprocess_inlines
 from .tree import (
     BOLD,
     CODE,
@@ -22,17 +24,32 @@ from .tree import (
 )
 
 _STYLE = {"*": BOLD, "_": ITALIC, "~": STRIKE, "`": CODE}
+_STYLE_SYNTAX_RE = re.compile(r"[*_~`]")
+_EMPTY: frozenset[str] = frozenset()
+_MAX_STYLING_LEN = 32_768
+_MAX_QUOTE_DEPTH = 32
+_MAX_SPAN_DEPTH = 32
 
 
 def parse_styling(text: str, nicknames: frozenset[str] | set[str] | None = None) -> Document:
-    lines = (text or "").replace("\r\n", "\n").split("\n")
-    nicks = frozenset(n.lower() for n in (nicknames or ()) if n)
+    s = text or ""
+    if not s or not s.strip():
+        return Document([], markdown=False)
+    nicks = frozenset(n.lower() for n in (nicknames or ()) if n) if (nicknames and "@" in s) else _EMPTY
+    if (
+        len(s) <= _MAX_STYLING_LEN
+        and "\n" not in s
+        and "\r" not in s
+        and not s.startswith((">", "```"))
+        and _STYLE_SYNTAX_RE.search(s) is None
+    ):
+        return Document([Paragraph(postprocess_inlines([Run(s)], nicks, [0]))], markdown=False)
+    if len(s) > _MAX_STYLING_LEN:
+        return _plain_fallback(s, nicks, markdown=False)
+    lines = s.replace("\r\n", "\n").split("\n")
     counter = [0]
     blocks = _blocks(lines, nicks, counter)
     return Document(blocks, markdown=False)
-
-
-_MAX_QUOTE_DEPTH = 32
 
 
 def _blocks(lines: list[str], nicks, counter, depth: int = 0) -> list[Block]:
@@ -87,38 +104,45 @@ def _can_open(s: str, i: int) -> bool:
 
 def _find_close(s: str, i: int) -> int | None:
     c = s[i]
-    for k in range(i + 2, len(s)):
-        if s[k] == c and not s[k - 1].isspace():
+    pos = i + 2
+    while True:
+        k = s.find(c, pos)
+        if k == -1:
+            return None
+        if not s[k - 1].isspace():
             return k
-    return None
+        pos = k + 1
 
 
-def spans(s: str, styles: frozenset[str] = frozenset()) -> Inlines:
+def spans(s: str, styles: frozenset[str] = frozenset(), depth: int = 0) -> Inlines:
+    if depth >= _MAX_SPAN_DEPTH:
+        return [Run(s, styles)] if s else []
     out: Inlines = []
-    buf: list[str] = []
     dead: set[str] = set()
     i = 0
-    while i < len(s):
+    last = 0
+    n = len(s)
+    while i < n:
         c = s[i]
         if c in _STYLE and c not in dead and _can_open(s, i):
             j = _find_close(s, i)
             if j is not None:
-                if buf:
-                    out.append(Run("".join(buf), styles))
-                    buf = []
+                if i > last:
+                    out.append(Run(s[last:i], styles))
                 inner = s[i + 1:j]
                 st = styles | {_STYLE[c]}
-                out.append(Run(c, styles | {DIRECTIVE}))
+                dir_st = styles | {DIRECTIVE}
+                out.append(Run(c, dir_st))
                 if c == "`":
                     out.append(Run(inner, st))
                 else:
-                    out.extend(spans(inner, st))
-                out.append(Run(c, styles | {DIRECTIVE}))
+                    out.extend(spans(inner, st, depth + 1))
+                out.append(Run(c, dir_st))
                 i = j + 1
+                last = i
                 continue
             dead.add(c)
-        buf.append(c)
         i += 1
-    if buf:
-        out.append(Run("".join(buf), styles))
+    if last < n:
+        out.append(Run(s[last:], styles))
     return out

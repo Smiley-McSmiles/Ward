@@ -24,7 +24,13 @@ from gi.repository import GObject
 from .. import aio, util
 from ..i18n import _
 from . import stanzas
-from .chats import cached_attachment_paths, find_message_job, insert_message_job, message_from_row
+from .chats import (
+    cached_attachment_paths,
+    find_message_job,
+    insert_message_job,
+    load_attachments_job,
+    message_from_row,
+)
 from .markup.emoji import emoji_only
 from .models import STATUS_DELIVERED, STATUS_FAILED, STATUS_PENDING, STATUS_READ, STATUS_SENT, ChatItem, MessageItem
 from .session import NotConnected
@@ -82,11 +88,13 @@ class ChatService(GObject.Object):
         self._typing_timers: dict[tuple[int, str], asyncio.TimerHandle] = {}
         self._sent_state: dict[int, str] = {}      # chat id -> last chat state we sent
         self._marking_read: set[int] = set()
+        self._outbox_locks: dict[int, asyncio.Lock] = {}
         core.pep.register(NS_MDS, self._on_mds)
 
     # ================================================================== plumbing
     def attach(self, session) -> None:
         aid = session.account.id
+        self.detach(aid)
         q: asyncio.Queue = asyncio.Queue()
         self.queues[aid] = q
         session.connect("message", lambda s, el: q.put_nowait(el))
@@ -98,6 +106,24 @@ class ChatService(GObject.Object):
         if t is not None:
             t.cancel()
         self.queues.pop(account_id, None)
+        self._outbox_locks.pop(account_id, None)
+        for c in self.core.chats.for_account(account_id):
+            self.cancel_typing(c.id)
+            if c.typing:
+                c.typing = ""
+            self._sent_state.pop(c.id, None)
+            self._marking_read.discard(c.id)
+
+    def cancel_typing(self, chat_id: int) -> None:
+        for key in [k for k in self._typing_timers if k[0] == chat_id]:
+            h = self._typing_timers.pop(key, None)
+            if h is not None:
+                h.cancel()
+
+    def clear_timers(self) -> None:
+        for h in self._typing_timers.values():
+            h.cancel()
+        self._typing_timers.clear()
 
     async def _worker(self, session, q: asyncio.Queue) -> None:
         while True:
@@ -360,8 +386,9 @@ class ChatService(GObject.Object):
             extra["unencrypted"] = True
         if pm.spoiler is not None:
             extra["spoiler"] = pm.spoiler
-        if emoji_only(body):
-            extra["emoji_only"] = emoji_only(body)
+        eo = emoji_only(body)
+        if eo:
+            extra["emoji_only"] = eo
         values = {"chat_id": chat.id, "stanza_id": inc.archive_id or None, "origin_id": pm.origin_id or None,
                   "msg_id": pm.id or None, "sender": sender, "sender_jid": sender_jid, "occupant_id": occupant_id,
                   "direction": direction, "timestamp": inc.when, "body": body, "is_markdown": int(pm.markdown),
@@ -385,13 +412,16 @@ class ChatService(GObject.Object):
                 else:
                     row = find_message_job(conn, chat.id, ref, sender=sender, direction=direction)
                 if row is not None:
+                    changed = False
                     if inc.archive_id and not row["stanza_id"]:
                         conn.execute("UPDATE messages SET stanza_id = ? WHERE id = ?", (inc.archive_id, row["id"]))
+                        changed = True
                     if direction == 1 and row["status"] in (STATUS_PENDING, STATUS_FAILED) and \
                             inc.mode != "scrollback":
                         conn.execute("UPDATE messages SET status = ?, error = '' WHERE id = ?",
                                      (STATUS_SENT, row["id"]))
-                    return None, row["id"]
+                        changed = True
+                    return None, row["id"], changed, None, None, None
             ts = values["timestamp"]
             if ts % 1000 == 0:
                 # Offline delivery and archives often stamp whole seconds: a message sent later in the same
@@ -401,20 +431,46 @@ class ChatService(GObject.Object):
                 if latest is not None:
                     values["timestamp"] = latest + 1
             mid = insert_message_job(conn, values, att_rows)
-            return mid, None
+            if thumbs:
+                return mid, None, False, None, None, None
+            row = conn.execute("SELECT * FROM messages WHERE id = ?", (mid,)).fetchone()
+            atts = load_attachments_job(conn, [mid]) if att_rows else {}
+            refs = [r for r in (values["stanza_id"], values["origin_id"], values["msg_id"]) if r]
+            pending = []
+            if refs:
+                marks = ",".join("?" * len(refs))
+                pending = conn.execute(
+                    "SELECT * FROM pending_ops WHERE chat_id = ? AND target IN (%s) ORDER BY id" % marks,
+                    [chat.id, *refs],
+                ).fetchall()
+                if pending:
+                    conn.execute(
+                        "DELETE FROM pending_ops WHERE id IN (%s)" % ",".join("?" * len(pending)),
+                        [r["id"] for r in pending],
+                    )
+            return mid, None, False, row, atts, pending
 
-        mid, dup = await self.core.db.run(job)
+        mid, dup, changed, row, atts, pending = await self.core.db.run(job)
         if mid is None:
-            if dup is not None:
+            if dup is not None and changed:
                 await self.core.chats.reload_message(chat, dup)
             return None
-        for i, data in thumbs.items():
-            await self.core.files.store_thumbnail(mid, i, data)
-        msg = await self.core.chats.reload_message(chat, mid)
-        if msg is None:
-            return None
-        await self._resolve_reply(chat, msg)
-        await self._apply_pending(chat, msg)
+        if thumbs:
+            for i, data in thumbs.items():
+                await self.core.files.store_thumbnail(mid, i, data)
+            msg = await self.core.chats.reload_message(chat, mid)
+            if msg is None:
+                return None
+            await self._resolve_reply(chat, msg)
+            await self._apply_pending(chat, msg)
+        else:
+            if row is None:
+                return None
+            msg = message_from_row(row)
+            self.core.chats.decorate(chat, msg, [], atts.get(mid, []))
+            await self._resolve_reply(chat, msg)
+            if pending:
+                await self._apply_pending_rows(chat, msg, pending)
         await self._after_store(chat, msg, inc.mode)
         return msg
 
@@ -600,11 +656,15 @@ class ChatService(GObject.Object):
             return rows
 
         rows = await self.core.db.run(job)
+        await self._apply_pending_rows(chat, msg, rows)
+
+    async def _apply_pending_rows(self, chat: ChatItem, msg: MessageItem, rows: list) -> None:
         for r in rows:
             p = json.loads(r["payload"])
             if r["kind"] == "correction" and p.get("sender") == msg.sender and p.get("direction") == msg.direction:
                 row = await self.core.db.fetchone("SELECT * FROM messages WHERE id = ?", (msg.id,))
-                await self._do_correction(chat, row, p["body"], p.get("markdown", False), r["timestamp"])
+                if row is not None:
+                    await self._do_correction(chat, row, p["body"], p.get("markdown", False), r["timestamp"])
             elif r["kind"] == "retraction" and p.get("sender") == msg.sender:
                 await self.retract_row(chat, msg.id, 1)
             elif r["kind"] == "moderation":
@@ -628,17 +688,20 @@ class ChatService(GObject.Object):
                 await self.core.chats.reload_message(chat, row["id"])
 
     async def _on_acked(self, session, msg_id: str) -> None:
-        for chat in self.core.chats.for_account(session.account.id):
+        aid = session.account.id
+        for chat in self.core.chats.by_id.values():
+            if chat.account_id != aid:
+                continue
             ml = self.core.chats.lists.get(chat.id)
             if ml is not None:
-                for m in reversed(ml.items()):
+                for m in reversed(ml):
                     if m.outgoing and m.msg_id == msg_id:
                         if m.status == STATUS_PENDING:
                             m.status = STATUS_SENT
                         break
         await self.core.db.execute("UPDATE messages SET status = ? WHERE msg_id = ? AND direction = 1 AND status = ? "
                                    "AND chat_id IN (SELECT id FROM chats WHERE account_id = ?)",
-                                   (STATUS_SENT, msg_id, STATUS_PENDING, session.account.id))
+                                   (STATUS_SENT, msg_id, STATUS_PENDING, aid))
 
     # ------------------------------------------------------------------ typing
     def _typing(self, chat: ChatItem, who: str, state: str) -> None:
@@ -786,17 +849,27 @@ class ChatService(GObject.Object):
             await self.core.chats.update_message_fields(msg.id, status=STATUS_PENDING, error="", extra=msg.extra)
 
     async def flush_outbox(self, session) -> None:
-        rows = await self.core.db.fetchall(
-            "SELECT m.* FROM messages m JOIN chats c ON c.id = m.chat_id WHERE c.account_id = ? AND m.direction = 1 "
-            "AND m.status = ? AND m.extra LIKE '%\"outbox\": true%' ORDER BY m.id",
-            (session.account.id, STATUS_PENDING))
-        for r in rows:
-            chat = self.core.chats.by_id.get(r["chat_id"])
-            if chat is None or (chat.type == "groupchat" and not chat.joined):
-                continue
-            msg = self.core.chats.lists[chat.id].get(r["id"]) if chat.id in self.core.chats.lists else None
-            msg = msg or message_from_row(r)
-            await self._transmit(session, chat, msg)
+        aid = session.account.id
+        lock = self._outbox_locks.get(aid)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._outbox_locks[aid] = lock
+        async with lock:
+            if not session.online:
+                return
+            rows = await self.core.db.fetchall(
+                "SELECT m.* FROM messages m JOIN chats c ON c.id = m.chat_id WHERE c.account_id = ? "
+                "AND m.direction = 1 AND m.status = ? AND m.extra LIKE '%\"outbox\": true%' ORDER BY m.id",
+                (aid, STATUS_PENDING))
+            for r in rows:
+                if not session.online:
+                    break
+                chat = self.core.chats.by_id.get(r["chat_id"])
+                if chat is None or (chat.type == "groupchat" and not chat.joined):
+                    continue
+                msg = self.core.chats.lists[chat.id].get(r["id"]) if chat.id in self.core.chats.lists else None
+                msg = msg or message_from_row(r)
+                await self._transmit(session, chat, msg)
 
     async def correct(self, chat: ChatItem, msg: MessageItem, new_text: str) -> None:
         """Edit one of our messages (XEP-0308): everyone sees the new text, with an "edited" label."""

@@ -79,6 +79,20 @@ def preview(doc: Document, limit: int = 120) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def preview_text(text: str, is_markdown: bool, limit: int = 120, nicknames=None,
+                 markdown_from_others: bool = False) -> str:
+    """One-line preview directly from raw text, avoiding full huge-document parsing when safe."""
+    from . import parse as parse_markup
+
+    s = text or ""
+    # Truncate huge non-spoiler bodies before Markdown parsing; spoiler bodies parse fully up to guard cap
+    # so an unclosed opening "||" at the boundary cannot leak spoiler content.
+    if len(s) > 4096 and "||" not in s:
+        s = s[: max(4096, limit * 16)]
+    return preview(parse_markup(s, is_markdown, nicknames=nicknames,
+                                markdown_from_others=markdown_from_others), limit)
+
+
 # ------------------------------------------------------------------------------------------------- HTML export
 def inlines_html(runs: Inlines) -> str:
     out = []

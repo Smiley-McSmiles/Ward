@@ -17,6 +17,7 @@ import secrets as pysecrets
 import shutil
 import tempfile
 import time
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from gi.repository import GObject
@@ -97,6 +98,9 @@ def safe_name(name: str) -> str:
     return name[:120] or "file"
 
 
+_UNSET_THUMB = object()
+
+
 class FileService(GObject.Object):
     __gsignals__ = {"progress": (GObject.SignalFlags.RUN_LAST, None, (object,))}
 
@@ -107,6 +111,7 @@ class FileService(GObject.Object):
         # One upload at a time: sending six photos should not open six PUTs that fight for the
         # same upstream link and finish in random order.
         self._upload_lock = None
+        self._limits_lock = None
 
     # ------------------------------------------------------------------ small helpers
     @staticmethod
@@ -121,17 +126,19 @@ class FileService(GObject.Object):
 
     async def store_thumbnail(self, message_id: int, index: int, data: bytes) -> None:
         """A thumbnail that came with the message (XEP-0264): re-encoded before it is shown."""
-        d = paths.ensure(paths.thumbnails_cache())
-        raw = os.path.join(d, "in-%d-%d" % (message_id, index))
-        with open(raw, "wb") as fh:
-            fh.write(data[: 64 * 1024])
-        clean = await aio.run_in_thread(images.thumbnail, raw, 256)
-        os.unlink(raw)
-        if not clean:
+        def worker():
+            clean = images.thumbnail_bytes(data[: 64 * 1024], 256)
+            if not clean:
+                return ""
+            d = paths.ensure(paths.thumbnails_cache())
+            p = os.path.join(d, "%d-%d.img" % (message_id, index))
+            with open(p, "wb") as fh:
+                fh.write(clean)
+            return p
+
+        p = await aio.run_in_thread(worker)
+        if not p:
             return
-        p = os.path.join(d, "%d-%d.img" % (message_id, index))
-        with open(p, "wb") as fh:
-            fh.write(clean)
         rows = await self.core.db.fetchall("SELECT id FROM attachments WHERE message_id = ? ORDER BY id",
                                            (message_id,))
         if index < len(rows):
@@ -181,38 +188,45 @@ class FileService(GObject.Object):
         name = safe_name(os.path.basename(path))
         mime = self.guess_mime(name)
         strip = self.core.settings["privacy.strip_metadata"]
-        upload_path, temporary = await aio.run_in_thread(images.prepare_for_upload, path,
-                                                         acc.option("image_quality"), strip)
-        try:
-            if temporary and upload_path.endswith(".jpg") and not name.lower().endswith((".jpg", ".jpeg")):
-                name = os.path.splitext(name)[0] + ".jpg"
-                mime = "image/jpeg"
-            size = os.path.getsize(upload_path)
-            if size > LARGE and not acc.option("allow_large_uploads"):
-                raise UploadError(
-                    _("Files larger than 100 MB are turned off for this account (Preferences > Accounts)"))
-            img_mime, w, h = await aio.run_in_thread(images.probe, upload_path)
-            # keep our own copy, so the message keeps working after the original moves
-            local = os.path.join(paths.ensure(paths.files_cache()), "%s-%s" % (util.random_id(8), name))
-            await aio.run_in_thread(shutil.copyfile, upload_path, local)
-        finally:
-            if temporary:
-                with contextlib.suppress(OSError):
-                    os.unlink(upload_path)
-        thumb_path = ""
-        if img_mime:
-            data = await aio.run_in_thread(images.thumbnail, local, 400)
-            if data:
-                thumb_path = local + ".thumb"
-                with open(thumb_path, "wb") as fh:
-                    fh.write(data)
-        digest = await aio.run_in_thread(sha256_file, local)
+        quality = acc.option("image_quality")
+        allow_large = acc.option("allow_large_uploads")
+
+        def prepare():
+            cur_name, cur_mime = name, mime
+            upload_path, temporary = images.prepare_for_upload(path, quality, strip)
+            try:
+                if temporary and upload_path.endswith(".jpg") and not cur_name.lower().endswith((".jpg", ".jpeg")):
+                    cur_name = os.path.splitext(cur_name)[0] + ".jpg"
+                    cur_mime = "image/jpeg"
+                size = os.path.getsize(upload_path)
+                if size > LARGE and not allow_large:
+                    raise UploadError(
+                        _("Files larger than 100 MB are turned off for this account (Preferences > Accounts)"))
+                img_mime, w, h = images.probe(upload_path)
+                # keep our own copy, so the message keeps working after the original moves
+                local = os.path.join(paths.ensure(paths.files_cache()), "%s-%s" % (util.random_id(8), cur_name))
+                shutil.copyfile(upload_path, local)
+            finally:
+                if temporary:
+                    with contextlib.suppress(OSError):
+                        os.unlink(upload_path)
+            thumb_path = ""
+            if img_mime:
+                data = images.thumbnail(local, 400)
+                if data:
+                    thumb_path = local + ".thumb"
+                    with open(thumb_path, "wb") as fh:
+                        fh.write(data)
+            digest = sha256_file(local)
+            return cur_name, img_mime or cur_mime, size, w, h, local, thumb_path, digest
+
+        name, final_mime, size, w, h, local, thumb_path, digest = await aio.run_in_thread(prepare)
         msg_id = util.random_id(18)
         values = {"chat_id": chat.id, "origin_id": msg_id, "msg_id": msg_id, "direction": 1,
                   "timestamp": int(time.time() * 1000), "sender": self.core.my_nick(chat) if chat.is_group
                   else acc.jid, "sender_jid": acc.jid, "body": caption, "is_markdown": 1,
                   "kind": "file" if not caption else "text", "status": STATUS_PENDING, "extra": {}}
-        att = {"url": "", "name": name, "mime": img_mime or mime, "size": size, "width": w or None,
+        att = {"url": "", "name": name, "mime": final_mime, "size": size, "width": w or None,
                "height": h or None, "sha256": digest, "local_path": local, "thumbnail": thumb_path,
                "state": "uploading"}
         mid = await self.core.db.run(lambda conn: insert_message_job(conn, values, [att]))
@@ -263,7 +277,16 @@ class FileService(GObject.Object):
             att.update(url=url, state="done")
             await self.core.db.execute("UPDATE attachments SET url = ?, state = 'done', aes_key = ?, aes_iv = ? "
                                        "WHERE id = ?", (url, key.hex(), iv.hex(), att.id))
-            el = self._file_message(session, chat, msg, att, url, encrypt)
+            el_thumb = None
+            if not encrypt and att.thumbnail:
+                def make_small(path=att.thumbnail):
+                    if not os.path.exists(path):
+                        return None
+                    small = images.thumbnail(path, 64)
+                    return small if small and len(small) < 6000 else None
+
+                el_thumb = await aio.run_in_thread(make_small)
+            el = self._file_message(session, chat, msg, att, url, encrypt, thumb=el_thumb)
             await self.core.messaging._send_element(session, chat, el, msg)
         except http.Cancelled:
             att.update(state="failed", error=_("Cancelled"))
@@ -283,7 +306,7 @@ class FileService(GObject.Object):
                     os.unlink(tmp)
 
     def _file_message(self, session, chat: ChatItem, msg: MessageItem, att: AttachmentItem, url: str,
-                      encrypted: bool) -> ET.Element:
+                      encrypted: bool, thumb: Any = _UNSET_THUMB) -> ET.Element:
         group = chat.type == "groupchat"
         el = session.new_message(chat.jid, "groupchat" if group else "chat", msg.msg_id)
         body = url if not msg.body else "%s\n%s" % (msg.body, url)
@@ -295,10 +318,11 @@ class FileService(GObject.Object):
         stanzas.add_hint(el, "store")
         if not encrypted:
             stanzas.add_oob(el, url)
-            thumb = None
-            if att.thumbnail and os.path.exists(att.thumbnail):
-                small = images.thumbnail(att.thumbnail, 64)
-                thumb = small if small and len(small) < 6000 else None
+            if thumb is _UNSET_THUMB:
+                thumb = None
+                if att.thumbnail and os.path.exists(att.thumbnail):
+                    small = images.thumbnail(att.thumbnail, 64)
+                    thumb = small if small and len(small) < 6000 else None
             stanzas.add_file_sharing(el, stanzas.FileInfo(url=url, name=att.name, mime=att.mime, size=att.size,
                                                           width=att.width or None, height=att.height or None,
                                                           sha256=att.sha256, thumbnail=thumb))
@@ -316,7 +340,7 @@ class FileService(GObject.Object):
     # ------------------------------------------------------------------ downloading
     async def download(self, chat: ChatItem, msg: MessageItem, att: AttachmentItem, max_bytes: int | None = None
                        ) -> str | None:
-        if att.local_path and os.path.exists(att.local_path):
+        if att.local_path and await aio.run_in_thread(os.path.exists, att.local_path):
             return att.local_path
         if att.state == "downloading":
             return None
@@ -341,26 +365,29 @@ class FileService(GObject.Object):
                                                                 allow_http=allow_http))
             if resp.status != 200:
                 raise http.HttpError(_("Download failed (HTTP %d)") % resp.status, resp.status)
-            if key:
-                await aio.run_in_thread(decrypt_file, tmp, dest, key, iv)
-                os.unlink(tmp)
-            if att.sha256:
-                got = await aio.run_in_thread(sha256_file, dest)
-                if got != att.sha256:
-                    os.unlink(dest)
-                    raise ValueError(_("The file does not match its checksum"))
-            mime = att.mime
-            img_mime, w, h = await aio.run_in_thread(images.probe, dest)
-            if img_mime:
-                mime = img_mime
-            thumb = ""
-            if img_mime:
-                data = await aio.run_in_thread(images.thumbnail, dest, 400)
-                if data:
-                    thumb = dest + ".thumb"
-                    with open(thumb, "wb") as fh:
-                        fh.write(data)
-            size = os.path.getsize(dest)
+
+            def finalize():
+                if key:
+                    decrypt_file(tmp, dest, key, iv)
+                    os.unlink(tmp)
+                if att.sha256:
+                    got = sha256_file(dest)
+                    if got != att.sha256:
+                        os.unlink(dest)
+                        raise ValueError(_("The file does not match its checksum"))
+                img_mime, w, h = images.probe(dest)
+                thumb = ""
+                if img_mime:
+                    data = images.thumbnail(dest, 400)
+                    if data:
+                        thumb = dest + ".thumb"
+                        with open(thumb, "wb") as fh:
+                            fh.write(data)
+                size = os.path.getsize(dest)
+                return img_mime, w, h, thumb, size
+
+            img_mime, w, h, thumb, size = await aio.run_in_thread(finalize)
+            mime = img_mime or att.mime
             await self.core.db.execute("UPDATE attachments SET local_path = ?, state = 'done', mime = ?, size = ?, "
                                        "width = ?, height = ?, thumbnail = CASE WHEN ? != '' THEN ? ELSE thumbnail "
                                        "END WHERE id = ?", (dest, mime, size, w or att.width, h or att.height, thumb,
@@ -397,7 +424,7 @@ class FileService(GObject.Object):
 
     async def auto_download(self, chat: ChatItem, msg: MessageItem) -> None:
         """Media and other files from contacts, each up to the account's limit; nothing from strangers."""
-        if not msg.attachments:
+        if not msg.__dict__.get("_attachments"):
             return
         acc = self.core.accounts.get(chat.account_id)
         if acc is None:
@@ -448,22 +475,34 @@ class FileService(GObject.Object):
                                    "WHERE state = 'done' AND url != ''")
 
     async def enforce_limits(self) -> None:
-        limit = int(self.core.settings["storage.cache_limit"] or 0)
-        days = int(self.core.settings["storage.delete_files_after"] or 0)
-        total, files = await aio.run_in_thread(self._usage, paths.files_cache())
-        now = time.time()
-        files.sort()
-        removed = []
-        for atime, size, p in files:
-            too_old = days and now - atime > days * 86400
-            if too_old or (limit and total > limit):
-                with contextlib.suppress(OSError):
-                    os.unlink(p)
-                    total -= size
-                    removed.append(p)
-        if removed:
-            await self.core.db.executemany("UPDATE attachments SET local_path = '', state = 'remote' WHERE "
-                                           "local_path = ? AND url != ''", [(p,) for p in removed])
-            thumbs = [(p,) for p in removed if p.endswith(".thumb")]
-            if thumbs:
-                await self.core.db.executemany("UPDATE attachments SET thumbnail = '' WHERE thumbnail = ?", thumbs)
+        if self._limits_lock is None:
+            self._limits_lock = asyncio.Lock()
+        if self._limits_lock.locked():
+            return
+        async with self._limits_lock:
+            limit = int(self.core.settings["storage.cache_limit"] or 0)
+            days = int(self.core.settings["storage.delete_files_after"] or 0)
+
+            def trim_disk():
+                total, files = self._usage(paths.files_cache())
+                now = time.time()
+                files.sort()
+                removed = []
+                for atime, size, p in files:
+                    too_old = days and now - atime > days * 86400
+                    if too_old or (limit and total > limit):
+                        with contextlib.suppress(OSError):
+                            os.unlink(p)
+                            total -= size
+                            removed.append(p)
+                return removed
+
+            removed = await aio.run_in_thread(trim_disk)
+            if removed:
+                await self.core.db.executemany(
+                    "UPDATE attachments SET local_path = '', state = 'remote' WHERE local_path = ? AND url != ''",
+                    [(p,) for p in removed],
+                )
+                thumbs = [(p,) for p in removed if p.endswith(".thumb")]
+                if thumbs:
+                    await self.core.db.executemany("UPDATE attachments SET thumbnail = '' WHERE thumbnail = ?", thumbs)

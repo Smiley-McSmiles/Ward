@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import copy
 import logging
 import os
 import time
@@ -195,6 +196,7 @@ class OmemoService(GObject.Object):
         self._refreshed: dict[int, set[tuple[str, str]]] = {}   # account -> {(jid, namespace)}
         self._namespaces: dict[int, list[str]] = {}
         self._devices: dict[tuple[int, str], frozenset] = {}
+        self._reviewing: dict[tuple[int, str], asyncio.Task] = {}
         self._reflections: dict[str, list[ET.Element]] = {}
         core.pep.register(DEVICES2, lambda s, f, i, r: self._on_device_list(s, f, i, NS2))
         if HAVE_OLDMEMO:
@@ -220,6 +222,33 @@ class OmemoService(GObject.Object):
 
     def ready(self, session) -> bool:
         return session.account.id in self.managers
+
+    def drop_account(self, account_id: int) -> None:
+        t = self._creating.pop(account_id, None)
+        if t is not None:
+            t.cancel()
+        self.managers.pop(account_id, None)
+        self._refreshed.pop(account_id, None)
+        self._namespaces.pop(account_id, None)
+        for k in [k for k in self._devices if k[0] == account_id]:
+            self._devices.pop(k, None)
+        for k in [k for k in self._reviewing if k[0] == account_id]:
+            rt = self._reviewing.pop(k, None)
+            if rt is not None:
+                rt.cancel()
+
+    def shutdown(self) -> None:
+        for t in list(self._creating.values()):
+            t.cancel()
+        self._creating.clear()
+        for t in list(self._reviewing.values()):
+            t.cancel()
+        self._reviewing.clear()
+        self.managers.clear()
+        self._refreshed.clear()
+        self._namespaces.clear()
+        self._devices.clear()
+        self._reflections.clear()
 
     async def on_online(self, session, resumed: bool) -> None:
         if resumed and self.ready(session):
@@ -324,6 +353,19 @@ class OmemoService(GObject.Object):
 
     async def review(self, session, jid: str) -> list:
         """Apply blind trust to new devices, remember first-seen dates, refresh chat banners."""
+        key = (session.account.id, jid)
+        existing = self._reviewing.get(key)
+        if existing is not None and not existing.done():
+            return await existing
+        task = asyncio.ensure_future(self._do_review(session, jid))
+        self._reviewing[key] = task
+        try:
+            return await task
+        finally:
+            if self._reviewing.get(key) is task:
+                self._reviewing.pop(key, None)
+
+    async def _do_review(self, session, jid: str) -> list:
         m = await self.manager(session)
         acc = session.account
         try:
@@ -335,9 +377,12 @@ class OmemoService(GObject.Object):
         undecided = []
         now = int(time.time() * 1000)
         own_id = (await m.get_own_device_information())[0].device_id
+        if devices:
+            await self.core.db.executemany(
+                "INSERT OR IGNORE INTO omemo_devices (account_id, jid, device_id, first_seen) VALUES (?, ?, ?, ?)",
+                [(acc.id, jid, d.device_id, now) for d in devices],
+            )
         for d in devices:
-            await self.core.db.execute("INSERT OR IGNORE INTO omemo_devices (account_id, jid, device_id, first_seen) "
-                                       "VALUES (?, ?, ?, ?)", (acc.id, jid, d.device_id, now))
             if d.trust_level_name != trust.UNDECIDED:
                 continue
             if jid == acc.jid and d.device_id != own_id and self.btbv(acc.id):
@@ -727,10 +772,12 @@ class OmemoService(GObject.Object):
         targets = set(recipients)
         if chat.type != "pm" and targets:
             targets.add(acc.jid)
-        for jid in targets | {acc.jid}:
+        async def prepare_target(jid: str) -> None:
             await self.refresh(session, jid)
             if (acc.id, jid) not in self._devices:
                 await self.review(session, jid)
+
+        await asyncio.gather(*(prepare_target(jid) for jid in targets | {acc.jid}))
         inside, outside = stanzas.split_content(el)
         body = el.findtext("{%s}body" % stanzas.NS_CLIENT)
         to_jid = chat.jid
@@ -917,7 +964,10 @@ class OmemoService(GObject.Object):
                                    "last_message = excluded.last_message",
                                    (acc.id, sender, device.device_id, inc.when, inc.when))
         if device.trust_level_name == trust.UNDECIDED:
-            aio.spawn(self.review(session, sender))
+            key = (acc.id, sender)
+            cur = self._reviewing.get(key)
+            if cur is None or cur.done():
+                aio.spawn(self.review(session, sender))
         if plaintext is None:
             inc.pm = stanzas.ParsedMessage(type=pm.type, from_jid=pm.from_jid, to_jid=pm.to_jid, id=pm.id,
                                            wrapper=pm.wrapper)   # key exchange only: nothing to show
@@ -973,4 +1023,4 @@ class OmemoService(GObject.Object):
 
 
 def _copy(el: ET.Element) -> ET.Element:
-    return ET.fromstring(ET.tostring(el))
+    return copy.deepcopy(el)

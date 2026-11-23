@@ -97,6 +97,9 @@ class PgpService(GObject.Object):
     def available(self) -> bool:
         return self.engine().available
 
+    def drop_account(self, account_id: int) -> None:
+        self._published.discard(account_id)
+
     def own_key(self, account_id: int) -> str:
         acc = self.core.accounts.get(account_id)
         return (acc.option("pgp_key") or "").upper() if acc is not None else ""
@@ -265,12 +268,16 @@ class PgpService(GObject.Object):
         raw = data.encode("utf-8") if isinstance(data, str) else data
         fps = await aio.run_in_thread(self.engine().import_keys, raw)
         now = int(time.time() * 1000)
-        for f in fps:
-            await self.core.db.execute(
-                "INSERT INTO pgp_keys (account_id, jid, fingerprint, trust, announced, first_seen, last_seen) VALUES "
-                "(?, ?, ?, ?, 0, ?, ?) ON CONFLICT(account_id, jid, fingerprint) DO UPDATE SET trust = excluded.trust",
-                (account_id, util.bare(jid), f, "verified" if verified else "undecided", now, now))
-        self.emit("keys-changed", account_id, util.bare(jid))
+        bare = util.bare(jid)
+        trust_val = "verified" if verified else "undecided"
+        if fps:
+            await self.core.db.executemany(
+                "INSERT INTO pgp_keys (account_id, jid, fingerprint, trust, announced, first_seen, last_seen) "
+                "VALUES (?, ?, ?, ?, 0, ?, ?) ON CONFLICT(account_id, jid, fingerprint) DO UPDATE SET "
+                "trust = excluded.trust",
+                [(account_id, bare, f, trust_val, now, now) for f in fps],
+            )
+        self.emit("keys-changed", account_id, bare)
         return fps
 
     async def usable_keys(self, account_id: int, jid: str) -> list[str]:

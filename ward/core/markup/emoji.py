@@ -141,7 +141,7 @@ _CLUSTER = re.compile(r"(?:%s%s(?:â€%s%s)*|[\U0001f1e6-\U0001f1ff]{2}|[0-9#*]ï¸
 def emoji_only(text: str, limit: int = 3) -> int:
     """Number of emoji when the text is nothing but 1..limit emoji (and spaces), else 0."""
     s = (text or "").strip()
-    if not s or len(s) > 64:
+    if not s or len(s) > 64 or s.isascii():
         return 0
     count = 0
     pos = 0
