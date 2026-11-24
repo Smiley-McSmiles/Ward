@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import weakref
 
-from gi.repository import Gdk, Gtk
+from gi.repository import Gdk, GLib, Gtk
 
 from ..i18n import _
 from . import compat, lifetime
@@ -24,9 +24,18 @@ def _pause_on_unmap(vid: Gtk.Video) -> None:
 def attachment(path: str, is_video: bool, save=None) -> Gtk.Widget:
     """The player for an attachment: a video with save and fullscreen buttons over it, shown while the pointer is on
     the video (fullscreen also on double click), or an audio bar."""
-    vid = Gtk.Video.new_for_filename(path)
+    vid = Gtk.Video()
     vid.set_size_request(320 if is_video else 280, 220 if is_video else -1)
     vid.connect("unmap", _pause_on_unmap)
+    vid_ref = weakref.ref(vid)
+
+    def _load_media() -> bool:
+        v = vid_ref()
+        if v is not None and v.get_parent() is not None and v.get_file() is None:
+            v.set_filename(path)
+        return False
+
+    GLib.idle_add(_load_media, priority=GLib.PRIORITY_LOW)
     if not is_video:
         vid.set_halign(Gtk.Align.START)
         return vid

@@ -278,10 +278,11 @@ SPECS: dict[str, Spec] = {
                                     choices=((30, N_("30 days")), (90, N_("90 days")), (365, N_("365 days")),
                                              (0, N_("Never")))),
     # ------------------------------------------------------------------ Advanced
-    "advanced.renderer": S("choice", "opengl", N_("Graphics renderer"),
-                           N_("OpenGL uses much less memory than Vulkan on many systems. Applies after a restart"),
+    "advanced.renderer": S("choice", "auto", N_("Graphics renderer"),
+                           N_("GTK's choice (Vulkan on modern systems) is the most reliable; OpenGL or Software can "
+                              "save memory. Applies after a restart"),
                            page="advanced", group=N_("Performance"),
-                           choices=(("opengl", N_("OpenGL")), ("auto", N_("GTK's choice (often Vulkan)")),
+                           choices=(("auto", N_("GTK's choice (often Vulkan)")), ("opengl", N_("OpenGL")),
                                     ("software", N_("Software: no graphics driver, half the memory")))),
     "advanced.free_window": S("bool", True, N_("Free the window's memory in the background"),
                               N_("Closing the window releases it instead of hiding it; reopening takes a moment"),

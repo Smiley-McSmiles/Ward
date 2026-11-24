@@ -46,7 +46,7 @@ def _choose_renderer() -> None:
 
             choice = Settings()["advanced.renderer"]
         except Exception:
-            choice = "opengl"
+            choice = "auto"
     renderer = RENDERERS.get(choice, choice if choice not in ("auto", "") else "")
     if renderer:
         os.environ["GSK_RENDERER"] = renderer

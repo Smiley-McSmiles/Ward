@@ -412,8 +412,8 @@ class GuiPerfFixesTests(unittest.TestCase):
 
         async def scenario():
             view.show_chat(chat1)
-            # Prepared for SLIDE_UP synchronously, NOT revealing before DB fetch completes
-            self.assertEqual(view.reveal.get_transition_type(), Gtk.RevealerTransitionType.SLIDE_UP)
+            # Prepared for CROSSFADE synchronously, NOT revealing before DB fetch completes
+            self.assertEqual(view.reveal.get_transition_type(), Gtk.RevealerTransitionType.CROSSFADE)
             self.assertFalse(view.reveal.get_reveal_child())
             _pump_idle()
             self.assertFalse(view.reveal.get_reveal_child(), "revealer must stay hidden until _open finishes")
@@ -779,6 +779,51 @@ class GuiPerfFixesTests(unittest.TestCase):
             row.bind(retracted, None)
             self.assertEqual(att_spy.call_count, 0)
         row.unbind()
+
+    def test_new_message_pill_when_scrolled_up_and_bottom_snap_when_stuck(self):
+        win = self._make_window_stub()
+        view = ConversationView(win)
+        chat = ChatItem(id=8, account_id=1, jid="p@example.org", name="Pat")
+        ml = MessageList(chat)
+        ml.has_older = False
+        ml.add_many([
+            MessageItem(id=i, chat_id=8, timestamp=i * 1000, direction=0, body="m%d" % i)
+            for i in range(1, 5)
+        ])
+        view.chat = chat
+        view.ml = ml
+        view.vadj.configure(0.0, 0.0, 1000.0, 20.0, 200.0, 400.0)
+
+        # Scrolled away from bottom: incoming message shows top pill and increments count
+        view._stick = False
+        view.vadj.set_value(0.0)
+        m5 = MessageItem(id=5, chat_id=8, timestamp=5000, direction=0, body="hello")
+        ml.add(m5)
+        view._on_items_changed(ml.store, 4, 0, 1)
+        self.assertTrue(view.new_msg_revealer.get_reveal_child())
+        self.assertEqual(view.new_msg_label.get_text(), "New message")
+
+        m6 = MessageItem(id=6, chat_id=8, timestamp=6000, direction=0, body="second")
+        ml.add(m6)
+        view._on_items_changed(ml.store, 5, 0, 1)
+        self.assertEqual(view.new_msg_label.get_text(), "2 new messages")
+
+        # Clicking the pill hides it, re-enables _stick, and scrolls to the newest item
+        scroll_targets: list[int] = []
+        view.list.scroll_to = lambda pos, *_a: scroll_targets.append(pos)
+        view.new_msg_button.emit("clicked")
+        self.assertFalse(view.new_msg_revealer.get_reveal_child())
+        self.assertTrue(view._stick)
+        self.assertEqual(scroll_targets, [5])
+        self.assertEqual(view.vadj.get_value(), 600.0)
+
+        # While stuck at bottom, upper growth updates vadj and queues an idle settle outside size_allocate
+        view.vadj.set_upper(1120.0)
+        self.assertEqual(view.vadj.get_value(), 720.0)
+        self.assertNotEqual(view._settle_idle, 0)
+        _pump_idle()
+        self.assertEqual(view._settle_idle, 0)
+        view.show_chat(None)
 
 
 if __name__ == "__main__":

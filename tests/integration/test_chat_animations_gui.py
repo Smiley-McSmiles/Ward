@@ -62,7 +62,7 @@ def test_chat_and_message_animations_can_be_turned_off(app, run):  # noqa: F811
         # and the chat transition comes back when the chat setting is on
         settings.set("appearance.chat_animations", True)
         w.show_chat(second)
-        assert view.reveal.get_transition_type() == Gtk.RevealerTransitionType.SLIDE_UP
+        assert view.reveal.get_transition_type() == Gtk.RevealerTransitionType.CROSSFADE
         await wait_for(view.reveal.get_child_revealed, 2, "the second chat slid in")
         await app.core.shutdown()
 

@@ -108,6 +108,8 @@ button.message-meta { padding: 0 4px; min-height: 0; min-width: 0; font-weight: 
   background-color: alpha(@accent_bg_color, 0.1); }
 .composer-banner.editing { background-color: alpha(@warning_color, 0.15); }
 .jump-button { margin: 12px; }
+.new-message-pill { margin-top: 10px; padding: 6px 14px; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
 .conversation-banner { padding: 6px 12px; background-color: alpha(@accent_bg_color, 0.1); }
 .conversation-banner button { padding: 2px 12px; }
 

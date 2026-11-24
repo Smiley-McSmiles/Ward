@@ -74,8 +74,10 @@ class ConversationView(Gtk.Box):
         self._settle_idle = 0
         self._settle_sources: list[int] = []
         self._jump_visible = False
+        self._unseen_below = 0
         self._auto_until = 0            # a programmatic scroll: its layout settling is not the user scrolling
         self._layout_until = 0          # rows being rebuilt: their measurement moves the view too
+        self._programmatic_scroll = False
         self._open_seq = 0
         self._reveal_idle = 0
         self._load_older_timer = 0
@@ -257,8 +259,21 @@ class ConversationView(Gtk.Box):
         self.jump_button = Gtk.Button(icon_name="go-bottom-symbolic", css_classes=["circular", "osd", "jump-button"],
                                       halign=Gtk.Align.END, valign=Gtk.Align.END, visible=False,
                                       tooltip_text=_("Jump to the latest message"))
-        self.jump_button.connect("clicked", lambda *_: self.scroll_to_bottom())
+        self.jump_button.connect("clicked", lambda *_: self.scroll_to_bottom(force=True))
         overlay.add_overlay(self.jump_button)
+        pill_box = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+        pill_box.append(Gtk.Image(icon_name="go-down-symbolic"))
+        self.new_msg_label = Gtk.Label(label=_("New message"))
+        pill_box.append(self.new_msg_label)
+        self.new_msg_button = Gtk.Button(child=pill_box, css_classes=["pill", "suggested-action", "new-message-pill"],
+                                         tooltip_text=_("Jump to the newest message"))
+        self.new_msg_button.connect("clicked", self._on_new_msg_pill_clicked)
+        self.new_msg_revealer = Gtk.Revealer(child=self.new_msg_button,
+                                             transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                             transition_duration=160, reveal_child=False,
+                                             halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
+        overlay.add_overlay(self.new_msg_revealer)
+        overlay.set_measure_overlay(self.new_msg_revealer, False)
         self.loading_spinner = compat.spinner()
         self.loading_spinner.set_halign(Gtk.Align.CENTER)
         self.loading_spinner.set_valign(Gtk.Align.START)
@@ -282,9 +297,10 @@ class ConversationView(Gtk.Box):
         self.stack.add_named(overlay, "messages")
         self.stack.add_named(self.empty, "empty")
         self.stack.add_named(results_sc, "results")
-        # the message area slides in from the bottom when a chat is opened (appearance.chat_animations)
+        # crossfade on chat switch: SLIDE_UP collapses/resizes GtkListView on every frame and causes layout stutter
         self.reveal = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE,
-                                   transition_duration=220, overflow=Gtk.Overflow.HIDDEN)
+                                   transition_duration=120, overflow=Gtk.Overflow.HIDDEN)
+        self.reveal.connect("notify::child-revealed", self._on_chat_revealed)
         self.reveal.set_child(self.stack)
         self.reveal.set_reveal_child(True)
 
@@ -346,13 +362,18 @@ class ConversationView(Gtk.Box):
         self._detach()
         old_ml = self.ml
         self.ml = None
-        self.list.set_model(None)
+        if chat is None:
+            self.list.set_model(None)
         self.rows.clear()
         if old_ml is not None:
-            # once the list view has let go of it: keep only the newest messages of the chat we leave
-            GLib.idle_add(self._trim_old_ml, old_ml)
+            if chat is None:
+                # once the list view has let go of it: keep only the newest messages of the chat we leave
+                GLib.idle_add(self._trim_old_ml, old_ml)
+            else:
+                self._pending_trim_ml = old_ml
         self.chat = chat
         self._animate_ids.clear()
+        self._set_new_msg_pill(0)
         self.first_unread_id = 0
         self.highlight_id = 0
         self._last_value = 0.0
@@ -390,6 +411,9 @@ class ConversationView(Gtk.Box):
 
     def _trim_old_ml(self, ml) -> bool:
         if hasattr(self, "ml") and ml is not self.ml:
+            model = self.list.get_model() if hasattr(self, "list") else None
+            if model is not None and hasattr(model, "get_model") and model.get_model() is ml.store:
+                return False
             ml.trim(KEEP_MESSAGES)
         return False
 
@@ -432,11 +456,6 @@ class ConversationView(Gtk.Box):
                         self.first_unread_id = m.id
                         unread_idx = i
                         break
-            if n_items:
-                if unread_idx >= 0:
-                    self._prewarm_render(store, max(0, unread_idx - 10), min(n_items, unread_idx + 15))
-                else:
-                    self._prewarm_render(store, max(0, n_items - 20), n_items)
             # connect before set_model: the list view's own items-changed handler binds the row, and it must find
             # the new id in _animate_ids already
             self._chat_handlers.append((store, store.connect("items-changed", self._on_items_changed)))
@@ -445,6 +464,10 @@ class ConversationView(Gtk.Box):
                 ml.loading))))
             self._update_empty(immediate=True)
             self.list.set_model(model)
+            prev_ml = getattr(self, "_pending_trim_ml", None)
+            self._pending_trim_ml = None
+            if prev_ml is not None and prev_ml is not ml:
+                GLib.idle_add(self._trim_old_ml, prev_ml)
             if unread_idx >= 0:
                 self._stick = False
                 self.list.scroll_to(unread_idx, Gtk.ListScrollFlags.NONE, None)
@@ -546,6 +569,8 @@ class ConversationView(Gtk.Box):
             else:
                 self._animate_ids.clear()
                 self._set_jump(True)
+                if newest is not None and not newest.outgoing and newest.kind != "status":
+                    self._set_new_msg_pill(self._unseen_below + added)
 
     def _set_stack_immediate(self, name: str) -> None:
         if self.stack.get_visible_child_name() == name:
@@ -587,10 +612,12 @@ class ConversationView(Gtk.Box):
         now = GLib.get_monotonic_time()
         if self._at_bottom():
             self._stick = True
+            self._set_new_msg_pill(0)
             if self._unstick_source:
                 GLib.source_remove(self._unstick_source)
                 self._unstick_source = 0
-        elif value < previous - 1 and now > self._auto_until and now > self._layout_until and not self._unstick_source:
+        elif not self._programmatic_scroll and value < previous - 1 and now > self._auto_until and \
+                now > self._layout_until and not self._unstick_source:
             # One check at a time: this runs for every pixel of a smooth scroll, and it used to queue a
             # timer per event, all of them asking the same question.
             self._unstick_source = GLib.timeout_add(120, self._maybe_unstick)
@@ -611,6 +638,22 @@ class ConversationView(Gtk.Box):
             self._jump_visible = visible
             self.jump_button.set_visible(visible)
 
+    def _set_new_msg_pill(self, count: int) -> None:
+        self._unseen_below = max(0, count)
+        if not hasattr(self, "new_msg_revealer"):
+            return
+        if self._unseen_below > 0:
+            text = _("New message") if self._unseen_below == 1 else ngettext(
+                "%d new message", "%d new messages", self._unseen_below) % self._unseen_below
+            self.new_msg_label.set_text(text)
+            self.new_msg_revealer.set_reveal_child(True)
+        else:
+            self.new_msg_revealer.set_reveal_child(False)
+
+    def _on_new_msg_pill_clicked(self, *_a) -> None:
+        self._set_new_msg_pill(0)
+        self.scroll_to_bottom(force=True)
+
     def _maybe_unstick(self) -> bool:
         """The view stayed above the bottom: the user scrolled there.  Not while a row is being measured, though."""
         self._unstick_source = 0
@@ -623,13 +666,25 @@ class ConversationView(Gtk.Box):
             self._set_jump(True)
         return False
 
+    def _set_vadj(self, target: float) -> None:
+        if abs(self.vadj.get_value() - target) <= 0.5:
+            return
+        self._programmatic_scroll = True
+        try:
+            self.vadj.set_value(target)
+        finally:
+            self._programmatic_scroll = False
+
     def _on_upper(self, *_a) -> None:
         if not hasattr(self, "vadj"):
             return
         if self._stick:
             target = max(0.0, self.vadj.get_upper() - self.vadj.get_page_size())
             if abs(self.vadj.get_value() - target) > 0.5:
-                self.vadj.set_value(target)
+                self._set_vadj(target)
+                # notify::upper fires inside GtkListView::size_allocate where GTK may drop a nested
+                # queue_allocate; also settle on idle so the final frame always commits flush at bottom.
+                self._queue_settle_bottom()
         else:
             self._set_jump(not self._at_bottom())
 
@@ -665,16 +720,18 @@ class ConversationView(Gtk.Box):
             return False
         self._cancel_scroll_timers()
         self._stick = True
-        self._auto_until = GLib.get_monotonic_time() + 400_000     # the list settles within this
+        self._set_new_msg_pill(0)
+        self._auto_until = GLib.get_monotonic_time() + 450_000     # covers 200ms slide-up + measurement settle
         n = self.ml.store.get_n_items() if self.ml is not None else 0
-        if n and (force or not self._at_bottom() or self.vadj.get_upper() <= self.vadj.get_page_size()):
+        newest = self.ml.store.get_item(n - 1) if n else None
+        unbound = newest is not None and newest.id not in self.rows
+        if n and (force or unbound or not self._at_bottom() or self.vadj.get_upper() <= self.vadj.get_page_size()):
             self.list.scroll_to(n - 1, Gtk.ListScrollFlags.NONE, None)
         target = max(0.0, self.vadj.get_upper() - self.vadj.get_page_size())
-        if abs(self.vadj.get_value() - target) > 0.5:
-            self.vadj.set_value(target)
+        self._set_vadj(target)
         self._set_jump(False)
-        # once more after the new rows have their real heights
-        for delay in (50, 250):
+        # settle during and right after the 200ms message slide-up animation
+        for delay in (50, 220, 350):
             self._settle_sources.append(GLib.timeout_add(delay, self._settle_bottom))
         return False
 
@@ -686,8 +743,7 @@ class ConversationView(Gtk.Box):
                 self._settle_sources.remove(sid)
         if getattr(self, "_stick", False) and hasattr(self, "vadj"):
             target = max(0.0, self.vadj.get_upper() - self.vadj.get_page_size())
-            if abs(self.vadj.get_value() - target) > 0.5:
-                self.vadj.set_value(target)
+            self._set_vadj(target)
             self._set_jump(False)
         return False
 
@@ -701,11 +757,14 @@ class ConversationView(Gtk.Box):
         if self._loading_older or self.chat is None:
             return
         self._loading_older = True
+        was_stuck = self._stick
         try:
             chat = self.chat
             await self.core.chats.load_older(chat)
             if hasattr(self, "stack") and chat is self.chat:
                 self._update_empty()
+                if was_stuck and self._stick:
+                    self.scroll_to_bottom(force=True)
         finally:
             if hasattr(self, "_loading_older"):
                 self._loading_older = False
@@ -1472,17 +1531,17 @@ class ConversationView(Gtk.Box):
         return gtk_settings is None or bool(gtk_settings.get_property("gtk-enable-animations"))
 
     def _prepare_animate_in(self) -> None:
-        """Prepare the revealer state synchronously on chat switch without starting the slide yet."""
+        """Prepare the revealer state synchronously on chat switch without starting the fade yet."""
         if not self._chat_animations_enabled():
             self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
             self.reveal.set_reveal_child(True)
             return
         self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
         self.reveal.set_reveal_child(False)
-        self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+        self.reveal.set_transition_type(Gtk.RevealerTransitionType.CROSSFADE)
 
     def _animate_in(self, seq: int | None = None) -> None:
-        """Slide the chat up into the message area, unless the user turned animations off (here or in GTK)."""
+        """Fade the chat into the message area, unless the user turned animations off (here or in GTK)."""
         if self._reveal_idle:
             GLib.source_remove(self._reveal_idle)
             self._reveal_idle = 0
@@ -1490,10 +1549,10 @@ class ConversationView(Gtk.Box):
             self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
             self.reveal.set_reveal_child(True)
             return
-        if self.reveal.get_reveal_child() or self.reveal.get_transition_type() != Gtk.RevealerTransitionType.SLIDE_UP:
+        if self.reveal.get_reveal_child() or self.reveal.get_transition_type() != Gtk.RevealerTransitionType.CROSSFADE:
             self.reveal.set_transition_type(Gtk.RevealerTransitionType.NONE)
             self.reveal.set_reveal_child(False)
-            self.reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
+            self.reveal.set_transition_type(Gtk.RevealerTransitionType.CROSSFADE)
         target_seq = self._open_seq if seq is None else seq
         self._reveal_idle = GLib.idle_add(self._reveal_chat, target_seq)
 
@@ -1505,6 +1564,11 @@ class ConversationView(Gtk.Box):
             return False
         self.reveal.set_reveal_child(True)
         return False
+
+    def _on_chat_revealed(self, *_a) -> None:
+        if hasattr(self, "reveal") and self.reveal.get_child_revealed() and getattr(self, "_stick", False) and \
+                not self._at_bottom():
+            self._settle_bottom()
 
     def _on_setting(self, _s, key: str) -> None:
         if key == "appearance.layout":

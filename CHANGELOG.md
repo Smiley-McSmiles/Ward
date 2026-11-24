@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.0.7 (2026-11-24)
+
+Ward 1.0.7 eliminates chat-switching freezes and animation stutter, keeps chats reliably snapped to the bottom on new messages (with a top-of-chat "New message" pill when scrolled up), and significantly reduces memory usage and main-thread work in large chats.
+
+### Scrolling, Animations & New-Message Pill
+
+- Keep the conversation snapped to the bottom when new messages arrive while already at the bottom: commit scroll settling on idle outside `GtkListView::size_allocate`, materialize unbound newest rows, guard programmatic adjustment updates so `_on_upper()` / `_load_older()` never falsely unstick, and re-settle when the 200 ms `SLIDE_UP` message animation finishes.
+- Add a top-of-chat **New message** (`N new messages`) overlay pill below the header bar when new messages arrive while scrolled up; clicking it smoothly jumps straight to the newest message at the bottom, and scrolling back down or switching chats clears it automatically.
+- Switch chat transitions from `SLIDE_UP` (`220 ms`) to `CROSSFADE` (`120 ms`) so `GtkListView` lays out and scrolls once instead of re-allocating on every frame.
+- Stage chat-switch loading with `_open_seq` cancellation, recycle existing `MessageRow` widgets across chat switches instead of tearing down and rebuilding the entire list pool, and defer GStreamer video/audio stream loading (`video.attachment`) to low-priority idle.
+
+### Responsiveness & Rendering
+
+- Decode message image attachments and avatars asynchronously off the main thread (`texture_async()`) with `weakref` and stale-row guards, keeping the GTK frame clock smooth when opening or scrolling chats with pictures.
+- Change the default graphics renderer from forced OpenGL (`opengl`) to GTK's choice (`auto`) to prevent `gdk_gl_context_make_current()` context failures from freezing Wayland rendering (OpenGL and Software remain selectable in Preferences).
+- Update `MessageRow` selection, highlight, status/meta, reactions, and reply previews in place instead of rebuilding the entire row, reuse hover-bar buttons across row recycles, and cache MIME `Gio.Icon` lookups.
+- Debounce in-chat FTS search (`120 ms` + `80 ms`, immediate on Enter) with stale-search cancellation and batched `Adw.ActionRow` reuse.
+- Fast-path plain-text paragraphs and table cells in `ward.gui.render`, defer `GtkSource.View` syntax highlighting to low-priority idle, sample longest lines in `_CodeScroller`, and defer `selectable=True` on large tables until hover.
+- Coalesce burst sidebar updates, diff-check `ChatRow`/`ContactRow` updates, bound `Composer` completion scans, and reuse a single typing-pause timer.
+
+### Memory & Leak Fixes
+
+- Expand `ward.gui.lifetime.release()` to recurse through `Gtk.Revealer`, `Gtk.Frame`, `Gtk.ScrolledWindow`, `Gtk.Viewport`, `Adw.Clamp`, `Gtk.CenterBox`, `Gtk.Paned`, `Gtk.Stack`, `Gtk.Popover`, and related containers, and track `Gtk.EventController`, `Gtk.Adjustment`, `Gtk.TextBuffer`, and `Gtk.EntryBuffer` handlers so torn-down `MessageRow`s and closed dialogs are collected cleanly.
+- Enforce a `48 MiB` byte budget alongside the `200`-entry LRU in the texture cache (`widgets.py`) with bounded negative-lookup caching.
+- Bound `MessageList` retention in `Chats` (`MAX_CACHED_LISTS = 12` + `trim_inactive()`), use lazy `MessageItem` containers and `_init_props`, and replace full `ml.items()` copies with indexed `store.get_item()` access.
+- Fix cleanup, stale-response guards, and timer cancellation across `EmojiPicker`, `XmlConsole` (`MAX_LINES` pre-slicing), `MembersPanel`, `CallWindow`, `Tray`, and closed dialogs.
+
+### Database, Markup & Core Services
+
+- Add a dedicated read-only SQLite WAL worker (`ward-db-read`) with priority-ordered queues, 7 new partial/composite indexes (`0003_indexes.sql`), row-value pagination, and `UNION ALL` lookup in `find_message_job` so searches and history loads never stall behind writes.
+- Use `slots=True` on markup AST nodes, add plain-text fast paths and a bounded thread-safe LRU parse cache (`256` entries / `256 KB`), and cap span depth in XEP-0393 styling.
+- Add per-account `flush_outbox` locks, coalesced OMEMO `review` + `executemany`, worker-thread thumbnail prep, batched roster fetches, and MUC `occupant_id`/timer cleanup.
+
 ## v1.0.6 (2026-11-19)
 
 Ward 1.0.6 fixes scrolling over code blocks and tables, improves message-list performance, and includes a broad set of security, resource-handling, and widget-lifetime fixes.

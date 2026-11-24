@@ -77,6 +77,15 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.0.7" date="2026-11-24">
+      <description>
+        <ul>
+          <li>Eliminate chat-switching freezes and animation stutter (crossfade chat transition, row recycling, async image/video loading, and auto renderer default)</li>
+          <li>Keep chats snapped to the bottom on new messages and add a top "New message" pill when scrolled up</li>
+          <li>Fix PyGObject container reference leaks, bound texture cache memory (48 MiB), and add a dedicated SQLite WAL read lane with new indexes</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.6" date="2026-11-19">
       <description>
         <ul>

@@ -5,6 +5,7 @@ message's properties (edits, receipts, reactions, downloads) through notify sign
 from __future__ import annotations
 
 import os
+import weakref
 
 from gi.repository import Gio, GLib, GObject, Gtk, Pango
 
@@ -318,7 +319,7 @@ class MessageRow(Gtk.Box):
 
     def _on_revealed(self, *_a) -> None:
         if hasattr(self, "reveal") and self.reveal.get_child_revealed() and getattr(self.view, "_stick", False):
-            self.view._settle_bottom()
+            self.view._queue_settle_bottom()
 
     # ------------------------------------------------------------------ building
     def _build(self, prev: MessageItem | None) -> None:
@@ -622,7 +623,9 @@ class MessageRow(Gtk.Box):
         else:
             path = att.local_path if att.local_path and os.path.exists(att.local_path) else ""
         if att.is_image and (path or thumb):
-            pic = Gtk.Picture.new_for_paintable(widgets.texture(thumb or path, widgets.IMAGE_PIXELS))
+            img_path = thumb or path
+            tex = widgets.cached_texture(img_path, widgets.IMAGE_PIXELS)
+            pic = Gtk.Picture.new_for_paintable(tex) if tex is not None else Gtk.Picture()
             pic.set_can_shrink(True)
             pic.set_content_fit(Gtk.ContentFit.COVER if hasattr(Gtk, "ContentFit") else 0)
             w = max(att.width or 320, 1)
@@ -630,6 +633,22 @@ class MessageRow(Gtk.Box):
             scale = min(320 / w, 280 / h, 1.0)
             pic.set_size_request(max(80, int(w * scale)), max(60, int(h * scale)))
             pic.add_css_class("attachment-image")
+            if tex is None:
+                row_ref = weakref.ref(self)
+                pic_ref = weakref.ref(pic)
+
+                def _on_tex(loaded) -> None:
+                    r = row_ref()
+                    p = pic_ref()
+                    if r is None or p is None or loaded is None or getattr(r, "msg", None) is not m:
+                        return
+                    if p.get_parent() is None:
+                        return
+                    p.set_paintable(loaded)
+                    if getattr(r.view, "_stick", False) and (not att.width or not att.height):
+                        r.view._queue_settle_bottom()
+
+                widgets.texture_async(img_path, widgets.IMAGE_PIXELS, _on_tex)
             btn = Gtk.Button(css_classes=["flat"], halign=Gtk.Align.START)
             btn.set_child(pic)
             btn.set_tooltip_text(att.name)
