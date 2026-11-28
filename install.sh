@@ -267,7 +267,7 @@ py_ok() {   # py_ok <python> : 3.11+ with GTK 4 and libadwaita bindings
 
 find_python() {   # the first Python 3.11+ that has GTK 4 and libadwaita (falls back to any Python 3.11+)
     first=""
-    for c in python3 python3.14 python3.13 python3.12 python3.11 python; do
+    for c in python3 python3.15 python3.14 python3.13 python3.12 python3.11 python; do
         have "$c" || continue
         "$c" -c "import sys; sys.exit(0 if sys.version_info >= (3, $MIN_PY) else 1)" 2>/dev/null || continue
         [ -n "$first" ] || first=$(command -v "$c")
@@ -434,8 +434,7 @@ vendor() {   # fetch modules the system lacks with pip into LIBDIR/vendor (VENDO
     say "Fetching with pip:$want"
     mkdir -p "$D$LIBDIR/vendor"
     # shellcheck disable=SC2086
-    # (installing for every user as root is what we mean: pip need not warn about it; older pips ignore the variable)
-    PIP_ROOT_USER_ACTION=ignore "$PY" -m pip install --upgrade --target "$D$LIBDIR/vendor" --disable-pip-version-check --no-warn-script-location \
+    PYTHONPATH="$D$LIBDIR${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m ward.extras --target "$D$LIBDIR/vendor" --no-verify \
         $want || warn "pip could not install everything ($want); Ward still runs, with fewer features"
 }
 
@@ -455,7 +454,7 @@ usable() {
 PY=\${WARD_PYTHON:-}
 if [ -z "\$PY" ]; then
     FIRST=
-    for c in "${PY:-}" /usr/bin/python3 /usr/local/bin/python3 /usr/pkg/bin/python3 python3 python3.14 python3.13 \\
+    for c in "${PY:-}" /usr/bin/python3 /usr/local/bin/python3 /usr/pkg/bin/python3 python3 python3.15 python3.14 python3.13 \\
              python3.12 python3.11 /usr/local/bin/python3.12 /usr/local/bin/python3.11 /usr/pkg/bin/python3.12 \\
              /usr/pkg/bin/python3.11 python; do
         [ -n "\$c" ] || continue

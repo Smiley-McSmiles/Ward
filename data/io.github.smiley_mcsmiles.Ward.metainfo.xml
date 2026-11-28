@@ -77,6 +77,14 @@
     <keyword>Messenger</keyword>
   </keywords>
   <releases>
+    <release version="1.0.8" date="2026-11-28">
+      <description>
+        <ul>
+          <li>Fix OMEMO installation on Python 3.14/3.15+ (such as Fedora 45) by falling back to the prebuilt abi3 xeddsa wheel instead of compiling from source</li>
+          <li>Share the same OMEMO installer logic across install.sh and Ward's built-in Preferences installer, and add Python 3.15 detection</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.7" date="2026-11-24">
       <description>
         <ul>

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.8 (2026-11-28)
+
+Ward 1.0.8 fixes OMEMO encryption installation on Python 3.14 and 3.15+ (such as Fedora 45) in both `install.sh` and packaged installs (RPM, DEB, Arch) without requiring a C compiler or `libxeddsa` development headers.
+
+- Avoid compiling `xeddsa` from source when PyPI lacks a wheel for the running Python version: `ward.extras` now prefers binary `xeddsa` wheels and automatically falls back to `xeddsa`'s prebuilt `cp313` `abi3` wheel (which bundles `libxeddsa`), while installing all other dependencies natively.
+- Update `install.sh` (`vendor()`) to use `ward.extras` so source installs and in-app installs share the same OMEMO installation behavior, and add `python3.15` to `find_python()` and the generated `ward` launcher.
+
 ## v1.0.7 (2026-11-24)
 
 Ward 1.0.7 eliminates chat-switching freezes and animation stutter, keeps chats reliably snapped to the bottom on new messages (with a top-of-chat "New message" pill when scrolled up), and significantly reduces memory usage and main-thread work in large chats.
